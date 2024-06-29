@@ -18,6 +18,16 @@ const UserList = () => {
         fetchUsers();
     }, []);
 
+    const handleDelete = async (userId) => {
+        try {
+            await axios.delete(`/api/users/${userId}`);
+            setUsers(users.filter((user) => user._id !== userId));
+            alert('User deleted successfully');
+        } catch (error) {
+            alert('Error deleting user');
+        }
+    };
+
     return (
         <div>
             <h2>Registered Users</h2>
@@ -25,6 +35,7 @@ const UserList = () => {
                 {users.map((user) => (
                     <li key={user._id}>
                         {user.name} {user.surname} - {user.phone} - {user.meterReading}
+                        <button onClick={() => handleDelete(user._id)}>Delete</button>
                     </li>
                 ))}
             </ul>
