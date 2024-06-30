@@ -3,16 +3,16 @@ import React from 'react';
 import { BrowserRouter as Router, Route, Switch } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
-import RegisterUser from './pages/RegisterUser';
-import ViewUsers from './pages/ViewUsers';
+import UserForm from './components/UserForm';
+import UserList from './components/UserList';
 
 const App = () => (
     <Router>
         <Navbar />
         <Switch>
             <Route path="/" exact component={Home} />
-            <Route path="/register" component={RegisterUser} />
-            <Route path="/view-users" component={ViewUsers} />
+            <Route path="/register" component={UserForm} />
+            <Route path="/view-users" component={UserList} />
         </Switch>
     </Router>
 );
