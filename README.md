@@ -1,33 +1,58 @@
-# Gestione Acquedotto di Zuel
+# Acquedotto Cortina - Server
 
-## Descrizione del Progetto
+Questo repository contiene il server Node.js per il progetto Acquedotto Cortina, che gestisce la logica di business e l'interazione con il database MongoDB.
 
-Il progetto di Gestione Acquedotto di Zuel è un'applicazione web dedicata alla gestione e monitoraggio dell'acquedotto nel comune di Zuel. L'applicazione consente agli utenti autorizzati di monitorare lo stato del sistema idrico, registrare e gestire reclami, visualizzare statistiche sull'utilizzo dell'acqua, e ricevere notifiche in tempo reale riguardanti guasti o problemi.
+## Descrizione
 
-### Funzionalità Principali:
+Acquedotto Cortina è un'applicazione che consente agli utenti di registrare, visualizzare e gestire i dati relativi agli utenti e alle loro posizioni su una mappa interattiva. Il server fornisce API per consentire al client di comunicare con il database e gestire le operazioni CRUD sugli utenti.
 
-- **Dashboard di Monitoraggio**: Visualizzazione in tempo reale dello stato del sistema idrico, comprese le informazioni sui livelli di acqua, la pressione nei tubi e i consumi giornalieri.
-  
-- **Gestione dei Reclami**: Utenti e amministratori possono registrare e monitorare reclami riguardanti perdite d'acqua, malfunzionamenti nei rubinetti, o qualunque altra problematica.
+## Tecnologie Utilizzate
 
-- **Statistiche e Report**: Generazione di report periodici sull'utilizzo dell'acqua, confronto tra consumi di diverse zone, e analisi delle tendenze nel tempo.
+- **Server**: Node.js, Express
+- **Database**: MongoDB tramite Mongoose
+- **Altri**: Dotenv (per gestire le variabili d'ambiente), Multer (per il caricamento dei file)
 
-- **Notifiche in Tempo Reale**: Ricezione di avvisi immediati su guasti o emergenze attraverso notifiche push integrate.
+## Struttura del Progetto
 
-### Tecnologie Utilizzate:
+Il progetto del server è organizzato nelle seguenti cartelle principali:
 
-- **Frontend**: React, React Router DOM per la gestione del routing, Axios per le chiamate API.
-  
-- **Backend**: Node.js con Express per il server HTTP, MongoDB per il database, Mongoose per l'ODM.
+- **controllers**: contiene i controller che gestiscono le richieste HTTP e la logica di business.
+- **models**: definisce i modelli di dati utilizzati dal server per interagire con MongoDB tramite Mongoose.
+- **routes**: definisce le rotte API per gestire le richieste HTTP dal client.
+- **uploads**: cartella per memorizzare i file caricati dagli utenti.
 
-- **Autenticazione e Autorizzazione**: JWT (JSON Web Tokens) per la gestione dell'autenticazione utente.
+## Installazione e Avvio del Server
 
-### Installazione e Avvio:
+Per installare e avviare il server sul tuo sistema locale, segui questi passaggi:
 
-Per installare e avviare il progetto localmente:
-
-1. Clona il repository:
+1. **Clona il repository**
 
    ```bash
-   git clone https://github.com/tuonomeutente/gestione-acquedotto-zuel.git
-   cd gestione-acquedotto-zuel
+   git clone <URL_DEL_REPO>
+   cd server
+
+2. ***Installazione delle dipendenze***
+
+    Assicurati di avere Node.js installato sul tuo computer. Dopo aver navigato nella cartella server, esegui il seguente comando per installare tutte le dipendenze necessarie:
+
+    ```bash
+    npm install
+
+3. ***Configurazione delle variabili d'ambiente***
+
+    Assicurati di creare un file .env nella cartella server e di configurare le variabili d'ambiente necessarie. Ad esempio:
+
+    ```bash
+    PORT=5000
+    MONGODB_URI=mongodb://localhost:27017/acquedotto-cortina
+
+    Sostituisci mongodb://localhost:27017/acquedotto-cortina con l'URL della tua istanza MongoDB.
+
+4. ***Avvio del server***
+
+    Una volta completata la configurazione, puoi avviare il server con il seguente comando:
+
+   ```bash
+   npm start
+
+    Questo avvierà il server Node.js. Assicurati che il server sia in esecuzione prima di avviare il client.
