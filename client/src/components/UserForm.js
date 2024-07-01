@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import '../styles/UserForm.css';
 
 const UserForm = () => {
     const [name, setName] = useState('');
@@ -14,29 +15,47 @@ const UserForm = () => {
     const [marker, setMarker] = useState(null);
     const [file, setFile] = useState(null);
 
+    const mapRef = useRef(null); // Reference to map instance
+    const markerRef = useRef(null); // Reference to marker instance
+
     useEffect(() => {
-        if (!map) {
+        if (!mapRef.current) {
             const mapInstance = L.map('map').setView([46.5396, 12.1357], 13);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '&copy; OpenStreetMap contributors'
             }).addTo(mapInstance);
 
-            mapInstance.on('click', (e) => {
-                setPosition(e.latlng);
-                if (marker) {
-                    mapInstance.removeLayer(marker);
-                }
-                const newMarker = L.marker(e.latlng, {
-                    icon: L.icon({
-                        iconUrl: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png'
-                    })
-                }).addTo(mapInstance);
-                setMarker(newMarker);
-            });
+            mapInstance.on('click', handleMapClick);
 
+            mapRef.current = mapInstance;
             setMap(mapInstance);
         }
-    }, [map, marker]);
+
+        return () => {
+            if (mapRef.current) {
+                mapRef.current.remove();
+            }
+        };
+    }, []); // Run only once on component mount
+
+    const handleMapClick = (e) => {
+        const clickedPosition = e.latlng;
+        setPosition(clickedPosition);
+
+        // Remove previous marker if exists
+        if (markerRef.current) {
+            mapRef.current.removeLayer(markerRef.current);
+        }
+
+        // Add new marker at clicked position
+        const newMarker = L.marker(clickedPosition, {
+            icon: L.icon({
+                iconUrl: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png'
+            })
+        }).addTo(mapRef.current);
+
+        markerRef.current = newMarker; // Update marker reference
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -65,8 +84,11 @@ const UserForm = () => {
             setMeterReading('');
             setPosition(null);
             setFile(null);
-            if (marker) {
-                map.removeLayer(marker);
+
+            // Remove marker from map
+            if (markerRef.current) {
+                mapRef.current.removeLayer(markerRef.current);
+                markerRef.current = null; // Clear marker reference
             }
         } catch (error) {
             alert('Error registering user');
@@ -78,33 +100,32 @@ const UserForm = () => {
     };
 
     return (
-        <div>
+        <div className="user-form-container">
+            <h2>User Registration</h2>
             <form onSubmit={handleSubmit}>
-                <label>
-                    Name:
-                    <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
-                </label>
-                <label>
-                    Surname:
-                    <input type="text" value={surname} onChange={(e) => setSurname(e.target.value)} required />
-                </label>
-                <label>
-                    Email:
-                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-                </label>
-                <label>
-                    Phone:
-                    <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} required />
-                </label>
-                <label>
-                    Meter Reading:
-                    <input type="text" value={meterReading} onChange={(e) => setMeterReading(e.target.value)} required />
-                </label>
-                <label>
-                    Upload Map (PDF/Image):
-                    <input type="file" onChange={handleFileChange} />
-                </label>
-                <div id="map" style={{ height: '400px', width: '100%' }}></div>
+                <table className="user-form-table">
+                    <tbody>
+                        <tr>
+                            <td><label>Name:</label></td>
+                            <td><input type="text" value={name} onChange={(e) => setName(e.target.value)} required /></td>
+                            <td><label>Surname:</label></td>
+                            <td><input type="text" value={surname} onChange={(e) => setSurname(e.target.value)} required /></td>
+                        </tr>
+                        <tr>
+                            <td><label>Email:</label></td>
+                            <td><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></td>
+                            <td><label>Phone:</label></td>
+                            <td><input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} required /></td>
+                        </tr>
+                        <tr>
+                            <td><label>Meter Reading:</label></td>
+                            <td><input type="text" value={meterReading} onChange={(e) => setMeterReading(e.target.value)} required /></td>
+                            <td><label>Upload Map (PDF/Image):</label></td>
+                            <td><input type="file" onChange={handleFileChange} /></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div id="map" className="user-map"></div>
                 <button type="submit">Register User</button>
             </form>
         </div>
