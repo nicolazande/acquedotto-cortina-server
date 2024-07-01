@@ -6,6 +6,8 @@ import '../styles/UserList.css'; // Importiamo il file CSS per la tabella
 
 const UserList = () => {
     const [users, setUsers] = useState([]);
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [isModalOpen, setIsModalOpen] = useState(false);
     const mapRef = useRef(null); // Riferimento per la mappa
 
     useEffect(() => {
@@ -42,6 +44,11 @@ const UserList = () => {
         }
     };
 
+    const handleViewFile = (filePath) => {
+        setSelectedFile(filePath);
+        setIsModalOpen(true);
+    };
+
     const initializeMap = (users) => {
         const map = mapRef.current;
         if (map) {
@@ -64,6 +71,7 @@ const UserList = () => {
 
     return (
         <div className="user-list-container">
+            <div id="map" className="user-map"></div>
             <div className="user-table-container">
                 <h2>Registered Users</h2>
                 <table className="user-table">
@@ -89,13 +97,30 @@ const UserList = () => {
                                     <button className="delete-button" onClick={() => handleDelete(user._id)}>
                                         Delete
                                     </button>
+                                    {user.filePath && (
+                                        <button className="view-file-button" onClick={() => handleViewFile(user.filePath)}>
+                                            View File
+                                        </button>
+                                    )}
                                 </td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
             </div>
-            <div id="map" className="user-map"></div>
+
+            {isModalOpen && selectedFile && (
+                <div className="modal">
+                    <div className="modal-content">
+                        <span className="close" onClick={() => setIsModalOpen(false)}>&times;</span>
+                        {selectedFile.endsWith('.pdf') ? (
+                            <embed src={selectedFile} type="application/pdf" width="100%" height="600px" />
+                        ) : (
+                            <img src={selectedFile} alt="User uploaded file" style={{ width: '100%' }} />
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

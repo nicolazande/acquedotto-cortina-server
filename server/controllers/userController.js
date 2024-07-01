@@ -1,23 +1,41 @@
 const User = require('../models/User');
+const multer = require('multer');
+const path = require('path');
+
+// Configurazione Multer
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, './uploads/');
+    },
+    filename: function (req, file, cb) {
+        cb(null, Date.now() + path.extname(file.originalname));
+    }
+});
+
+const upload = multer({ storage: storage });
+
+exports.upload = upload.single('file');
 
 exports.createUser = async (req, res) => {
     try {
-        const userData = {
-            name: req.body.name,
-            surname: req.body.surname,
-            email: req.body.email,
-            phone: req.body.phone,
-            meterReading: req.body.meterReading,
-            position: {
-                lat: req.body.position.lat,
-                lng: req.body.position.lng
-            }
-        };
+        const { name, surname, email, phone, meterReading, position } = req.body;
+        const user = new User({
+            name,
+            surname,
+            email,
+            phone,
+            meterReading,
+            position: JSON.parse(position)
+        });
 
-        const user = new User(userData);
+        if (req.file) {
+            user.filePath = req.file.path;
+        }
+
         await user.save();
         res.status(201).json(user);
     } catch (error) {
+        console.error(error);
         res.status(400).json({ error: 'Error creating user' });
     }
 };

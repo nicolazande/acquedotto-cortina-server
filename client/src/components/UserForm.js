@@ -1,4 +1,3 @@
-// client/src/components/UserForm.js
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import L from 'leaflet';
@@ -13,6 +12,7 @@ const UserForm = () => {
     const [position, setPosition] = useState(null);
     const [map, setMap] = useState(null);
     const [marker, setMarker] = useState(null);
+    const [file, setFile] = useState(null);
 
     useEffect(() => {
         if (!map) {
@@ -26,7 +26,11 @@ const UserForm = () => {
                 if (marker) {
                     mapInstance.removeLayer(marker);
                 }
-                const newMarker = L.marker(e.latlng, { icon: L.icon({ iconUrl: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png' }) }).addTo(mapInstance);
+                const newMarker = L.marker(e.latlng, {
+                    icon: L.icon({
+                        iconUrl: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png'
+                    })
+                }).addTo(mapInstance);
                 setMarker(newMarker);
             });
 
@@ -36,14 +40,22 @@ const UserForm = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        const formData = new FormData();
+        formData.append('name', name);
+        formData.append('surname', surname);
+        formData.append('email', email);
+        formData.append('phone', phone);
+        formData.append('meterReading', meterReading);
+        formData.append('position', JSON.stringify(position));
+        if (file) {
+            formData.append('file', file);
+        }
+
         try {
-            const response = await axios.post('/api/users/add', {
-                name,
-                surname,
-                email,
-                phone,
-                meterReading,
-                position
+            const response = await axios.post('/api/users', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
             });
             alert('User registered successfully');
             setName('');
@@ -52,12 +64,17 @@ const UserForm = () => {
             setPhone('');
             setMeterReading('');
             setPosition(null);
+            setFile(null);
             if (marker) {
                 map.removeLayer(marker);
             }
         } catch (error) {
             alert('Error registering user');
         }
+    };
+
+    const handleFileChange = (e) => {
+        setFile(e.target.files[0]);
     };
 
     return (
@@ -82,6 +99,10 @@ const UserForm = () => {
                 <label>
                     Meter Reading:
                     <input type="text" value={meterReading} onChange={(e) => setMeterReading(e.target.value)} required />
+                </label>
+                <label>
+                    Upload Map (PDF/Image):
+                    <input type="file" onChange={handleFileChange} />
                 </label>
                 <div id="map" style={{ height: '400px', width: '100%' }}></div>
                 <button type="submit">Register User</button>

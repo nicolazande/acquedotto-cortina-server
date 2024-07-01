@@ -9,7 +9,8 @@ const userSchema = new mongoose.Schema({
     position: {
         lat: { type: Number, required: true },
         lng: { type: Number, required: true }
-    }
+    },
+    filePath: { type: String }
 });
 
 module.exports = mongoose.model('User', userSchema);
