@@ -1,13 +1,19 @@
-// client/src/components/Navbar.js
 import React from 'react';
 import { Link } from 'react-router-dom';
+import '../styles/Navbar.css'; // Importa il file CSS per lo stile della barra di navigazione
 
 const Navbar = () => (
-    <nav>
-        <ul>
-            <li><Link to="/">Home</Link></li>
-            <li><Link to="/register">Register User</Link></li>
-            <li><Link to="/view-users">View Users</Link></li>
+    <nav className="navbar">
+        <ul className="navbar-nav">
+            <li className="nav-item">
+                <Link to="/" className="nav-link">Home</Link>
+            </li>
+            <li className="nav-item">
+                <Link to="/register" className="nav-link">Register User</Link>
+            </li>
+            <li className="nav-item">
+                <Link to="/view-users" className="nav-link">View Users</Link>
+            </li>
         </ul>
     </nav>
 );

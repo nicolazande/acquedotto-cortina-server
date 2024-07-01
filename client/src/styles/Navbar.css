@@ -1,0 +1,26 @@
+.navbar {
+    background-color: #333; /* Colore di sfondo della barra di navigazione */
+    padding: 10px 20px; /* Padding interno per spaziatura */
+}
+
+.navbar-nav {
+    list-style-type: none; /* Rimuove i punti elenco */
+    padding: 0;
+    margin: 0;
+    display: flex; /* Imposta il layout dei link in linea */
+}
+
+.nav-item {
+    margin-right: 15px; /* Spaziatura tra i link */
+}
+
+.nav-link {
+    text-decoration: none; /* Rimuove il sottolineato dai link */
+    color: #fff; /* Colore del testo dei link */
+    font-weight: bold; /* Testo in grassetto */
+    transition: color 0.3s; /* Transizione del colore al passaggio del mouse */
+}
+
+.nav-link:hover {
+    color: #f0f0f0; /* Cambia colore del testo al passaggio del mouse */
+}

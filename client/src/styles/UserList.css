@@ -1,97 +1,102 @@
 .user-list-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-}
-
-.user-map {
-    height: 500px;
-    width: 100%;
-    margin-bottom: 20px;
+    width: 80%; /* Larghezza del 80% della pagina */
+    max-width: 1200px; /* Massima larghezza consentita */
+    margin: 20px auto; /* Margini esterni con auto per centrare */
+    padding: 20px;
+    border: 1px solid #ccc; /* Bordo sottile */
+    border-radius: 8px;
+    background-color: #f8f9fa; /* Colore di sfondo */
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); /* Effetto ombra */
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
 .user-table-container {
-    width: 100%;
+    overflow-x: auto; /* Barra di scorrimento orizzontale se la tabella è troppo larga */
+    border: 1px solid #ccc; /* Bordo per la tabella */
+    border-radius: 8px;
 }
 
 .user-table {
     width: 100%;
-    border-collapse: collapse;
-    margin: 20px 0;
-    font-size: 18px;
+    border-collapse: collapse; /* Unire i bordi delle celle */
+}
+
+.user-table th,
+.user-table td {
+    border: 1px solid #ddd; /* Bordo delle celle */
+    padding: 10px;
     text-align: left;
 }
 
-.user-table th, .user-table td {
-    padding: 12px 15px;
-    border: 1px solid #ddd;
-}
-
 .user-table th {
-    background-color: #f4f4f4;
+    background-color: #f2f2f2; /* Colore di sfondo per l'intestazione */
+    font-weight: bold;
 }
 
-.user-table tr:nth-child(even) {
-    background-color: #f9f9f9;
+.user-table tbody tr:nth-child(even) {
+    background-color: #f9f9f9; /* Colore di sfondo per le righe pari */
 }
 
-.user-table tr:hover {
-    background-color: #f1f1f1;
+.user-table tbody tr:hover {
+    background-color: #e9ecef; /* Colore di sfondo al passaggio del mouse */
 }
 
-.user-table button {
-    background-color: #ff4b5c;
-    color: white;
+.delete-button,
+.view-file-button {
+    margin-right: 5px; /* Spazio tra i pulsanti */
+    padding: 8px 16px;
     border: none;
-    padding: 5px 10px;
+    border-radius: 4px;
     cursor: pointer;
+    font-size: 14px;
+    outline: none; /* Rimuovere il bordo blu su focus */
 }
 
-.user-table button:hover {
-    background-color: #ff1f3b;
+.delete-button {
+    background-color: #dc3545; /* Rosso per il pulsante Elimina */
+    color: white;
 }
 
 .view-file-button {
-    background-color: #4CAF50;
+    background-color: #007bff; /* Blu per il pulsante Visualizza File */
     color: white;
-    border: none;
-    padding: 5px 10px;
-    cursor: pointer;
-    margin-left: 10px;
 }
 
 .view-file-button:hover {
-    background-color: #45a049;
+    background-color: #0056b3; /* Cambia colore al passaggio del mouse */
 }
 
 .modal {
-    display: flex;
-    justify-content: center;
-    align-items: center;
     position: fixed;
-    z-index: 1000; /* Aumentiamo il valore del z-index */
+    z-index: 999;
     left: 0;
     top: 0;
     width: 100%;
     height: 100%;
-    overflow: auto;
-    background-color: rgb(0,0,0);
-    background-color: rgba(0,0,0,0.4);
+    background-color: rgba(0, 0, 0, 0.7); /* Sfondo scuro semi-trasparente */
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .modal-content {
-    background-color: #fefefe;
-    margin: auto;
+    background-color: white;
     padding: 20px;
-    border: 1px solid #888;
-    width: 80%;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); /* Effetto ombra */
+    max-width: 90%;
+    max-height: 90%;
+    overflow: auto;
+    position: relative;
 }
 
 .close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-size: 24px;
+    cursor: pointer;
     color: #aaa;
-    float: right;
-    font-size: 28px;
-    font-weight: bold;
 }
 
 .close:hover,

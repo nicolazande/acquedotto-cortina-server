@@ -71,9 +71,9 @@ const UserList = () => {
 
     return (
         <div className="user-list-container">
+            <h2>Utenti registrati</h2>
             <div id="map" className="user-map"></div>
             <div className="user-table-container">
-                <h2>Registered Users</h2>
                 <table className="user-table">
                     <thead>
                         <tr>

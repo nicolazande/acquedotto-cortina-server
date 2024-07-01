@@ -101,32 +101,41 @@ const UserForm = () => {
 
     return (
         <div className="user-form-container">
-            <h2>User Registration</h2>
             <form onSubmit={handleSubmit}>
-                <table className="user-form-table">
-                    <tbody>
-                        <tr>
-                            <td><label>Name:</label></td>
-                            <td><input type="text" value={name} onChange={(e) => setName(e.target.value)} required /></td>
-                            <td><label>Surname:</label></td>
-                            <td><input type="text" value={surname} onChange={(e) => setSurname(e.target.value)} required /></td>
-                        </tr>
-                        <tr>
-                            <td><label>Email:</label></td>
-                            <td><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></td>
-                            <td><label>Phone:</label></td>
-                            <td><input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} required /></td>
-                        </tr>
-                        <tr>
-                            <td><label>Meter Reading:</label></td>
-                            <td><input type="text" value={meterReading} onChange={(e) => setMeterReading(e.target.value)} required /></td>
-                            <td><label>Upload Map (PDF/Image):</label></td>
-                            <td><input type="file" onChange={handleFileChange} /></td>
-                        </tr>
-                    </tbody>
-                </table>
+                <div className="form-section">
+                    <div className="form-field">
+                        <label>Nome:</label>
+                        <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
+                    </div>
+                    <div className="form-field">
+                        <label>Cognome:</label>
+                        <input type="text" value={surname} onChange={(e) => setSurname(e.target.value)} required />
+                    </div>
+                </div>
+                <div className="form-section">
+                    <div className="form-field">
+                        <label>Email:</label>
+                        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                    </div>
+                    <div className="form-field">
+                        <label>Telefono:</label>
+                        <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} required />
+                    </div>
+                </div>
+                <div className="form-section">
+                    <div className="form-field">
+                        <label>Lettura contatore:</label>
+                        <input type="text" value={meterReading} onChange={(e) => setMeterReading(e.target.value)} required />
+                    </div>
+                    <div className="form-field file-field">
+                        <label>Pianta:</label>
+                        <input type="file" onChange={handleFileChange} />
+                    </div>
+                </div>
                 <div id="map" className="user-map"></div>
-                <button type="submit">Register User</button>
+                <div className="button-container">
+                    <button type="submit">Registra utente</button>
+                </div>
             </form>
         </div>
     );
