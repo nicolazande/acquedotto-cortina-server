@@ -10,10 +10,19 @@
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
+.user-map {
+    height: 400px; /* Altezza della mappa */
+    margin-bottom: 20px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
 .user-table-container {
-    overflow-x: auto; /* Barra di scorrimento orizzontale se la tabella è troppo larga */
+    max-height: 500px; /* Altezza massima per la tabella */
+    overflow-y: auto; /* Barra di scorrimento verticale */
     border: 1px solid #ccc; /* Bordo per la tabella */
     border-radius: 8px;
+    background-color: #fff; /* Colore di sfondo della tabella */
 }
 
 .user-table {
@@ -53,7 +62,7 @@
 }
 
 .delete-button {
-    background-color: #dc3545; /* Rosso per il pulsante Elimina */
+    background-color: #dc3545; /* Rosso per il pulsante Cancella */
     color: white;
 }
 
@@ -104,4 +113,8 @@
     color: black;
     text-decoration: none;
     cursor: pointer;
+}
+
+.highlight {
+    background-color: #ffd700 !important; /* Colore giallo per l'evidenziazione */
 }

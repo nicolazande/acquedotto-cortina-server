@@ -1,6 +1,6 @@
 .user-form-container {
     width: 80%; /* Larghezza del 80% della pagina */
-    max-width: 1000px; /* Massima larghezza consentita */
+    max-width: 1200px; /* Massima larghezza consentita */
     margin: 20px auto; /* Margini esterni con auto per centrare */
     padding: 20px;
     border: 1px solid #ccc; /* Bordo sottile */
@@ -12,6 +12,7 @@
 
 .form-section {
     display: flex;
+    flex-wrap: wrap; /* Consente di avvolgere i campi su più righe se necessario */
     justify-content: space-between;
     margin-bottom: 20px;
 }
@@ -23,6 +24,8 @@
     border-radius: 4px;
     background-color: #fff;
     margin-right: 10px; /* Spazio tra i campi */
+    margin-bottom: 10px; /* Spazio inferiore per migliorare la disposizione */
+    box-sizing: border-box; /* Include padding e border nella larghezza totale */
 }
 
 .form-field:last-child {
