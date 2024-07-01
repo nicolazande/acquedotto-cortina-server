@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 
 // Configurazione Multer
 const storage = multer.diskStorage({
@@ -60,9 +61,30 @@ exports.updateUser = async (req, res) => {
 
 exports.deleteUser = async (req, res) => {
     try {
-        await User.findByIdAndDelete(req.params.id);
-        res.status(204).json({ message: 'User deleted' });
+        const user = await User.findById(req.params.id);
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Rimuovi il file associato se presente
+        if (user.filePath) {
+            const filePath = path.join(__dirname, '..', user.filePath);
+            fs.unlink(filePath, async (err) => {
+                if (err) {
+                    console.error(`Errore nella rimozione del file: ${err}`);
+                    return res.status(500).json({ error: 'Error deleting user file' });
+                }
+
+                await user.remove();
+                res.status(204).json({ message: 'User and associated file deleted' });
+            });
+        } else {
+            await user.remove();
+            res.status(204).json({ message: 'User deleted' });
+        }
     } catch (error) {
+        console.error(error);
         res.status(500).json({ error: 'Error deleting user' });
     }
 };
