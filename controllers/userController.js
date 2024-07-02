@@ -4,11 +4,14 @@ const path = require('path');
 const fs = require('fs');
 
 // Configurazione Multer
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
+const storage = multer.diskStorage(
+{
+    destination: function (req, file, cb)
+    {
         cb(null, './uploads/');
     },
-    filename: function (req, file, cb) {
+    filename: function (req, file, cb)
+    {
         cb(null, Date.now() + path.extname(file.originalname));
     }
 });
@@ -17,8 +20,10 @@ const upload = multer({ storage: storage });
 
 exports.upload = upload.single('file');
 
-exports.createUser = async (req, res) => {
-    try {
+exports.createUser = async (req, res) =>
+{
+    try
+    {
         const { name, surname, email, phone, meterReading, position } = req.body;
         const user = new User({
             name,
@@ -29,61 +34,81 @@ exports.createUser = async (req, res) => {
             position: JSON.parse(position)
         });
 
-        if (req.file) {
+        if (req.file)
+        {
             user.filePath = req.file.path;
         }
 
         await user.save();
         res.status(201).json(user);
-    } catch (error) {
+    }
+    catch (error)
+    {
         console.error(error);
         res.status(400).json({ error: 'Error creating user' });
     }
 };
 
-exports.getUsers = async (req, res) => {
-    try {
+exports.getUsers = async (req, res) =>
+{
+    try
+    {
         const users = await User.find();
         res.status(200).json(users);
-    } catch (error) {
+    }
+    catch (error)
+    {
         res.status(500).json({ error: 'Error fetching users' });
     }
 };
 
-exports.updateUser = async (req, res) => {
-    try {
+exports.updateUser = async (req, res) =>
+{
+    try
+    {
         const user = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
         res.status(200).json(user);
-    } catch (error) {
+    }
+    catch (error)
+    {
         res.status(400).json({ error: 'Error updating user' });
     }
 };
 
-exports.deleteUser = async (req, res) => {
-    try {
+exports.deleteUser = async (req, res) =>
+{
+    try
+    {
         const user = await User.findById(req.params.id);
 
-        if (!user) {
+        if (!user)
+        {
             return res.status(404).json({ error: 'User not found' });
         }
 
         // Rimuovi il file associato se presente
-        if (user.filePath) {
+        if (user.filePath)
+        {
             const filePath = path.join(__dirname, '..', user.filePath);
-            fs.unlink(filePath, async (err) => {
-                if (err) {
+            fs.unlink(filePath, async (err) =>
+            {
+                if (err)
+                {
                     console.error(`Errore nella rimozione del file: ${err}`);
-                    return res.status(500).json({ error: 'Error deleting user file' });
                 }
 
                 await user.remove();
                 res.status(204).json({ message: 'User and associated file deleted' });
             });
-        } else {
+        }
+        else
+        {
             await user.remove();
             res.status(204).json({ message: 'User deleted' });
         }
-    } catch (error) {
+    } 
+    catch (error)
+    {
         console.error(error);
         res.status(500).json({ error: 'Error deleting user' });
     }
