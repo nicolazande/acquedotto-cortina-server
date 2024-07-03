@@ -22,6 +22,22 @@ connectDB();
 const userRoutes = require('./routes/userRoutes');
 app.use('/api', userRoutes);
 
+// Route di debug
+app.get('/api/debug', (req, res) => {
+    res.send('Server is running and reachable');
+});
+
+// Route di catch-all per gestire le rotte non definite
+app.use((req, res, next) => {
+    res.status(404).send('404: Not Found');
+});
+
+// Gestione degli errori
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).send('500: Internal Server Error');
+});
+
 app.listen(port, () => {
     console.log(`Server is running on port: ${port}`);
 });
