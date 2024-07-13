@@ -24,6 +24,7 @@ connectDB();
 app.use('/api', routes);
 
 // Avvio del server
-app.listen(port, () => {
+app.listen(port, () => 
+{
     console.log(`Server is running on port: ${port}`);
 });
