@@ -9,7 +9,7 @@ router.put('/:id', FatturaController.updateFattura);
 router.delete('/:id', FatturaController.deleteFattura);
 router.post('/:fatturaId/cliente/:clienteId', FatturaController.associateCliente);
 router.post('/:fatturaId/servizio/:servizioId', FatturaController.associateServizio);
-router.get('/:fatturaId/servizi', FatturaController.getServiziAssociati);
-router.get('/:fatturaId/cliente', FatturaController.getClienteAssociato);
+router.get('/:id/servizi', FatturaController.getServiziAssociati);
+router.get('/:id/cliente', FatturaController.getClienteAssociato);
 
 module.exports = router;

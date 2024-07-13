@@ -10,6 +10,7 @@ router.delete('/:id', ContatoreController.deleteContatore);
 router.post('/:contatoreId/clienti/:clienteId', ContatoreController.associateCliente);
 router.post('/:contatoreId/edifici/:edificioId', ContatoreController.associateEdificio);
 router.post('/:contatoreId/listini/:listinoId', ContatoreController.associateListino);
+router.post('/:contatoreId/letture/:letturaId', ContatoreController.associateLettura);
 router.get('/:id/listino', ContatoreController.getListinoAssociato);
 router.get('/:id/edificio', ContatoreController.getEdificioAssociato);
 router.get('/:id/letture', ContatoreController.getLettureAssociate);

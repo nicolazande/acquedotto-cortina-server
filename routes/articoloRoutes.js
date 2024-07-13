@@ -8,6 +8,6 @@ router.get('/:id', ArticoloController.getArticolo);
 router.put('/:id', ArticoloController.updateArticolo);
 router.delete('/:id', ArticoloController.deleteArticolo);
 router.post('/:articoloId/servizi/:servizioId', ArticoloController.associateServizio);
-router.get('/:articoloId/servizi', ArticoloController.getServiziAssociati);
+router.get('/:id/servizi', ArticoloController.getServiziAssociati);
 
 module.exports = router;

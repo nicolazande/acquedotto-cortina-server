@@ -8,8 +8,8 @@ router.get('/:id', ListinoController.getListino);
 router.put('/:id', ListinoController.updateListino);
 router.delete('/:id', ListinoController.deleteListino);
 router.post('/:listinoId/fasce/:fasciaId', ListinoController.associateFascia);
-router.get('/:listinoId/fasce', ListinoController.getFasceAssociate);
+router.get('/:id/fasce', ListinoController.getFasceAssociate);
 router.post('/:listinoId/contatori/:contatoreId', ListinoController.associateContatore);
-router.get('/:listinoId/contatori', ListinoController.getContatoriAssociati);
+router.get('/:id/contatori', ListinoController.getContatoriAssociati);
 
 module.exports = router;

@@ -162,6 +162,30 @@ class ContatoreController
         }
     }
 
+    static async associateLettura(req, res)
+    {
+        try
+        {
+            const contatore = await Contatore.findById(req.params.contatoreId);
+            const lettura = await Lettura.findById(req.params.letturaId);
+
+            if (!contatore || !lettura)
+            {
+                return res.status(404).json({ error: 'Contatore or Lettura not found' });
+            }
+
+            lettura.contatore = contatore._id;
+            await lettura.save();
+
+            res.status(200).json({ message: 'Lettura associated to Contatore', lettura });
+        }
+        catch (error)
+        {
+            console.error(error);
+            res.status(500).json({ error: 'Error associating lettura to contatore' });
+        }
+    }
+
     static async getListinoAssociato(req, res)
     {
         try

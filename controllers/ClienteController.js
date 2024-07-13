@@ -140,7 +140,7 @@ class ClienteController
     {
         try
         {
-            const contatori = await Contatore.find({ cliente: req.params.clienteId });
+            const contatori = await Contatore.find({ cliente: req.params.id });
             res.status(200).json(contatori);
         }
         catch (error)
@@ -154,7 +154,7 @@ class ClienteController
     {
         try
         {
-            const fatture = await Fattura.find({ cliente: req.params.clienteId });
+            const fatture = await Fattura.find({ cliente: req.params.id });
             res.status(200).json(fatture);
         }
         catch (error)

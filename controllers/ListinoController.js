@@ -116,7 +116,7 @@ class ListinoController
     {
         try
         {
-            const fasce = await Fascia.find({ listino: req.params.listinoId });
+            const fasce = await Fascia.find({ listino: req.params.id });
             res.status(200).json(fasce);
         }
         catch (error)
@@ -154,7 +154,7 @@ class ListinoController
     {
         try
         {
-            const contatori = await Contatore.find({ listino: req.params.listinoId });
+            const contatori = await Contatore.find({ listino: req.params.id });
             res.status(200).json(contatori);
         }
         catch (error)

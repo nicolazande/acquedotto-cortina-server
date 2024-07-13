@@ -140,7 +140,7 @@ class FatturaController
     {
         try
         {
-            const servizi = await Servizio.find({ fattura: req.params.fatturaId });
+            const servizi = await Servizio.find({ fattura: req.params.id });
             res.status(200).json(servizi);
         }
         catch (error)
@@ -154,7 +154,7 @@ class FatturaController
     {
         try
         {
-            const fattura = await Fattura.findById(req.params.fatturaId).populate('cliente');
+            const fattura = await Fattura.findById(req.params.id).populate('cliente');
             if (!fattura || !fattura.cliente)
             {
                 return res.status(404).json({ error: 'Cliente not found' });

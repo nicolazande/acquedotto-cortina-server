@@ -116,7 +116,7 @@ class ArticoloController
     {
         try
         {
-            const servizi = await Servizio.find({ articolo: req.params.articoloId });
+            const servizi = await Servizio.find({ articolo: req.params.id });
             res.status(200).json(servizi);
         }
         catch (error)

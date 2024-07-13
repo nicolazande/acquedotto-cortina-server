@@ -9,7 +9,7 @@ router.put('/:id', ClienteController.updateCliente);
 router.delete('/:id', ClienteController.deleteCliente);
 router.post('/:clienteId/contatori/:contatoreId', ClienteController.associateContatore);
 router.post('/:clienteId/fatture/:fatturaId', ClienteController.associateFattura);
-router.get('/:clienteId/contatori', ClienteController.getContatoriAssociati);
-router.get('/:clienteId/fatture', ClienteController.getFattureAssociate);
+router.get('/:id/contatori', ClienteController.getContatoriAssociati);
+router.get('/:id/fatture', ClienteController.getFattureAssociate);
 
 module.exports = router;

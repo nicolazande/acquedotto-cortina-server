@@ -1,4 +1,5 @@
 const Fascia = require('../models/Fascia');
+const Listino = require('../models/Listino');
 
 class FasciaController
 {
@@ -108,6 +109,24 @@ class FasciaController
         {
             console.error(error);
             res.status(500).json({ error: 'Error associating listino to fascia' });
+        }
+    }
+
+    static async getListinoAssociato(req, res)
+    {
+        try
+        {
+            const fascia = await Fascia.findById(req.params.id).populate('listino');
+            if (!fascia || !fascia.listino)
+            {
+                return res.status(404).json({ error: 'Fascia or Listino not found' });
+            }
+            res.status(200).json(fascia.listino);
+        }
+        catch (error)
+        {
+            console.error(error);
+            res.status(500).json({ error: 'Error fetching listino associato' });
         }
     }
 }

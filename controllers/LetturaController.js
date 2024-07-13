@@ -112,11 +112,35 @@ class LetturaController
         }
     }
 
+    static async associateServizio(req, res)
+    {
+        try
+        {
+            const lettura = await Lettura.findById(req.params.letturaId);
+            const servizio = await Servizio.findById(req.params.servizioId);
+
+            if (!lettura || !servizio)
+            {
+                return res.status(404).json({ error: 'Lettura or Servizio not found' });
+            }
+
+            servizio.lettura = lettura._id;
+            await servizio.save();
+
+            res.status(200).json({ message: 'Servizio associated to Lettura', servizio });
+        }
+        catch (error)
+        {
+            console.error(error);
+            res.status(500).json({ error: 'Error associating servizio to lettura' });
+        }
+    }
+
     static async getContatoreAssociato(req, res)
     {
         try
         {
-            const lettura = await Lettura.findById(req.params.letturaId).populate('contatore');
+            const lettura = await Lettura.findById(req.params.id).populate('contatore');
             if (!lettura)
             {
                 return res.status(404).json({ error: 'Lettura not found' });
@@ -134,7 +158,7 @@ class LetturaController
     {
         try
         {
-            const servizi = await Servizio.find({ lettura: req.params.letturaId });
+            const servizi = await Servizio.find({ lettura: req.params.id });
             if (!servizi || servizi.length === 0)
             {
                 return res.status(404).json({ error: 'No servizi found for this lettura' });

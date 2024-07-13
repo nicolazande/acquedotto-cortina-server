@@ -165,7 +165,7 @@ class ServizioController
     {
         try
         {
-            const servizio = await Servizio.findById(req.params.servizioId).populate('lettura');
+            const servizio = await Servizio.findById(req.params.id).populate('lettura');
             if (!servizio || !servizio.lettura)
             {
                 return res.status(404).json({ error: 'Lettura not found' });
@@ -183,7 +183,7 @@ class ServizioController
     {
         try
         {
-            const servizio = await Servizio.findById(req.params.servizioId).populate('fattura');
+            const servizio = await Servizio.findById(req.params.id).populate('fattura');
             if (!servizio || !servizio.fattura)
             {
                 return res.status(404).json({ error: 'Fattura not found' });
@@ -201,7 +201,7 @@ class ServizioController
     {
         try
         {
-            const servizio = await Servizio.findById(req.params.servizioId).populate('articolo');
+            const servizio = await Servizio.findById(req.params.id).populate('articolo');
             if (!servizio || !servizio.articolo)
             {
                 return res.status(404).json({ error: 'Articolo not found' });
