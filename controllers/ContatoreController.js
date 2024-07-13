@@ -10,6 +10,7 @@ class ContatoreController
     {
         try
         {
+            console.log('Request body:', req.body);
             const contatore = new Contatore(req.body);
 
             await contatore.save();
