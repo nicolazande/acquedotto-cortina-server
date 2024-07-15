@@ -1,259 +1,128 @@
-const Contatore = require('../models/Contatore');
-const Cliente = require('../models/Cliente');
-const Edificio = require('../models/Edificio');
-const Listino = require('../models/Listino');
-const Lettura = require('../models/Lettura');
+import React, { useEffect, useState } from 'react';
+import contatoreApi from '../../api/contatoreApi';
+import '../../styles/Contatore/ContatoreDetails.css';
 
-class ContatoreController
-{
-    static async createContatore(req, res)
-    {
-        try
-        {
-            console.log('Request body:', req.body);
-            const contatore = new Contatore(req.body);
+const ContatoreDetails = ({ contatoreId }) => {
+    const [contatore, setContatore] = useState(null);
+    const [letture, setLetture] = useState([]);
+    const [showLetture, setShowLetture] = useState(false);
 
-            await contatore.save();
-            res.status(201).json(contatore);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(400).json({ error: 'Error creating contatore' });
-        }
-    }
-
-    static async getContatori(req, res)
-    {
-        try
-        {
-            const contatori = await Contatore.find().populate('edificio listino cliente');
-            res.status(200).json(contatori);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching contatori' });
-        }
-    }
-
-    static async getContatore(req, res)
-    {
-        try
-        {
-            const contatore = await Contatore.findById(req.params.id).populate('edificio listino cliente');
-            if (!contatore)
-            {
-                return res.status(404).json({ error: 'Contatore not found' });
+    useEffect(() => {
+        const fetchContatore = async () => {
+            try {
+                const response = await contatoreApi.getContatore(contatoreId);
+                setContatore(response.data);
+            } catch (error) {
+                alert('Errore durante il recupero del contatore');
+                console.error(error);
             }
-            res.status(200).json(contatore);
+        };
+
+        if (contatoreId) {
+            fetchContatore();
         }
-        catch (error)
-        {
+    }, [contatoreId]);
+
+    const fetchLetture = async () => {
+        try {
+            const response = await contatoreApi.getLetture(contatoreId);
+            setLetture(response.data);
+            setShowLetture(true);
+        } catch (error) {
+            alert('Errore durante il recupero delle letture');
             console.error(error);
-            res.status(500).json({ error: 'Error fetching contatore' });
         }
+    };
+
+    if (!contatore) {
+        return <div>Seleziona un contatore per vedere i dettagli</div>;
     }
 
-    static async updateContatore(req, res)
-    {
-        try
-        {
-            const updateData = req.body;
-            const contatore = await Contatore.findByIdAndUpdate(req.params.id, updateData, { new: true });
+    return (
+        <div className="contatore-detail">
+            <h2>Dettagli Contatore</h2>
+            <table className="info-table">
+                <tbody>
+                    <tr>
+                        <th>Seriale</th>
+                        <td>{contatore.seriale}</td>
+                    </tr>
+                    <tr>
+                        <th>Seriale Interno</th>
+                        <td>{contatore.serialeInterno}</td>
+                    </tr>
+                    <tr>
+                        <th>Ultima Lettura</th>
+                        <td>{new Date(contatore.ultimaLettura).toLocaleDateString()}</td>
+                    </tr>
+                    <tr>
+                        <th>Attivo</th>
+                        <td>{contatore.attivo ? 'Sì' : 'No'}</td>
+                    </tr>
+                    <tr>
+                        <th>Condominiale</th>
+                        <td>{contatore.condominiale ? 'Sì' : 'No'}</td>
+                    </tr>
+                    <tr>
+                        <th>Sostituzione</th>
+                        <td>{contatore.sostituzione ? 'Sì' : 'No'}</td>
+                    </tr>
+                    <tr>
+                        <th>Subentro</th>
+                        <td>{contatore.subentro ? 'Sì' : 'No'}</td>
+                    </tr>
+                    <tr>
+                        <th>Data Installazione</th>
+                        <td>{new Date(contatore.dataInstallazione).toLocaleDateString()}</td>
+                    </tr>
+                    <tr>
+                        <th>Data Scadenza</th>
+                        <td>{new Date(contatore.dataScadenza).toLocaleDateString()}</td>
+                    </tr>
+                    <tr>
+                        <th>Note</th>
+                        <td>{contatore.note}</td>
+                    </tr>
+                    <tr>
+                        <th>Cliente</th>
+                        <td>{contatore.cliente ? `${contatore.cliente.nome} ${contatore.cliente.cognome}` : 'N/A'}</td>
+                    </tr>
+                    <tr>
+                        <th>Edificio</th>
+                        <td>{contatore.edificio ? contatore.edificio.descrizione : 'N/A'}</td>
+                    </tr>
+                </tbody>
+            </table>
+            <button onClick={fetchLetture} className="btn-show-letture">Visualizza Letture</button>
+            {showLetture && (
+                <div className="letture-section">
+                    <h3>Letture Associate</h3>
+                    <table className="letture-table">
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Valore</th>
+                                <th>UdM</th>
+                                <th>Fatturata</th>
+                                <th>Note</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {letture.map((lettura) => (
+                                <tr key={lettura._id}>
+                                    <td>{new Date(lettura.data).toLocaleDateString()}</td>
+                                    <td>{lettura.valore}</td>
+                                    <td>{lettura.UdM}</td>
+                                    <td><input type="checkbox" checked={lettura.fatturata} readOnly /></td>
+                                    <td>{lettura.note}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </div>
+    );
+};
 
-            res.status(200).json(contatore);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(400).json({ error: 'Error updating contatore' });
-        }
-    }
-
-    static async deleteContatore(req, res)
-    {
-        try
-        {
-            const contatore = await Contatore.findByIdAndDelete(req.params.id);
-
-            if (!contatore)
-            {
-                return res.status(404).json({ error: 'Contatore not found' });
-            }
-
-            res.status(204).json({ message: 'Contatore deleted' });
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error deleting contatore' });
-        }
-    }
-
-    static async associateCliente(req, res)
-    {
-        try
-        {
-            const contatore = await Contatore.findById(req.params.contatoreId);
-            const cliente = await Cliente.findById(req.params.clienteId);
-
-            if (!contatore || !cliente)
-            {
-                return res.status(404).json({ error: 'Contatore or Cliente not found' });
-            }
-
-            contatore.cliente = cliente._id;
-            await contatore.save();
-
-            res.status(200).json({ message: 'Cliente associated to Contatore', contatore });
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error associating cliente to contatore' });
-        }
-    }
-
-    static async associateEdificio(req, res)
-    {
-        try
-        {
-            const contatore = await Contatore.findById(req.params.contatoreId);
-            const edificio = await Edificio.findById(req.params.edificioId);
-
-            if (!contatore || !edificio)
-            {
-                return res.status(404).json({ error: 'Contatore or Edificio not found' });
-            }
-
-            contatore.edificio = edificio._id;
-            await contatore.save();
-
-            res.status(200).json({ message: 'Edificio associated to Contatore', contatore });
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error associating edificio to contatore' });
-        }
-    }
-
-    static async associateListino(req, res)
-    {
-        try
-        {
-            const contatore = await Contatore.findById(req.params.contatoreId);
-            const listino = await Listino.findById(req.params.listinoId);
-
-            if (!contatore || !listino)
-            {
-                return res.status(404).json({ error: 'Contatore or Listino not found' });
-            }
-
-            contatore.listino = listino._id;
-            await contatore.save();
-
-            res.status(200).json({ message: 'Listino associated to Contatore', contatore });
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error associating listino to contatore' });
-        }
-    }
-
-    static async associateLettura(req, res)
-    {
-        try
-        {
-            const contatore = await Contatore.findById(req.params.contatoreId);
-            const lettura = await Lettura.findById(req.params.letturaId);
-
-            if (!contatore || !lettura)
-            {
-                return res.status(404).json({ error: 'Contatore or Lettura not found' });
-            }
-
-            lettura.contatore = contatore._id;
-            await lettura.save();
-
-            res.status(200).json({ message: 'Lettura associated to Contatore', lettura });
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error associating lettura to contatore' });
-        }
-    }
-
-    static async getListinoAssociato(req, res)
-    {
-        try
-        {
-            const contatore = await Contatore.findById(req.params.id).populate('listino');
-            if (!contatore || !contatore.listino)
-            {
-                return res.status(404).json({ error: 'Contatore or Listino not found' });
-            }
-            res.status(200).json(contatore.listino);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching listino associato' });
-        }
-    }
-
-    static async getEdificioAssociato(req, res)
-    {
-        try
-        {
-            const contatore = await Contatore.findById(req.params.id).populate('edificio');
-            if (!contatore || !contatore.edificio)
-            {
-                return res.status(404).json({ error: 'Contatore or Edificio not found' });
-            }
-            res.status(200).json(contatore.edificio);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching edificio associato' });
-        }
-    }
-
-    static async getLettureAssociate(req, res)
-    {
-        try
-        {
-            const letture = await Lettura.find({ contatore: req.params.id });
-            res.status(200).json(letture);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching letture associate' });
-        }
-    }
-
-    static async getClienteAssociato(req, res)
-    {
-        try
-        {
-            const contatore = await Contatore.findById(req.params.id).populate('cliente');
-            if (!contatore || !contatore.cliente)
-            {
-                return res.status(404).json({ error: 'Contatore or Cliente not found' });
-            }
-            res.status(200).json(contatore.cliente);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching cliente associato' });
-        }
-    }
-}
-
-module.exports = ContatoreController;
+export default ContatoreDetails;
