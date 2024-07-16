@@ -24,7 +24,7 @@ class ListinoController
     {
         try
         {
-            const listini = await Listino.find().populate('fasce');
+            const listini = await Listino.find();
             res.status(200).json(listini);
         }
         catch (error)
@@ -38,7 +38,7 @@ class ListinoController
     {
         try
         {
-            const listino = await Listino.findById(req.params.id).populate('fasce');
+            const listino = await Listino.findById(req.params.id);
             if (!listino)
             {
                 return res.status(404).json({ error: 'Listino not found' });
