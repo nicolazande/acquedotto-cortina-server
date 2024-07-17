@@ -9,7 +9,6 @@ class ClienteController
         try
         {
             const cliente = new Cliente(req.body);
-
             await cliente.save();
             res.status(201).json(cliente);
         }
@@ -58,7 +57,6 @@ class ClienteController
         {
             const updateData = req.body;
             const cliente = await Cliente.findByIdAndUpdate(req.params.id, updateData, { new: true });
-
             res.status(200).json(cliente);
         }
         catch (error)
@@ -73,12 +71,10 @@ class ClienteController
         try
         {
             const cliente = await Cliente.findByIdAndDelete(req.params.id);
-
             if (!cliente)
             {
                 return res.status(404).json({ error: 'Cliente not found' });
             }
-
             res.status(204).json({ message: 'Cliente deleted' });
         }
         catch (error)
@@ -94,15 +90,12 @@ class ClienteController
         {
             const cliente = await Cliente.findById(req.params.clienteId);
             const contatore = await Contatore.findById(req.params.contatoreId);
-
             if (!cliente || !contatore)
             {
                 return res.status(404).json({ error: 'Cliente or Contatore not found' });
             }
-
             contatore.cliente = cliente._id;
             await contatore.save();
-
             res.status(200).json({ message: 'Contatore associated to Cliente', contatore });
         }
         catch (error)
@@ -118,15 +111,12 @@ class ClienteController
         {
             const cliente = await Cliente.findById(req.params.clienteId);
             const fattura = await Fattura.findById(req.params.fatturaId);
-
             if (!cliente || !fattura)
             {
                 return res.status(404).json({ error: 'Cliente or Fattura not found' });
             }
-
             fattura.cliente = cliente._id;
             await fattura.save();
-
             res.status(200).json({ message: 'Fattura associated to Cliente', fattura });
         }
         catch (error)

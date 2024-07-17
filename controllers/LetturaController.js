@@ -9,7 +9,6 @@ class LetturaController
         try
         {
             const lettura = new Lettura(req.body);
-
             await lettura.save();
             res.status(201).json(lettura);
         }
@@ -58,7 +57,6 @@ class LetturaController
         {
             const updateData = req.body;
             const lettura = await Lettura.findByIdAndUpdate(req.params.id, updateData, { new: true });
-
             res.status(200).json(lettura);
         }
         catch (error)
@@ -73,12 +71,10 @@ class LetturaController
         try
         {
             const lettura = await Lettura.findByIdAndDelete(req.params.id);
-
             if (!lettura)
             {
                 return res.status(404).json({ error: 'Lettura not found' });
             }
-
             res.status(204).json({ message: 'Lettura deleted' });
         }
         catch (error)
@@ -94,15 +90,12 @@ class LetturaController
         {
             const lettura = await Lettura.findById(req.params.letturaId);
             const contatore = await Contatore.findById(req.params.contatoreId);
-
             if (!lettura || !contatore)
             {
                 return res.status(404).json({ error: 'Lettura or Contatore not found' });
             }
-
             lettura.contatore = contatore._id;
             await lettura.save();
-
             res.status(200).json({ message: 'Contatore associated to Lettura', lettura });
         }
         catch (error)
@@ -118,15 +111,12 @@ class LetturaController
         {
             const lettura = await Lettura.findById(req.params.letturaId);
             const servizio = await Servizio.findById(req.params.servizioId);
-
             if (!lettura || !servizio)
             {
                 return res.status(404).json({ error: 'Lettura or Servizio not found' });
             }
-
             servizio.lettura = lettura._id;
             await servizio.save();
-
             res.status(200).json({ message: 'Servizio associated to Lettura', servizio });
         }
         catch (error)

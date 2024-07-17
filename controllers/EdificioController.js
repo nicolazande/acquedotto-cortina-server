@@ -8,7 +8,6 @@ class EdificioController
         try
         {
             const edificio = new Edificio(req.body);
-
             await edificio.save();
             res.status(201).json(edificio);
         }
@@ -57,7 +56,6 @@ class EdificioController
         {
             const updateData = req.body;
             const edificio = await Edificio.findByIdAndUpdate(req.params.id, updateData, { new: true });
-
             res.status(200).json(edificio);
         }
         catch (error)
@@ -72,12 +70,10 @@ class EdificioController
         try
         {
             const edificio = await Edificio.findByIdAndDelete(req.params.id);
-
             if (!edificio)
             {
                 return res.status(404).json({ error: 'Edificio not found' });
             }
-
             res.status(204).json({ message: 'Edificio deleted' });
         }
         catch (error)
@@ -93,15 +89,12 @@ class EdificioController
         {
             const edificio = await Edificio.findById(req.params.edificioId);
             const contatore = await Contatore.findById(req.params.contatoreId);
-
             if (!edificio || !contatore)
             {
                 return res.status(404).json({ error: 'Edificio or Contatore not found' });
             }
-
             contatore.edificio = edificio._id;
             await contatore.save();
-
             res.status(200).json({ message: 'Contatore associated to Edificio', contatore });
         }
         catch (error)
