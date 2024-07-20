@@ -108,7 +108,7 @@ class EdificioController
     {
         try
         {
-            const contatori = await Contatore.find({ edificio: req.params.edificioId });
+            const contatori = await Contatore.find({ edificio: req.params.edificioId }).populate('cliente');
             if (!contatori || contatori.length === 0)
             {
                 return res.status(404).json({ error: 'No contatori found for this edificio' });

@@ -149,10 +149,6 @@ class LetturaController
         try
         {
             const servizi = await Servizio.find({ lettura: req.params.id });
-            if (!servizi || servizi.length === 0)
-            {
-                return res.status(404).json({ error: 'No servizi found for this lettura' });
-            }
             res.status(200).json(servizi);
         }
         catch (error)
