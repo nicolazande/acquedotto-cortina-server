@@ -10,6 +10,7 @@ const fatturaRoutes = require('./fatturaRoutes');
 const letturaRoutes = require('./letturaRoutes');
 const listinoRoutes = require('./listinoRoutes');
 const servizioRoutes = require('./servizioRoutes');
+const scadenzaRoutes = require('./scadenzaRoutes');
 
 router.use('/articoli', articoloRoutes);
 router.use('/clienti', clienteRoutes);
@@ -20,5 +21,6 @@ router.use('/fatture', fatturaRoutes);
 router.use('/letture', letturaRoutes);
 router.use('/listini', listinoRoutes);
 router.use('/servizi', servizioRoutes);
+router.use('/scadenze', scadenzaRoutes);
 
 module.exports = router;

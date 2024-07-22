@@ -10,7 +10,6 @@ class ServizioController
         try
         {
             const servizio = new Servizio(req.body);
-
             await servizio.save();
             res.status(201).json(servizio);
         }
