@@ -13,7 +13,8 @@ const corsOptions =
     origin: 
     [
         'http://localhost:3000',
-        'https://main--acquedotto-cortina-client.netlify.app'
+        'https://main--acquedotto-cortina-client.netlify.app',
+        'https://acquedotto-cortina-client.netlify.app'
     ],
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
