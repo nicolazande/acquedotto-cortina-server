@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 
+const authRoutes = require('./authRoutes');
 const articoloRoutes = require('./articoloRoutes');
 const clienteRoutes = require('./clienteRoutes');
 const contatoreRoutes = require('./contatoreRoutes');
@@ -12,6 +13,7 @@ const listinoRoutes = require('./listinoRoutes');
 const servizioRoutes = require('./servizioRoutes');
 const scadenzaRoutes = require('./scadenzaRoutes');
 
+router.use('/auth', authRoutes);
 router.use('/articoli', articoloRoutes);
 router.use('/clienti', clienteRoutes);
 router.use('/contatori', contatoreRoutes);
