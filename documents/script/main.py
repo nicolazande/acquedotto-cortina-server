@@ -133,7 +133,7 @@ def parse_client_details(html):
         "cognome": details.get("Cognome"),
         "nome": details.get("Nome"),
         "sesso": details.get("Sesso"),
-        "socio": "true" if details.get("Socio") == "true" else "false",
+        "socio": True if details.get("Socio") == "true" else False,
         "quote": parse_number(details.get("Quote")),
         "con_commerciali": details.get("Con Commerciali"),
         "data_nascita": parse_date(details.get("Data di Nascita")),
@@ -163,7 +163,7 @@ def parse_client_details(html):
         "data_mandato_sdd": parse_date(details.get("altri_dati", {}).get("Data Mandato SDD")),
         "email_pec": details.get("altri_dati", {}).get("email PEC"),
         "codice_destinatario": details.get("altri_dati", {}).get("Codice Destinatario"),
-        "fattura_elettronica": "true" if details.get("altri_dati", {}).get("Fattura Elettronica") == "true" else "false",
+        "fattura_elettronica": True if details.get("altri_dati", {}).get("Fattura Elettronica") == "true" else False,
         "codice_cliente_erp": details.get("altri_dati", {}).get("Codice Cliente ERP"),
         "iban": details.get("altri_dati", {}).get("IBAN"),
         "note": details.get("altri_dati", {}).get("Note")
@@ -197,7 +197,7 @@ def parse_letture_from_counter(html, counter_mongo_id):
                 "fatturata": True if details.get("Fatturata") == "true" else False,
                 "tipo": details.get("Tipo"),
                 "note": details.get("Note"),
-                "counter": counter_mongo_id
+                "contatore": counter_mongo_id
             }
             letture.append(mapped_details)
 
@@ -246,13 +246,9 @@ def fetch_client_and_counters_with_letture(session_cookie, client_id, db):
     client_url = f"https://zuel.fast.tools/Customers/Details/{client_id}"
     client_html = fetch_html(session_cookie, client_url)
     client_details = parse_client_details(client_html)
-
-    client = {"client_id": client_id, **client_details}
-    client_mongo_id = db.clients.insert_one(client).inserted_id
-
+    client_mongo_id = db.clients.insert_one(client_details).inserted_id
     # Parse and fetch counters with details
     parse_and_fetch_counters_from_client(client_html, session_cookie, client_mongo_id, db)
-
     print(f"Inserted Client {client_id} and all associated Counters and Letture.")
 
 def parse_edifici_list(html):
@@ -515,7 +511,7 @@ def fetch_all_clients(session_cookie, db):
     old_size = 0
     page = 1
 
-    while True and page < 2:
+    while True:
         print(f"Fetching clients list, page {page}...")
         client_list_url = f"https://zuel.fast.tools/Customers?page={page}"
         client_list_html = fetch_html(session_cookie, client_list_url)
@@ -695,7 +691,7 @@ def parse_fattura_list(html):
     return fattura_ids
 
 def parse_servizio_details(html):
-    print("Parsing fattura details...")
+    print("Parsing servizio details...")
     soup = BeautifulSoup(html, 'html.parser')
     details = {}
 
@@ -750,7 +746,7 @@ def parse_fattura_details(html):
     mapped_details = {
         "tipo_documento": details.get("Tipo Documento"),
         "ragione_sociale": details.get("Ragione Sociale"),
-        "confermata": details["Confermata"],
+        "confermata": True if details["Confermata"] == "true" else False,
         "anno": parse_number(details.get("Anno")),
         "numero": parse_number(details.get("Numero")),
         "data_fattura": parse_date(details.get("Data Fattura")),
@@ -789,22 +785,22 @@ def parse_servizi(html, fattura_mongo_id, session_cookie, db):
                     servizio_html = fetch_html(session_cookie, servizio_url)
                     servizio_details = parse_servizio_details(servizio_html)
 
-                    lettura_id = servizio_details.get("id_lettura")
-                    if lettura_id:
-                        lettura = db.letture.find_one({"id_lettura": lettura_id}, {"_id": 1})
+                    id_lettura = servizio_details.get("id_lettura")
+                    lettura_id = None
+                    if id_lettura:
+                        lettura = db.letture.find_one({"id_lettura": id_lettura})
                         if lettura:
-                            servizio_details["lettura"] = lettura["_id"]
-                        else:
-                            servizio_details["lettura"] = None
+                            lettura_id = lettura["_id"]
+                    servizio_details["lettura"] = lettura_id
                     del servizio_details["id_lettura"]
 
-                    articolo_codice = servizio_details.get("nome_articolo")
-                    if articolo_codice:
-                        articolo = db.articoli.find_one({"codice": articolo_codice})
+                    nome_articolo = servizio_details.get("nome_articolo")
+                    articolo_id = None
+                    if nome_articolo:
+                        articolo = db.articoli.find_one({"codice": nome_articolo})
                         if articolo:
-                            servizio_details["articolo"] = articolo["_id"]
-                        else:
-                            servizio_details["articolo"] = None
+                            articolo_id = articolo["_id"]
+                    servizio_details["articolo"] = articolo_id
                     del servizio_details["nome_articolo"]
 
                     servizio_details["fattura"] = fattura_mongo_id
@@ -817,7 +813,7 @@ def fetch_fattura_and_servizi(session_cookie, fattura_id, db):
     fattura_url = f"https://zuel.fast.tools/DataHeaderInvoices/Details/{fattura_id}"
     fattura_html = fetch_html(session_cookie, fattura_url)
     fattura_details = parse_fattura_details(fattura_html)
-
+    # cliente
     nome = fattura_details.get("nome", "")
     cognome = fattura_details.get("cognome", "")
     client = db.clients.find_one({"nome": nome, "cognome": cognome})
@@ -827,22 +823,29 @@ def fetch_fattura_and_servizi(session_cookie, fattura_id, db):
         fattura_details["cliente"] = None
     del fattura_details["cognome"]
     del fattura_details["nome"]
-
+    # scadenza
+    scadenza = db.scadenze.find_one({
+        "anno": fattura_details.get("anno"),
+        "numero": fattura_details.get("numero"),
+        })
+    if scadenza:
+        fattura_details["scadenza"] = scadenza["_id"]
+    else:
+        fattura_details["scadenza"] = None
+    # update database
     fattura_mongo_id = db.fatture.insert_one(fattura_details).inserted_id
-
+    # servizi
     servizi = parse_servizi(fattura_html, fattura_mongo_id, session_cookie, db)
     if servizi:
         db.servizi.insert_many(servizi)
-
     print(f"Inserted Fattura {fattura_id} and {len(servizi)} Servizi.")
-
 
 def fetch_all_fatture(session_cookie, db):
     fattura_ids = set()
     old_size = 0
     page = 1
 
-    while True and page < 3:
+    while True:
         print(f"Fetching fattura list, page {page}...")
         fattura_list_url = f"https://zuel.fast.tools/DataHeaderInvoices?grid-page={page}"
         fattura_list_html = fetch_html(session_cookie, fattura_list_url)
@@ -877,6 +880,93 @@ def fetch_all_fatture(session_cookie, db):
     print("All fatture and servizi have been processed.")
     return fattura_id_list
 
+def parse_scadenze_table(html):
+    """
+    Parses the Scadenze table grid directly from the HTML.
+    """
+    print("Parsing Scadenze table grid...")
+    soup = BeautifulSoup(html, 'html.parser')
+    scadenze = []
+
+    # Find the table containing the Scadenze data
+    table = soup.find('table', class_='grid-table')
+    if not table:
+        print("No Scadenze table found.")
+        return scadenze
+
+    # Extract the headers
+    headers = [header.text.strip() for header in table.find_all('th')]
+
+    # Iterate through the rows of the table
+    rows = table.find_all('tr', class_='grid-row')
+    for row in rows:
+        columns = row.find_all('td')
+        scadenza_details = {}
+
+        # Map columns to their respective headers
+        for index, column in enumerate(columns):
+            if index < len(headers):
+                header = headers[index]
+                value = column.text.strip()
+                scadenza_details[header] = value
+
+        # Map and format the details
+        mapped_details = {
+            "scadenza": parse_date(scadenza_details.get("Scadenza")),
+            "saldo": parse_number(scadenza_details.get("Saldo")),
+            "pagamento": parse_date(scadenza_details.get("Pagamento")),
+            "ritardo": parse_number(scadenza_details.get("Ritardo")),
+            "anno": parse_number(scadenza_details.get("Anno")),
+            "numero": parse_number(scadenza_details.get("N.")),
+            "cognome": scadenza_details.get("Cognome"),
+            "nome": scadenza_details.get("Nome"),
+            "totale": parse_number(scadenza_details.get("Totale")),
+            "solleciti": parse_number(scadenza_details.get("Solleciti")),
+        }
+        
+        scadenze.append(mapped_details)
+
+    print(f"Parsed {len(scadenze)} Scadenze entries.")
+    return scadenze
+
+def fetch_all_scadenze(session_cookie, db):
+    """
+    Fetches and parses all Scadenze data from the grid across all pages.
+    """
+    old_size = 0
+    page = 1
+    all_scadenze = []
+
+    while True and page < 28:
+        print(f"Fetching Scadenze list, page {page}...")
+        scadenze_url = f"https://zuel.fast.tools/DataHeaderInvoices/Scadenze?grid-page={page}"
+        html = fetch_html(session_cookie, scadenze_url)
+        
+        # Parse the Scadenze table on the current page
+        page_scadenze = parse_scadenze_table(html)
+
+        # Update Scadenze and old size
+        all_scadenze.extend(page_scadenze)
+        
+        # Stop if no new Scadenze found
+        if not page_scadenze or len(all_scadenze) == old_size:
+            print(f"No new Scadenze found on page {page}. Stopping.")
+            break
+
+        old_size = len(all_scadenze)
+        print(f"Page {page}: Found {len(page_scadenze)} Scadenze. Total so far: {old_size}.")
+        page += 1
+
+    # Insert Scadenze into the database
+    inserted_count = 0
+    for scadenza in all_scadenze:
+        if True: #not db.scadenze.find_one({"data_pagamento": scadenza["data_pagamento"]}):
+            db.scadenze.insert_one(scadenza)
+            inserted_count += 1
+
+    print(f"Stored {inserted_count}/{len(all_scadenze)} new Scadenze.")
+    return all_scadenze
+
 
 if __name__ == "__main__":
     email = 'zuel@gesco.it'
@@ -890,8 +980,9 @@ if __name__ == "__main__":
             print("Session cookie retrieved successfully!")
             fetch_all_listini(session_cookie, db)
             fetch_all_articoli(session_cookie, db)
-            #fetch_all_clients(session_cookie, db)
-            #fetch_all_edifici(session_cookie, db)
+            fetch_all_clients(session_cookie, db)
+            fetch_all_edifici(session_cookie, db)
+            fetch_all_scadenze(session_cookie, db)
             fetch_all_fatture(session_cookie, db)
         else:
             print("Failed to retrieve session cookie.")

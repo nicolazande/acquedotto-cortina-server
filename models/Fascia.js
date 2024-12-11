@@ -7,8 +7,8 @@ const fasciaSchema = new Schema(
     min: { type: Number, required: true },
     max: { type: Number, required: true },
     prezzo: { type: Number, required: true },
+    inizio: Date,
     scadenza: Date,
-    fisso: Number,
     listino: { type: Schema.Types.ObjectId, ref: 'Listino' }
 });
 

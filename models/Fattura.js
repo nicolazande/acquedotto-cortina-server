@@ -3,14 +3,23 @@ const Schema = mongoose.Schema;
 
 const fatturaSchema = new Schema(
 {
-    tipo: { type: String, required: true },
-    ragioneSociale: { type: String, required: true },
+    tipo_documento: { type: String, required: true },
+    ragione_sociale: { type: String, required: true },
+    confermata: Boolean,
     anno: { type: Number, required: true },
     numero: { type: Number, required: true },
-    data: { type: Date, required: true },
-    confermata: { type: Boolean, default: false },
+    data_fattura: { type: Date, required: true },
     codice: { type: String, required: true },
-    cliente: { type: Schema.Types.ObjectId, ref: 'Cliente' }
+    destinazione: String,
+    imponibile: Number,
+    iva: Number,
+    sconto_imponibile: Number,
+    totale_fattura: Number,
+    data_fattura_elettronica: Date,
+    data_invio_fattura: Date,
+    tipo_pagamento: String,
+    cliente: { type: Schema.Types.ObjectId, ref: 'Cliente' },
+    scadenza: { type: Schema.Types.ObjectId, ref: 'Scadenza' }
 });
 
 module.exports = mongoose.model('Fattura', fatturaSchema);

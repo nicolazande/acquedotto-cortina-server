@@ -3,13 +3,13 @@ const Schema = mongoose.Schema;
 
 const letturaSchema = new Schema(
 {
-    cliente: { type: String }, //ridondante
-    tipo: { type: String, required: true },
-    data: { type: Date, required: true },
-    valore: { type: Number, required: true },
-    UdM: { type: String, required: true },
+    id_lettura: { type: String }, //ridondante
+    data_lettura: { type: Date, required: true },
+    unita_misura: { type: String, required: true },
+    consumo: { type: Number, required: true },
     fatturata: { type: Boolean, default: false },
-    note: String,
+    tipo: { type: String, required: true },
+    note: { type: String, required: false },
     contatore: { type: Schema.Types.ObjectId, ref: 'Contatore' }
 });
 

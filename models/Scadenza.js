@@ -3,12 +3,16 @@ const Schema = mongoose.Schema;
 
 const scadenzaSchema = new Schema(
 {
-    dataScadenza: { type: Date, required: true },
-    importo: { type: Number, required: true },
-    saldo: { type: Boolean, default: false },
-    dataPagamento: { type: Date },
-    ritardo: { type: Boolean, default: false },
-    fattura: { type: Schema.Types.ObjectId, ref: 'Fattura' }
+    scadenza: { type: Date, required: true },
+    saldo: { type: Boolean, required: true },
+    pagamento: { type: Date, required: true },
+    ritardo: { type: Number, required: false },
+    anno: { type: Number, required: true },
+    numero: { type: Number, required: true },
+    cognome: { type: String, required: true },
+    nome: { type: String, required: true },
+    totale: { type: Number, required: true },
+    solleciti: { type: Number, required: false },
 });
 
 module.exports = mongoose.model('Scadenza', scadenzaSchema);
