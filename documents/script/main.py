@@ -194,11 +194,12 @@ def parse_letture_from_counter(html, counter_mongo_id):
                 "data_lettura": parse_date(details.get("Data Lettura")),
                 "unita_misura": details.get("UM"),
                 "consumo": parse_number(details.get("Consumo")),
-                "fatturata": True if details.get("Fatturata") == "true" else False,
+                "fatturata": True if details.get("Fatturata", "").lower() == "true" else False,
                 "tipo": details.get("Tipo"),
                 "note": details.get("Note"),
                 "contatore": counter_mongo_id
             }
+
             letture.append(mapped_details)
 
     return letture
