@@ -23,7 +23,7 @@ class ScadenzaController
     {
         try
         {
-            const scadenze = await Scadenza.find().populate('fattura');
+            const scadenze = await Scadenza.find();
             res.status(200).json(scadenze);
         }
         catch (error)
@@ -37,7 +37,7 @@ class ScadenzaController
     {
         try
         {
-            const scadenza = await Scadenza.findById(req.params.id).populate('fattura');
+            const scadenza = await Scadenza.findById(req.params.id);
             if (!scadenza)
             {
                 return res.status(404).json({ error: 'Scadenza not found' });
@@ -99,8 +99,8 @@ class ScadenzaController
                 return res.status(404).json({ error: 'Scadenza or Fattura not found' });
             }
 
-            scadenza.fattura = fattura._id;
-            await scadenza.save();
+            fattura.scadenza = scadenza._id;
+            await fattura.save();
 
             res.status(200).json({ message: 'Fattura associated to Scadenza', scadenza });
         }
@@ -115,12 +115,9 @@ class ScadenzaController
     {
         try
         {
-            const scadenza = await Scadenza.findById(req.params.id).populate('fattura');
-            if (!scadenza || !scadenza.fattura)
-            {
-                return res.status(404).json({ error: 'Fattura not found' });
-            }
-            res.status(200).json(scadenza.fattura);
+            console.log('Fetching Fattura for Scadenza ID:', req.params.id);
+            const fattura = await Fattura.findOne({ scadenza: req.params.id });
+            res.status(200).json(fattura);
         }
         catch (error)
         {

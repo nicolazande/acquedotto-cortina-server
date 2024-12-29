@@ -247,7 +247,7 @@ def fetch_client_and_counters_with_letture(session_cookie, client_id, db):
     client_url = f"https://zuel.fast.tools/Customers/Details/{client_id}"
     client_html = fetch_html(session_cookie, client_url)
     client_details = parse_client_details(client_html)
-    client_mongo_id = db.clients.insert_one(client_details).inserted_id
+    client_mongo_id = db.clienti.insert_one(client_details).inserted_id
     # Parse and fetch counters with details
     parse_and_fetch_counters_from_client(client_html, session_cookie, client_mongo_id, db)
     print(f"Inserted Client {client_id} and all associated Counters and Letture.")
@@ -316,9 +316,9 @@ def parse_edificio_details(html, edificio_id, edificio_mongo_id, db):
             # Match Contatori in the database by Seriale
             seriale = counter_data.get("Seriale")
             if seriale:
-                existing_counter = db.counters.find_one({"seriale": seriale})
+                existing_counter = db.contatori.find_one({"seriale": seriale})
                 if existing_counter:
-                    db.counters.update_one(
+                    db.contatori.update_one(
                         {"_id": existing_counter["_id"]},
                         {"$set": {"edificio": edificio_mongo_id}}
                     )
@@ -370,7 +370,7 @@ def parse_and_fetch_counters_from_client(html, session_cookie, client_mongo_id, 
                     counter_details["cliente"] = client_mongo_id  # Reference to the client
                     
                     # Insert into the database
-                    counter_mongo_id = db.counters.insert_one(counter_details).inserted_id
+                    counter_mongo_id = db.contatori.insert_one(counter_details).inserted_id
 
                     # Parse and insert Letture
                     letture = parse_letture_from_counter(counter_html, counter_mongo_id)
@@ -817,18 +817,24 @@ def fetch_fattura_and_servizi(session_cookie, fattura_id, db):
     # cliente
     nome = fattura_details.get("nome", "")
     cognome = fattura_details.get("cognome", "")
-    client = db.clients.find_one({"nome": nome, "cognome": cognome})
+    client = db.clienti.find_one({"nome": nome, "cognome": cognome})
+    # scadenza
+    scadenza = db.scadenze.find_one({
+        "anno": fattura_details.get("anno"),
+        "totale": fattura_details.get("totale_fattura"),
+        "nome": nome,
+        "cognome": cognome
+    })
+
+    if scadenza:
+        print("(nome = %s, cognome = %s) (scdenza nome = %s, scadenza cognome = %s)" % (nome, cognome, scadenza["nome"], scadenza["cognome"]))
     if client:
         fattura_details["cliente"] = client["_id"]
     else:
         fattura_details["cliente"] = None
     del fattura_details["cognome"]
     del fattura_details["nome"]
-    # scadenza
-    scadenza = db.scadenze.find_one({
-        "anno": fattura_details.get("anno"),
-        "numero": fattura_details.get("numero"),
-        })
+    
     if scadenza:
         fattura_details["scadenza"] = scadenza["_id"]
     else:

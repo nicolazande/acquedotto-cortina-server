@@ -1,6 +1,7 @@
 const Fattura = require('../models/Fattura');
 const Cliente = require('../models/Cliente');
 const Servizio = require('../models/Servizio');
+const Scadenza = require('../models/Scadenza');
 
 class FatturaController
 {
@@ -136,6 +137,29 @@ class FatturaController
         }
     }
 
+    static async associateScadenza(req, res)
+    {
+        try
+        {
+            const fattura = await Fattura.findById(req.params.fatturaId);
+            const scadenza = await Scadenza.findById(req.params.scadenzaId);
+
+            if (!fattura || !scadenza)
+            {
+                return res.status(404).json({ error: 'Fattura or Scadenza not found' });
+            }
+
+            await scadenza.save();
+
+            res.status(200).json({ message: 'Scadenza associated to Fattura', scadenza });
+        }
+        catch (error)
+        {
+            console.error(error);
+            res.status(500).json({ error: 'Error associating scadenza to fattura' });
+        }
+    }
+
     static async getServiziAssociati(req, res)
     {
         try
@@ -165,6 +189,24 @@ class FatturaController
         {
             console.error(error);
             res.status(500).json({ error: 'Error fetching cliente associato' });
+        }
+    }
+
+    static async getScadenzaAssociata(req, res)
+    {
+        try
+        {
+            const fattura = await Fattura.findById(req.params.id).populate('scadenza');
+            if (!fattura || !fattura.scadenza)
+            {
+                return res.status(404).json({ error: 'Cliente not found' });
+            }
+            res.status(200).json(fattura.scadenza);
+        }
+        catch (error)
+        {
+            console.error(error);
+            res.status(500).json({ error: 'Error fetching scadenza associato' });
         }
     }
 }
