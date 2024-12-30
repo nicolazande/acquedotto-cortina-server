@@ -5,7 +5,7 @@ const articoloSchema = new Schema(
   {
     codice: { type: String, required: true },
     descrizione: { type: String, required: true },
-    iva: { type: Number, required: true }
+    iva: { type: String, required: true }
   },
   {
     collection: 'articoli'
