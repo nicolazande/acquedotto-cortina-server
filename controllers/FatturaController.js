@@ -5,21 +5,34 @@ const Scadenza = require('../models/Scadenza');
 
 class FatturaController
 {
-    static async createFattura(req, res)
-    {
-        try
-        {
-            const fattura = new Fattura(req.body);
-
+    static async createFattura(req, res) {
+        try {
+            const currentYear = new Date().getFullYear(); // Get the current year
+    
+            // Find the highest numero for the current year
+            const highestFattura = await Fattura.findOne({ anno: currentYear })
+                .sort({ numero: -1 })
+                .limit(1)
+                .select('numero');
+    
+            // Determine the new numero
+            const newNumero = highestFattura ? highestFattura.numero + 1 : 0;
+    
+            // Create the new fattura with anno and numero
+            const fattura = new Fattura({
+                ...req.body,
+                anno: currentYear,
+                numero: newNumero,
+            });
+    
             await fattura.save();
+    
             res.status(201).json(fattura);
-        }
-        catch (error)
-        {
+        } catch (error) {
             console.error(error);
             res.status(400).json({ error: 'Error creating fattura' });
         }
-    }
+    }    
 
     static async getFatture(req, res) {
         try {
