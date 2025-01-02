@@ -210,7 +210,8 @@ class FatturaController
                 return res.status(404).json({ error: 'Fattura or Scadenza not found' });
             }
 
-            await scadenza.save();
+            fattura.scadenza = scadenza._id;
+            await fattura.save();
 
             res.status(200).json({ message: 'Scadenza associated to Fattura', scadenza });
         }

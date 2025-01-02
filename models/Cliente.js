@@ -43,7 +43,7 @@ const clienteSchema = new Schema(
         note: String,
     },
     {
-    collection: 'clienti'
+        collection: 'clienti'
     }
 );
 
