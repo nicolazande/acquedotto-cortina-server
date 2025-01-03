@@ -241,9 +241,9 @@ class FatturaController
         try
         {
             const fattura = await Fattura.findById(req.params.id).populate('cliente');
-            if (!fattura || !fattura.cliente)
+            if (!fattura)
             {
-                return res.status(404).json({ error: 'Cliente not found' });
+                return res.status(404).json({ error: 'Fattura not found' });
             }
             res.status(200).json(fattura.cliente);
         }
@@ -259,9 +259,9 @@ class FatturaController
         try
         {
             const fattura = await Fattura.findById(req.params.id).populate('scadenza');
-            if (!fattura || !fattura.scadenza)
+            if (!fattura)
             {
-                return res.status(404).json({ error: 'Cliente not found' });
+                return res.status(404).json({ error: 'Fattura not found' });
             }
             res.status(200).json(fattura.scadenza);
         }

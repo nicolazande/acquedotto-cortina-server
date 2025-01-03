@@ -161,7 +161,6 @@ class ScadenzaController
     {
         try
         {
-            console.log('Fetching Fattura for Scadenza ID:', req.params.id);
             const fattura = await Fattura.findOne({ scadenza: req.params.id });
             res.status(200).json(fattura);
         }

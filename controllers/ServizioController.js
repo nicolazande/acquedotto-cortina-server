@@ -213,9 +213,9 @@ class ServizioController
         try
         {
             const servizio = await Servizio.findById(req.params.id).populate('lettura');
-            if (!servizio || !servizio.lettura)
+            if (!servizio)
             {
-                return res.status(404).json({ error: 'Lettura not found' });
+                return res.status(404).json({ error: 'Servizio not found' });
             }
             res.status(200).json(servizio.lettura);
         }
@@ -231,9 +231,9 @@ class ServizioController
         try
         {
             const servizio = await Servizio.findById(req.params.id).populate('fattura');
-            if (!servizio || !servizio.fattura)
+            if (!servizio)
             {
-                return res.status(404).json({ error: 'Fattura not found' });
+                return res.status(404).json({ error: 'Servizio not found' });
             }
             res.status(200).json(servizio.fattura);
         }
@@ -249,9 +249,9 @@ class ServizioController
         try
         {
             const servizio = await Servizio.findById(req.params.id).populate('articolo');
-            if (!servizio || !servizio.articolo)
+            if (!servizio)
             {
-                return res.status(404).json({ error: 'Articolo not found' });
+                return res.status(404).json({ error: 'Servizio not found' });
             }
             res.status(200).json(servizio.articolo);
         }

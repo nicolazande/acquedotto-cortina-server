@@ -240,9 +240,9 @@ class ContatoreController
         try
         {
             const contatore = await Contatore.findById(req.params.id).populate('listino');
-            if (!contatore || !contatore.listino)
+            if (!contatore)
             {
-                return res.status(404).json({ error: 'Contatore or Listino not found' });
+                return res.status(404).json({ error: 'Contatore not found' });
             }
             res.status(200).json(contatore.listino);
         }
@@ -258,9 +258,9 @@ class ContatoreController
         try
         {
             const contatore = await Contatore.findById(req.params.id).populate('edificio');
-            if (!contatore || !contatore.edificio)
+            if (!contatore)
             {
-                return res.status(404).json({ error: 'Contatore or Edificio not found' });
+                return res.status(404).json({ error: 'Contatore not found' });
             }
             res.status(200).json(contatore.edificio);
         }
@@ -290,9 +290,9 @@ class ContatoreController
         try
         {
             const contatore = await Contatore.findById(req.params.id).populate('cliente');
-            if (!contatore || !contatore.cliente)
+            if (!contatore)
             {
-                return res.status(404).json({ error: 'Contatore or Cliente not found' });
+                return res.status(404).json({ error: 'Contatore not found' });
             }
             res.status(200).json(contatore.cliente);
         }

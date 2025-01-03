@@ -164,9 +164,9 @@ class FasciaController
         try
         {
             const fascia = await Fascia.findById(req.params.id).populate('listino');
-            if (!fascia || !fascia.listino)
+            if (!fascia)
             {
-                return res.status(404).json({ error: 'Fascia or Listino not found' });
+                return res.status(404).json({ error: 'Fascia not found' });
             }
             res.status(200).json(fascia.listino);
         }
