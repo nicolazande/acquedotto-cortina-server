@@ -14,9 +14,20 @@ const userSchema = new mongoose.Schema(
             type: String,
             required: true,
         },
+        email: {
+            type: String,
+            required: false,
+            unique: true,
+            trim: true,
+        },
+        numero_telefono: {
+            type: String,
+            required: false,
+            unique: true,
+        },
     },
     {
-        collection: 'utenti'
+        collection: 'utenti', // Collection name in the database
     }
 );
 
