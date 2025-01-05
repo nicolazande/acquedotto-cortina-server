@@ -692,6 +692,14 @@ def parse_fattura_list(html):
     return fattura_ids
 
 def parse_servizio_details(html):
+
+    def extract_metri_cubi(value):
+        if value:
+            parts = value.split("di", 1)
+            if parts and len(parts) > 1:
+                return parts[0].strip()
+        return None
+    
     print("Parsing servizio details...")
     soup = BeautifulSoup(html, 'html.parser')
     details = {}
@@ -711,7 +719,7 @@ def parse_servizio_details(html):
         "descrizione": details.get("Descrizione"),
         "tipo_tariffa": details.get("Tipo tariffa"),
         "tipo_attivita": details.get("Tipo attività"),
-        "metri_cubi": parse_number(details.get("m³")),
+        "metri_cubi": parse_number(extract_metri_cubi(details.get("m³"))),
         "prezzo": parse_number(details.get("Prezzo")),
         "valore_unitario": parse_number(details.get("Valore Unitario")),
         "tipo_quota": details.get("Tipo Quota"),
@@ -979,7 +987,7 @@ if __name__ == "__main__":
     email = 'zuel@gesco.it'
     password = '!Zz123456'
     mongo_client = MongoClient("mongodb://localhost:27017/")
-    db = mongo_client['gesco']
+    db = mongo_client['gigi']
 
     try:
         session_cookie = get_session_cookie(email, password)

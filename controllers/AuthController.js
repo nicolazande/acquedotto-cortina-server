@@ -4,7 +4,11 @@ const jwt = require('jsonwebtoken');
 // Environment variable for JWT secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 
-// Register a new user
+// Health check route
+const healthCheck = (req, res) => {
+    res.status(200).json({ status: 'ok' });
+};
+
 // Register a new user
 const register = async (req, res) => {
     const { username, password } = req.body;
@@ -105,4 +109,4 @@ const updateProfile = async (req, res) => {
 };
 
 
-module.exports = { register, login, getProfile, updateProfile };
+module.exports = { register, login, getProfile, updateProfile, healthCheck };
