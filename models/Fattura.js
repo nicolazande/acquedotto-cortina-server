@@ -18,6 +18,7 @@ const fatturaSchema = new Schema(
         data_fattura_elettronica: { type: Date, required: false },
         data_invio_fattura: { type: Date, required: false },
         tipo_pagamento: { type: String, required: false },
+        nome_cliente: { type: String, required: false },
         cliente: { type: Schema.Types.ObjectId, ref: 'Cliente' },
         scadenza: { type: Schema.Types.ObjectId, ref: 'Scadenza' }
     },

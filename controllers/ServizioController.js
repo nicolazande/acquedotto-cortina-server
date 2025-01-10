@@ -25,6 +25,8 @@ class ServizioController
             const page = parseInt(req.query.page, 10) || 1; // Default to page 1
             const limit = parseInt(req.query.limit, 10) || 50; // Default to 50 items per page
             const search = req.query.search || ''; // Search term, default empty string
+            const sortField = req.query.sortField || 'descrizione'; // Default sort field
+            const sortOrder = req.query.sortOrder === 'desc' ? -1 : 1; // Default ascending order
     
             const skip = (page - 1) * limit;
     
@@ -64,9 +66,10 @@ class ServizioController
             // Fetch the total count of documents matching the search
             const totalItems = await Servizio.countDocuments(query);
     
-            // Fetch the paginated data
+            // Fetch the paginated and sorted data
             const servizi = await Servizio.find(query)
                 .populate('lettura articolo fattura') // Populate referenced fields
+                .sort({ [sortField]: sortOrder }) // Apply sorting
                 .skip(skip)
                 .limit(limit);
     
@@ -80,7 +83,7 @@ class ServizioController
             console.error('Error in getServizi:', error); // Log the full error
             res.status(500).json({ error: 'Error fetching servizi', details: error.message });
         }
-    }
+    }    
     
     static async getServizio(req, res)
     {

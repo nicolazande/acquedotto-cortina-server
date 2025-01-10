@@ -25,6 +25,8 @@ class ListinoController
             const page = parseInt(req.query.page, 10) || 1; // Default to page 1
             const limit = parseInt(req.query.limit, 10) || 50; // Default to 50 items per page
             const search = req.query.search || ''; // Search term, default empty string
+            const sortField = req.query.sortField || 'categoria'; // Default sort field
+            const sortOrder = req.query.sortOrder === 'desc' ? -1 : 1; // Default ascending order
     
             const skip = (page - 1) * limit;
     
@@ -33,7 +35,7 @@ class ListinoController
             if (search) {
                 const searchRegex = { $regex: search, $options: 'i' };
     
-                // Dynamically build a query for string, number, and date fields
+                // Dynamically build a query for string fields
                 query = {
                     $or: Object.keys(Listino.schema.paths).map((key) => {
                         const fieldType = Listino.schema.paths[key].instance;
@@ -41,16 +43,6 @@ class ListinoController
                         // String fields use regex
                         if (fieldType === 'String') {
                             return { [key]: searchRegex };
-                        }
-    
-                        // Number fields use direct equality if search is a valid number
-                        if (fieldType === 'Number' && !isNaN(search)) {
-                            return { [key]: Number(search) };
-                        }
-    
-                        // Date fields use $eq with valid date
-                        if (fieldType === 'Date' && !isNaN(Date.parse(search))) {
-                            return { [key]: new Date(search) };
                         }
     
                         // Skip unsupported field types
@@ -64,8 +56,9 @@ class ListinoController
             // Fetch the total count of documents matching the search
             const totalItems = await Listino.countDocuments(query);
     
-            // Fetch the paginated data
+            // Fetch the paginated and sorted data
             const listini = await Listino.find(query)
+                .sort({ [sortField]: sortOrder }) // Apply sorting
                 .skip(skip)
                 .limit(limit);
     
