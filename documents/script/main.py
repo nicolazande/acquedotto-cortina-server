@@ -1,4 +1,10 @@
+import os
+import tempfile
+from pathlib import Path
+
+from dotenv import load_dotenv
 from pymongo import MongoClient
+from pymongo.errors import ConfigurationError
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
@@ -8,6 +14,46 @@ import requests
 from bson import ObjectId
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+
+SERVER_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(SERVER_ROOT / ".env")
+
+IMPORT_COLLECTIONS = [
+    "articoli",
+    "clienti",
+    "contatori",
+    "edifici",
+    "fasce",
+    "fatture",
+    "letture",
+    "listini",
+    "scadenze",
+    "servizi",
+]
+
+def env_flag(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+def get_database():
+    mongo_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017/acquedotto-zuel")
+    mongo_db = os.getenv("MONGODB_DB")
+    client = MongoClient(mongo_uri)
+
+    if mongo_db:
+        return client, client[mongo_db]
+
+    try:
+        return client, client.get_default_database()
+    except ConfigurationError:
+        return client, client["acquedotto-zuel"]
+
+def reset_import_collections(db):
+    print("Resetting import collections...")
+    for collection in IMPORT_COLLECTIONS:
+        db[collection].delete_many({})
 
 def parse_number(value: str) -> float | int | None:
     """Converts a string to float or int if possible."""
@@ -39,7 +85,29 @@ def parse_date(value: str) -> datetime | None:
         return None
 
 def get_session_cookie(email, password):
-    driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()))
+    options = webdriver.ChromeOptions()
+    chrome_binary = os.getenv("CHROME_BINARY")
+    if chrome_binary:
+        options.binary_location = chrome_binary
+    elif Path("/snap/bin/chromium").exists():
+        options.binary_location = "/snap/bin/chromium"
+
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-setuid-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--no-first-run")
+    options.add_argument("--no-default-browser-check")
+    options.add_argument("--remote-debugging-port=9222")
+    options.add_argument(f"--user-data-dir={tempfile.mkdtemp(prefix='zuel-chrome-')}")
+    if env_flag("IMPORT_HEADLESS"):
+        options.add_argument("--headless=new")
+
+    try:
+        driver = webdriver.Chrome(options=options)
+    except Exception:
+        driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
+
     try:
         print("Opening login page...")
         login_url = "https://zuel.fast.tools/Account/Login"
@@ -56,7 +124,7 @@ def get_session_cookie(email, password):
         cookies = driver.get_cookies()
         for cookie in cookies:
             if cookie['name'] == '.AspNet.ApplicationCookie':
-                print(f"Session cookie found: {cookie['value']}")
+                print("Session cookie found.")
                 return cookie['value']
 
         print("Session cookie not found.")
@@ -984,13 +1052,23 @@ def fetch_all_scadenze(session_cookie, db):
 
 
 if __name__ == "__main__":
-    email = 'zuel@gesco.it'
-    password = '!Zz123456'
-    mongo_client = MongoClient("mongodb://localhost:27017/")
-    db = mongo_client['gigi']
+    email = os.getenv("FASTTOOLS_EMAIL")
+    password = os.getenv("FASTTOOLS_PASSWORD")
+    session_cookie = os.getenv("FASTTOOLS_SESSION_COOKIE")
+    mongo_client, db = get_database()
 
     try:
-        session_cookie = get_session_cookie(email, password)
+        print(f"Import target database: {db.name}")
+        if env_flag("IMPORT_RESET_DB"):
+            reset_import_collections(db)
+
+        if not session_cookie:
+            if not email or not password:
+                raise RuntimeError(
+                    "Set FASTTOOLS_SESSION_COOKIE or FASTTOOLS_EMAIL and FASTTOOLS_PASSWORD in .env."
+                )
+            session_cookie = get_session_cookie(email, password)
+
         if session_cookie:
             print("Session cookie retrieved successfully!")
             fetch_all_listini(session_cookie, db)

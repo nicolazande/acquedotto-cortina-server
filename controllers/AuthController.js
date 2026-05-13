@@ -1,8 +1,6 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
-
-// Environment variable for JWT secret
-const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
+const { JWT_SECRET } = require('../config/auth');
 
 // Health check route
 const healthCheck = (req, res) => {
@@ -17,10 +15,9 @@ const register = async (req, res) => {
         console.log('[Register] Current user count:', userCount);
 
         if (userCount >= 2) {
-            return res.status(403).json({ error: 'Registrazione disablititata, limite utenti.' });
+            return res.status(403).json({ error: 'Registrazione disabilitata, limite utenti.' });
         }
 
-        // Create user; rely on pre('save') hook for hashing
         const user = new User({ username, password });
         await user.save();
 
@@ -43,16 +40,13 @@ const login = async (req, res) => {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        // Compare entered password with stored hash
         const isPasswordValid = await user.comparePassword(password);
-        console.log('[Login] Password Valid:', isPasswordValid);
 
         if (!isPasswordValid) {
             console.warn('[Login] Invalid password for:', username);
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        // Generate JWT token
         const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '1h' });
         res.json({ token });
     } catch (error) {

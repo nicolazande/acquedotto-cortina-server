@@ -7,6 +7,14 @@ yarn-error.log*
 lerna-debug.log*
 .pnpm-debug.log*
 
+# Local machine files
+.DS_Store
+.idea/
+.vscode/
+.tools/
+tmp/
+*.tmp
+
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
@@ -40,6 +48,12 @@ build/Release
 
 # Dependency directories
 node_modules/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 jspm_packages/
 
 # Snowpack dependency directory (https://snowpack.dev/)
@@ -74,10 +88,16 @@ web_modules/
 
 # dotenv environment variable files
 .env
+env
 .env.development.local
 .env.test.local
 .env.production.local
 .env.local
+
+# Runtime uploads / downloaded imports
+uploads/
+*.dump
+*.archive
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache

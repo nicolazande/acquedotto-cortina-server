@@ -1,58 +1,46 @@
-# Acquedotto Cortina - Server
+# Acquedotto Zuel - Server
 
-Questo repository contiene il server Node.js per il progetto Acquedotto Cortina, che gestisce la logica di business e l'interazione con il database MongoDB.
+Backend Express/Mongoose per il gestionale Acquedotto Zuel.
 
-## Descrizione
+## Avvio locale
 
-Acquedotto Cortina è un'applicazione che consente agli utenti di registrare, visualizzare e gestire i dati relativi agli utenti e alle loro posizioni su una mappa interattiva. Il server fornisce API per consentire al client di comunicare con il database e gestire le operazioni CRUD sugli utenti.
+```bash
+npm install
+npm run dev
+```
 
-## Tecnologie Utilizzate
+In produzione:
 
-- **Server**: Node.js, Express
-- **Database**: MongoDB tramite Mongoose
-- **Altri**: Dotenv (per gestire le variabili d'ambiente), Multer (per il caricamento dei file)
+```bash
+npm start
+```
 
-## Struttura del Progetto
+## Configurazione
 
-Il progetto del server è organizzato nelle seguenti cartelle principali:
+Crea un file `.env` partendo da `.env.example`.
 
-- **controllers**: contiene i controller che gestiscono le richieste HTTP e la logica di business.
-- **models**: definisce i modelli di dati utilizzati dal server per interagire con MongoDB tramite Mongoose.
-- **routes**: definisce le rotte API per gestire le richieste HTTP dal client.
-- **uploads**: cartella per memorizzare i file caricati dagli utenti.
+```bash
+PORT=5000
+MONGODB_URI=mongodb://localhost:27017/acquedotto-zuel
+JWT_SECRET=change-me
+CLIENT_ORIGINS=http://localhost:3000
+```
 
-## Installazione e Avvio del Server
+`CLIENT_ORIGINS` accetta piu' origini separate da virgola. Se non viene definito, il server consente localhost e gli URL Netlify gia' presenti nel progetto.
 
-Per installare e avviare il server sul tuo sistema locale, segui questi passaggi:
+## Struttura utile
 
-1. **Clona il repository**
+- `server.js`: bootstrap Express, CORS e middleware globali
+- `config/db.js`: connessione MongoDB
+- `routes`: rotte HTTP divise per risorsa
+- `controllers`: logica delle API
+- `models`: schema Mongoose
+- `middlewares/AuthMiddleware.js`: verifica JWT per le rotte protette
 
-   ```bash
-   git clone <URL_DEL_REPO>
-   cd server
+## Endpoint salute
 
-2. ***Installazione delle dipendenze***
+```text
+GET /api/auth/health
+```
 
-    Assicurati di avere Node.js installato sul tuo computer. Dopo aver navigato nella cartella server, esegui il seguente comando per installare tutte le dipendenze necessarie:
-
-    ```bash
-    npm install
-
-3. ***Configurazione delle variabili d'ambiente***
-
-    Assicurati di creare un file .env nella cartella server e di configurare le variabili d'ambiente necessarie. Ad esempio:
-
-    ```bash
-    PORT=5000
-    MONGODB_URI=mongodb://localhost:27017/acquedotto-cortina
-
-    Sostituisci mongodb://localhost:27017/acquedotto-cortina con l'URL della tua istanza MongoDB.
-
-4. ***Avvio del server***
-
-    Una volta completata la configurazione, puoi avviare il server con il seguente comando:
-
-   ```bash
-   npm start
-
-    Questo avvierà il server Node.js. Assicurati che il server sia in esecuzione prima di avviare il client.
+Risponde `{ "status": "ok" }` quando il server e' raggiungibile.
