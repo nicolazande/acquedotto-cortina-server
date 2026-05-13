@@ -1,10 +1,10 @@
 import os
 import tempfile
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 from dotenv import load_dotenv
 from pymongo import MongoClient
-from pymongo.errors import ConfigurationError
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
@@ -17,6 +17,7 @@ from datetime import datetime
 
 SERVER_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(SERVER_ROOT / ".env")
+DEFAULT_DB_NAME = "acquedotto-zuel"
 
 IMPORT_COLLECTIONS = [
     "articoli",
@@ -37,18 +38,44 @@ def env_flag(name: str, default: bool = False) -> bool:
         return default
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
-def get_database():
-    mongo_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017/acquedotto-zuel")
-    mongo_db = os.getenv("MONGODB_DB")
-    client = MongoClient(mongo_uri)
-
-    if mongo_db:
-        return client, client[mongo_db]
-
+def env_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if not value:
+        return default
     try:
-        return client, client.get_default_database()
-    except ConfigurationError:
-        return client, client["acquedotto-zuel"]
+        parsed = int(value)
+        return parsed if parsed > 0 else default
+    except ValueError:
+        return default
+
+def get_database_name(mongo_uri: str) -> str:
+    env_db = os.getenv("MONGODB_DB")
+    if env_db:
+        return env_db
+
+    parsed_uri = urlparse(mongo_uri)
+    db_name = unquote(parsed_uri.path.lstrip("/"))
+    return db_name or DEFAULT_DB_NAME
+
+def get_mongo_options() -> dict:
+    options = {
+        "serverSelectionTimeoutMS": env_int("MONGODB_SERVER_SELECTION_TIMEOUT_MS", 10000),
+        "socketTimeoutMS": env_int("MONGODB_SOCKET_TIMEOUT_MS", 45000),
+        "maxPoolSize": env_int("MONGODB_MAX_POOL_SIZE", 10),
+    }
+    if os.getenv("MONGODB_TLS", "").strip():
+        options["tls"] = env_flag("MONGODB_TLS")
+    if os.getenv("MONGODB_TLS_ALLOW_INVALID_CERTIFICATES", "").strip():
+        options["tlsAllowInvalidCertificates"] = env_flag("MONGODB_TLS_ALLOW_INVALID_CERTIFICATES")
+    if os.getenv("MONGODB_DIRECT_CONNECTION", "").strip():
+        options["directConnection"] = env_flag("MONGODB_DIRECT_CONNECTION")
+    return options
+
+def get_database():
+    mongo_uri = os.getenv("MONGODB_URI", f"mongodb://localhost:27017/{DEFAULT_DB_NAME}")
+    mongo_db = get_database_name(mongo_uri)
+    client = MongoClient(mongo_uri, **get_mongo_options())
+    return client, client[mongo_db]
 
 def reset_import_collections(db):
     print("Resetting import collections...")

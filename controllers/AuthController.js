@@ -1,10 +1,15 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const { JWT_SECRET } = require('../config/auth');
 
 // Health check route
 const healthCheck = (req, res) => {
-    res.status(200).json({ status: 'ok' });
+    const isDatabaseConnected = mongoose.connection.readyState === 1;
+    res.status(isDatabaseConnected ? 200 : 503).json({
+        status: isDatabaseConnected ? 'ok' : 'degraded',
+        database: isDatabaseConnected ? 'connected' : 'disconnected',
+    });
 };
 
 // Register a new user
