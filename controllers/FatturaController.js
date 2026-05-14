@@ -2,102 +2,46 @@ const Fattura = require('../models/Fattura');
 const Cliente = require('../models/Cliente');
 const Servizio = require('../models/Servizio');
 const Scadenza = require('../models/Scadenza');
+const { sendPaginated } = require('./utils/paginatedQuery');
 
 class FatturaController
 {
     static async createFattura(req, res) {
         try {
             const currentYear = new Date().getFullYear(); // Get the current year
-    
+
             // Find the highest numero for the current year
             const highestFattura = await Fattura.findOne({ anno: currentYear })
                 .sort({ numero: -1 })
                 .limit(1)
                 .select('numero');
-    
+
             // Determine the new numero
             const newNumero = highestFattura ? highestFattura.numero + 1 : 0;
-    
+
             // Create the new fattura with anno and numero
             const fattura = new Fattura({
                 ...req.body,
                 anno: currentYear,
                 numero: newNumero,
             });
-    
+
             await fattura.save();
-    
+
             res.status(201).json(fattura);
         } catch (error) {
             console.error(error);
             res.status(400).json({ error: 'Error creating fattura' });
         }
-    }    
+    }
 
     static async getFatture(req, res) {
-        try {
-            const page = parseInt(req.query.page, 10) || 1; // Default to page 1
-            const limit = parseInt(req.query.limit, 10) || 50; // Default to 50 items per page
-            const search = req.query.search || ''; // Search term, default empty string
-            const sortField = req.query.sortField || 'data_fattura'; // Default sort field
-            const sortOrder = req.query.sortOrder === 'desc' ? -1 : 1; // Default ascending order
-    
-            const skip = (page - 1) * limit;
-    
-            let query = {};
-    
-            if (search) {
-                const searchRegex = { $regex: search, $options: 'i' };
-    
-                // Dynamically build a query for string, number, and date fields
-                query = {
-                    $or: Object.keys(Fattura.schema.paths).map((key) => {
-                        const fieldType = Fattura.schema.paths[key].instance;
-    
-                        // String fields use regex
-                        if (fieldType === 'String') {
-                            return { [key]: searchRegex };
-                        }
-    
-                        // Number fields use direct equality if search is a valid number
-                        if (fieldType === 'Number' && !isNaN(search)) {
-                            return { [key]: Number(search) };
-                        }
-    
-                        // Date fields use $eq with valid date
-                        if (fieldType === 'Date' && !isNaN(Date.parse(search))) {
-                            return { [key]: new Date(search) };
-                        }
-    
-                        // Skip unsupported field types
-                        return null;
-                    }).filter((condition) => condition !== null), // Remove null values
-                };
-            }
-    
-            console.log('Constructed Query:', JSON.stringify(query, null, 2)); // Log the constructed query
-    
-            // Fetch the total count of documents matching the search
-            const totalItems = await Fattura.countDocuments(query);
-    
-            // Fetch the paginated and sorted data
-            const fatture = await Fattura.find(query)
-                .populate('cliente') // Populate referenced fields
-                .sort({ [sortField]: sortOrder }) // Apply sorting
-                .skip(skip)
-                .limit(limit);
-    
-            res.status(200).json({
-                data: fatture,
-                totalItems,
-                totalPages: Math.ceil(totalItems / limit),
-                currentPage: page,
-            });
-        } catch (error) {
-            console.error('Error in getFatture:', error); // Log the full error
-            res.status(500).json({ error: 'Error fetching fatture', details: error.message });
-        }
-    }    
+        return sendPaginated(Fattura, req, res, {
+            defaultSort: 'data_fattura',
+            errorMessage: 'Error fetching fatture',
+            populate: 'cliente',
+        });
+    }
 
     static async getFattura(req, res)
     {

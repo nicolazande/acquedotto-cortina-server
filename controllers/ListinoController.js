@@ -1,6 +1,7 @@
 const Listino = require('../models/Listino');
 const Fascia = require('../models/Fascia');
 const Contatore = require('../models/Contatore');
+const { sendPaginated } = require('./utils/paginatedQuery');
 
 class ListinoController
 {
@@ -21,58 +22,11 @@ class ListinoController
     }
 
     static async getListini(req, res) {
-        try {
-            const page = parseInt(req.query.page, 10) || 1; // Default to page 1
-            const limit = parseInt(req.query.limit, 10) || 50; // Default to 50 items per page
-            const search = req.query.search || ''; // Search term, default empty string
-            const sortField = req.query.sortField || 'categoria'; // Default sort field
-            const sortOrder = req.query.sortOrder === 'desc' ? -1 : 1; // Default ascending order
-    
-            const skip = (page - 1) * limit;
-    
-            let query = {};
-    
-            if (search) {
-                const searchRegex = { $regex: search, $options: 'i' };
-    
-                // Dynamically build a query for string fields
-                query = {
-                    $or: Object.keys(Listino.schema.paths).map((key) => {
-                        const fieldType = Listino.schema.paths[key].instance;
-    
-                        // String fields use regex
-                        if (fieldType === 'String') {
-                            return { [key]: searchRegex };
-                        }
-    
-                        // Skip unsupported field types
-                        return null;
-                    }).filter((condition) => condition !== null), // Remove null values
-                };
-            }
-    
-            console.log('Constructed Query:', JSON.stringify(query, null, 2)); // Log the constructed query
-    
-            // Fetch the total count of documents matching the search
-            const totalItems = await Listino.countDocuments(query);
-    
-            // Fetch the paginated and sorted data
-            const listini = await Listino.find(query)
-                .sort({ [sortField]: sortOrder }) // Apply sorting
-                .skip(skip)
-                .limit(limit);
-    
-            res.status(200).json({
-                data: listini,
-                totalItems,
-                totalPages: Math.ceil(totalItems / limit),
-                currentPage: page,
-            });
-        } catch (error) {
-            console.error('Error in getListini:', error); // Log the full error
-            res.status(500).json({ error: 'Error fetching listini', details: error.message });
-        }
-    }    
+        return sendPaginated(Listino, req, res, {
+            defaultSort: 'categoria',
+            errorMessage: 'Error fetching listini',
+        });
+    }
 
     static async getListino(req, res)
     {

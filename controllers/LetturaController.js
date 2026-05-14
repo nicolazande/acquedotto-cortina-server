@@ -1,6 +1,7 @@
 const Lettura = require('../models/Lettura');
 const Contatore = require('../models/Contatore');
 const Servizio = require('../models/Servizio');
+const { sendPaginated } = require('./utils/paginatedQuery');
 
 class LetturaController
 {
@@ -20,68 +21,11 @@ class LetturaController
     }
 
     static async getLetture(req, res) {
-        try {
-            const page = parseInt(req.query.page, 10) || 1; // Default to page 1
-            const limit = parseInt(req.query.limit, 10) || 50; // Default to 50 items per page
-            const search = req.query.search || ''; // Search term, default empty string
-            const sortField = req.query.sortField || 'data_lettura'; // Default sort field
-            const sortOrder = req.query.sortOrder === 'desc' ? -1 : 1; // Default ascending order
-
-            const skip = (page - 1) * limit;
-
-            let query = {};
-
-            if (search) {
-                const searchRegex = { $regex: search, $options: 'i' };
-
-                // Dynamically build a query for string, number, and date fields
-                query = {
-                    $or: Object.keys(Lettura.schema.paths).map((key) => {
-                        const fieldType = Lettura.schema.paths[key].instance;
-
-                        // String fields use regex
-                        if (fieldType === 'String') {
-                            return { [key]: searchRegex };
-                        }
-
-                        // Number fields use direct equality if search is a valid number
-                        if (fieldType === 'Number' && !isNaN(search)) {
-                            return { [key]: Number(search) };
-                        }
-
-                        // Date fields use $eq with valid date
-                        if (fieldType === 'Date' && !isNaN(Date.parse(search))) {
-                            return { [key]: new Date(search) };
-                        }
-
-                        // Skip unsupported field types
-                        return null;
-                    }).filter((condition) => condition !== null), // Remove null values
-                };
-            }
-
-            console.log('Constructed Query:', JSON.stringify(query, null, 2)); // Log the constructed query
-
-            // Fetch the total count of documents matching the search
-            const totalItems = await Lettura.countDocuments(query);
-
-            // Fetch the paginated and sorted data
-            const letture = await Lettura.find(query)
-                .populate('contatore') // Populate referenced fields
-                .sort({ [sortField]: sortOrder }) // Apply sorting
-                .skip(skip)
-                .limit(limit);
-
-            res.status(200).json({
-                data: letture,
-                totalItems,
-                totalPages: Math.ceil(totalItems / limit),
-                currentPage: page,
-            });
-        } catch (error) {
-            console.error('Error in getLetture:', error); // Log the full error
-            res.status(500).json({ error: 'Error fetching letture', details: error.message });
-        }
+        return sendPaginated(Lettura, req, res, {
+            defaultSort: 'data_lettura',
+            errorMessage: 'Error fetching letture',
+            populate: 'contatore',
+        });
     }
 
     static async getLettura(req, res)

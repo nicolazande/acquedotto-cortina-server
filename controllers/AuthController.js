@@ -17,7 +17,6 @@ const register = async (req, res) => {
     const { username, password } = req.body;
     try {
         const userCount = await User.countDocuments();
-        console.log('[Register] Current user count:', userCount);
 
         if (userCount >= 2) {
             return res.status(403).json({ error: 'Registrazione disabilitata, limite utenti.' });
@@ -37,8 +36,6 @@ const register = async (req, res) => {
 const login = async (req, res) => {
     const { username, password } = req.body;
     try {
-        console.log('[Login] Attempting login for:', username);
-
         const user = await User.findOne({ username });
         if (!user) {
             console.warn('[Login] User not found:', username);

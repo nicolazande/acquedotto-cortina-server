@@ -1,6 +1,7 @@
 const Cliente = require('../models/Cliente');
 const Contatore = require('../models/Contatore');
 const Fattura = require('../models/Fattura');
+const { sendPaginated } = require('./utils/paginatedQuery');
 
 class ClienteController
 {
@@ -20,68 +21,11 @@ class ClienteController
     }
 
     static async getClienti(req, res) {
-        try {
-            const page = parseInt(req.query.page, 10) || 1; // Default to page 1
-            const limit = parseInt(req.query.limit, 10) || 50; // Default to 50 items per page
-            const search = req.query.search || ''; // Search term, default empty string
-            const sortField = req.query.sortField || 'nome'; // Default sort field
-            const sortOrder = req.query.sortOrder === 'desc' ? -1 : 1; // Default ascending order
-
-            const skip = (page - 1) * limit;
-
-            let query = {};
-
-            if (search) {
-                const searchRegex = { $regex: search, $options: 'i' };
-
-                // Dynamically build a query for string, number, and date fields
-                query = {
-                    $or: Object.keys(Cliente.schema.paths).map((key) => {
-                        const fieldType = Cliente.schema.paths[key].instance;
-
-                        // String fields use regex
-                        if (fieldType === 'String') {
-                            return { [key]: searchRegex };
-                        }
-
-                        // Number fields use direct equality if search is a valid number
-                        if (fieldType === 'Number' && !isNaN(search)) {
-                            return { [key]: Number(search) };
-                        }
-
-                        // Date fields use $eq with valid date
-                        if (fieldType === 'Date' && !isNaN(Date.parse(search))) {
-                            return { [key]: new Date(search) };
-                        }
-
-                        // Skip unsupported field types
-                        return null;
-                    }).filter((condition) => condition !== null), // Remove null values
-                };
-            }
-
-            console.log('Constructed Query:', JSON.stringify(query, null, 2)); // Log the constructed query
-
-            // Fetch the total count of documents matching the search
-            const totalItems = await Cliente.countDocuments(query);
-
-            // Fetch the paginated and sorted data
-            const clienti = await Cliente.find(query)
-                .sort({ [sortField]: sortOrder }) // Apply sorting
-                .skip(skip)
-                .limit(limit);
-
-            res.status(200).json({
-                data: clienti,
-                totalItems,
-                totalPages: Math.ceil(totalItems / limit),
-                currentPage: page,
-            });
-        } catch (error) {
-            console.error('Error in getClienti:', error); // Log the full error
-            res.status(500).json({ error: 'Error fetching clienti', details: error.message });
-        }
-    }   
+        return sendPaginated(Cliente, req, res, {
+            defaultSort: 'nome',
+            errorMessage: 'Error fetching clienti',
+        });
+    }
 
     static async getCliente(req, res)
     {

@@ -2,6 +2,7 @@ const Servizio = require('../models/Servizio');
 const Lettura = require('../models/Lettura');
 const Articolo = require('../models/Articolo');
 const Fattura = require('../models/Fattura');
+const { sendPaginated } = require('./utils/paginatedQuery');
 
 class ServizioController
 {
@@ -21,70 +22,13 @@ class ServizioController
     }
 
     static async getServizi(req, res) {
-        try {
-            const page = parseInt(req.query.page, 10) || 1; // Default to page 1
-            const limit = parseInt(req.query.limit, 10) || 50; // Default to 50 items per page
-            const search = req.query.search || ''; // Search term, default empty string
-            const sortField = req.query.sortField || 'descrizione'; // Default sort field
-            const sortOrder = req.query.sortOrder === 'desc' ? -1 : 1; // Default ascending order
-    
-            const skip = (page - 1) * limit;
-    
-            let query = {};
-    
-            if (search) {
-                const searchRegex = { $regex: search, $options: 'i' };
-    
-                // Dynamically build a query for string, number, and date fields
-                query = {
-                    $or: Object.keys(Servizio.schema.paths).map((key) => {
-                        const fieldType = Servizio.schema.paths[key].instance;
-    
-                        // String fields use regex
-                        if (fieldType === 'String') {
-                            return { [key]: searchRegex };
-                        }
-    
-                        // Number fields use direct equality if search is a valid number
-                        if (fieldType === 'Number' && !isNaN(search)) {
-                            return { [key]: Number(search) };
-                        }
-    
-                        // Date fields use $eq with valid date
-                        if (fieldType === 'Date' && !isNaN(Date.parse(search))) {
-                            return { [key]: new Date(search) };
-                        }
-    
-                        // Skip unsupported field types
-                        return null;
-                    }).filter((condition) => condition !== null), // Remove null values
-                };
-            }
-    
-            console.log('Constructed Query:', JSON.stringify(query, null, 2)); // Log the constructed query
-    
-            // Fetch the total count of documents matching the search
-            const totalItems = await Servizio.countDocuments(query);
-    
-            // Fetch the paginated and sorted data
-            const servizi = await Servizio.find(query)
-                .populate('lettura articolo fattura') // Populate referenced fields
-                .sort({ [sortField]: sortOrder }) // Apply sorting
-                .skip(skip)
-                .limit(limit);
-    
-            res.status(200).json({
-                data: servizi,
-                totalItems,
-                totalPages: Math.ceil(totalItems / limit),
-                currentPage: page,
-            });
-        } catch (error) {
-            console.error('Error in getServizi:', error); // Log the full error
-            res.status(500).json({ error: 'Error fetching servizi', details: error.message });
-        }
-    }    
-    
+        return sendPaginated(Servizio, req, res, {
+            defaultSort: 'descrizione',
+            errorMessage: 'Error fetching servizi',
+            populate: 'lettura articolo fattura',
+        });
+    }
+
     static async getServizio(req, res)
     {
         try

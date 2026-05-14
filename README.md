@@ -65,6 +65,7 @@ In ambienti dietro proxy/load balancer puoi impostare `TRUST_PROXY=true`.
 - `config/db.js`: connessione MongoDB
 - `routes`: rotte HTTP divise per risorsa
 - `controllers`: logica delle API
+- `controllers/utils/paginatedQuery.js`: paginazione, ricerca e ordinamento condivisi
 - `models`: schema Mongoose
 - `middlewares/AuthMiddleware.js`: verifica JWT per le rotte protette
 
@@ -93,3 +94,20 @@ python -m venv .venv
 ```
 
 Per Atlas usa `pymongo[srv]`, gia' incluso in `requirements.txt`.
+
+Puoi limitare l'import a una o piu' sezioni:
+
+```bash
+IMPORT_STEPS=listini,articoli,clienti
+```
+
+Valori disponibili: `listini`, `articoli`, `clienti`, `edifici`, `scadenze`, `fatture`.
+
+Per ambienti lenti o database remoti puoi ridurre il parallelismo:
+
+```bash
+FASTTOOLS_TIMEOUT_SECONDS=60
+IMPORT_CLIENTI_WORKERS=10
+IMPORT_EDIFICI_WORKERS=10
+IMPORT_FATTURE_WORKERS=10
+```
