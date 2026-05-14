@@ -59,9 +59,11 @@ CLIENT_ORIGINS=https://app.example.com,https://preview.example.com
 
 In ambienti dietro proxy/load balancer puoi impostare `TRUST_PROXY=true`.
 
-## Allegati immagini alle note
+## Allegati alle note
 
 Gli allegati delle note sono salvati in MongoDB nella collection `note_attachments`, quindi funzionano sia in locale sia con MongoDB remoto senza dipendere dal filesystem del server.
+
+Sono accettati immagini, PDF, TXT/CSV, documenti Word/Excel e formati OpenDocument. File HTML o eseguibili non sono ammessi.
 
 Variabili utili:
 
@@ -70,7 +72,7 @@ REQUEST_BODY_LIMIT=10mb
 ATTACHMENT_MAX_BYTES=6291456
 ```
 
-`ATTACHMENT_MAX_BYTES` limita la dimensione di ogni immagine dopo la compressione lato client.
+`ATTACHMENT_MAX_BYTES` limita la dimensione di ogni allegato dopo l'eventuale compressione lato client.
 
 ## Struttura utile
 
@@ -116,7 +118,7 @@ Render:
 SMOKE_API_URL=https://acquedotto-cortina-server.onrender.com npm run test:smoke
 ```
 
-Il test crea e cancella un piccolo allegato immagine temporaneo su un cliente esistente. Per controlli read-only:
+Il test crea e cancella piccoli allegati temporanei su un cliente esistente. Per controlli read-only:
 
 ```bash
 SMOKE_SKIP_MUTATION=true npm run test:smoke

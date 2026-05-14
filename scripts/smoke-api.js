@@ -1,6 +1,17 @@
 const DEFAULT_API_URL = 'http://localhost:5000/api';
 const REQUEST_TIMEOUT_MS = Number.parseInt(process.env.SMOKE_TIMEOUT_MS || '12000', 10);
-const TEST_IMAGE_DATA = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
+const TEST_ATTACHMENTS = [
+    {
+        contentType: 'image/png',
+        data: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+        filename: 'smoke-test.png',
+    },
+    {
+        contentType: 'application/pdf',
+        data: 'data:application/pdf;base64,JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PC9UeXBlL0NhdGFsb2cvUGFnZXMgMiAwIFI+PgplbmRvYmoKMiAwIG9iago8PC9UeXBlL1BhZ2VzL0NvdW50IDAvS2lkc1tdPj4KZW5kb2JqCnRyYWlsZXIKPDwvUm9vdCAxIDAgUj4+CiUlRU9G',
+        filename: 'smoke-test.pdf',
+    },
+];
 const { RESOURCE_NAMES } = require('../config/resources');
 
 const normalizeApiUrl = (value) => {
@@ -76,33 +87,35 @@ const testAttachments = async () => {
     }
 
     const clienteId = await getAttachmentTarget();
-    let createdId;
+    const createdIds = [];
 
     try {
-        const createResult = await request(`/attachments/clienti/${clienteId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                filename: 'smoke-test.png',
-                contentType: 'image/png',
-                data: TEST_IMAGE_DATA,
-            }),
-        });
+        for (const attachment of TEST_ATTACHMENTS) {
+            const createResult = await request(`/attachments/clienti/${clienteId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(attachment),
+            });
 
-        createdId = createResult.body._id;
-        assert(createdId, 'attachment create did not return _id');
+            const createdId = createResult.body._id;
+            createdIds.push(createdId);
+            assert(createdId, 'attachment create did not return _id');
+            assert(createResult.body.contentType === attachment.contentType, 'attachment content type was not preserved');
+
+            const fileResult = await request(`/attachments/${createdId}/file`);
+            assert(fileResult.contentType.startsWith(attachment.contentType), 'attachment file content type is wrong');
+            assert(fileResult.body.byteLength > 0, 'attachment file is empty');
+        }
 
         const listResult = await request(`/attachments/clienti/${clienteId}`);
-        assert(
-            listResult.body.some((attachment) => attachment._id === createdId),
-            'created attachment was not listed'
-        );
-
-        const fileResult = await request(`/attachments/${createdId}/file`);
-        assert(fileResult.contentType.startsWith('image/'), 'attachment file is not an image');
-        assert(fileResult.body.byteLength > 0, 'attachment file is empty');
+        for (const createdId of createdIds) {
+            assert(
+                listResult.body.some((attachment) => attachment._id === createdId),
+                'created attachment was not listed'
+            );
+        }
     } finally {
-        if (createdId) {
+        for (const createdId of createdIds) {
             await request(`/attachments/${createdId}`, { method: 'DELETE' });
         }
     }
@@ -112,11 +125,12 @@ const main = async () => {
     console.log(`Smoke API target: ${apiUrl}`);
     await step('health endpoint', testHealth);
     await step('paginated resource lists', testResourceLists);
-    await step('note image attachments create/list/file/delete', testAttachments);
+    await step('note attachments create/list/file/delete', testAttachments);
     console.log('Smoke API completed successfully.');
 };
 
 main().catch((error) => {
-    console.error(error.message);
+    const causeMessage = error.cause?.message ? `: ${error.cause.message}` : '';
+    console.error(`${error.message}${causeMessage}`);
     process.exit(1);
 });
