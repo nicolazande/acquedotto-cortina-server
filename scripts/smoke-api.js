@@ -1,19 +1,7 @@
 const DEFAULT_API_URL = 'http://localhost:5000/api';
 const REQUEST_TIMEOUT_MS = Number.parseInt(process.env.SMOKE_TIMEOUT_MS || '12000', 10);
 const TEST_IMAGE_DATA = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
-
-const resources = [
-    'articoli',
-    'clienti',
-    'contatori',
-    'edifici',
-    'fasce',
-    'fatture',
-    'letture',
-    'listini',
-    'scadenze',
-    'servizi',
-];
+const { RESOURCE_NAMES } = require('../config/resources');
 
 const normalizeApiUrl = (value) => {
     const baseUrl = (value || DEFAULT_API_URL).replace(/\/+$/, '');
@@ -67,7 +55,7 @@ const testHealth = async () => {
 };
 
 const testResourceLists = async () => {
-    for (const resource of resources) {
+    for (const resource of RESOURCE_NAMES) {
         const { body } = await request(`/${resource}?page=1&limit=1`);
         assert(Array.isArray(body.data), `${resource} did not return a paginated data array`);
         assert(Number.isInteger(body.totalItems), `${resource} did not return totalItems`);

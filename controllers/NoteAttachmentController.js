@@ -1,28 +1,6 @@
 const mongoose = require('mongoose');
 const NoteAttachment = require('../models/NoteAttachment');
-const Articolo = require('../models/Articolo');
-const Cliente = require('../models/Cliente');
-const Contatore = require('../models/Contatore');
-const Edificio = require('../models/Edificio');
-const Fascia = require('../models/Fascia');
-const Fattura = require('../models/Fattura');
-const Lettura = require('../models/Lettura');
-const Listino = require('../models/Listino');
-const Scadenza = require('../models/Scadenza');
-const Servizio = require('../models/Servizio');
-
-const resourceModels = {
-    articoli: Articolo,
-    clienti: Cliente,
-    contatori: Contatore,
-    edifici: Edificio,
-    fasce: Fascia,
-    fatture: Fattura,
-    letture: Lettura,
-    listini: Listino,
-    scadenze: Scadenza,
-    servizi: Servizio,
-};
+const { getResourceModel } = require('../config/resources');
 
 const allowedImageTypes = new Set([
     'image/jpeg',
@@ -49,8 +27,6 @@ const serializeAttachment = (attachment) => ({
     createdAt: attachment.createdAt,
     updatedAt: attachment.updatedAt,
 });
-
-const getResourceModel = (resource) => resourceModels[resource];
 
 const getRecordFilter = (recordId) => {
     if (!mongoose.Types.ObjectId.isValid(recordId)) {
