@@ -96,6 +96,32 @@ Risponde `200` con database connesso:
 
 Risponde `503` se Express e' raggiungibile ma MongoDB non e' connesso.
 
+## Test e smoke check
+
+Per verificare API, MongoDB, liste paginate e allegati immagini:
+
+```bash
+npm run test:smoke
+```
+
+Di default il test usa `http://localhost:5000/api`. Per un server remoto:
+
+```bash
+SMOKE_API_URL=https://api.example.com npm run test:smoke
+```
+
+Render:
+
+```bash
+SMOKE_API_URL=https://acquedotto-cortina-server.onrender.com npm run test:smoke
+```
+
+Il test crea e cancella un piccolo allegato immagine temporaneo su un cliente esistente. Per controlli read-only:
+
+```bash
+SMOKE_SKIP_MUTATION=true npm run test:smoke
+```
+
 ## Import dati
 
 Lo script in `documents/script/main.py` usa le stesse variabili MongoDB del server, quindi puo' importare anche su MongoDB remoto:
