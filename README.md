@@ -59,6 +59,19 @@ CLIENT_ORIGINS=https://app.example.com,https://preview.example.com
 
 In ambienti dietro proxy/load balancer puoi impostare `TRUST_PROXY=true`.
 
+## Allegati immagini alle note
+
+Gli allegati delle note sono salvati in MongoDB nella collection `note_attachments`, quindi funzionano sia in locale sia con MongoDB remoto senza dipendere dal filesystem del server.
+
+Variabili utili:
+
+```bash
+REQUEST_BODY_LIMIT=10mb
+ATTACHMENT_MAX_BYTES=6291456
+```
+
+`ATTACHMENT_MAX_BYTES` limita la dimensione di ogni immagine dopo la compressione lato client.
+
 ## Struttura utile
 
 - `server.js`: bootstrap Express, CORS e middleware globali
@@ -110,4 +123,40 @@ FASTTOOLS_TIMEOUT_SECONDS=60
 IMPORT_CLIENTI_WORKERS=10
 IMPORT_EDIFICI_WORKERS=10
 IMPORT_FATTURE_WORKERS=10
+```
+
+## Sincronizzazione locale/remoto
+
+Lo script `documents/script/sync_databases.py` copia velocemente le collection applicative tra MongoDB remoto e locale usando bulk upsert.
+
+Esempio per scaricare il remoto in locale:
+
+```bash
+REMOTE_MONGODB_URI=mongodb+srv://user:password@cluster.example.mongodb.net/?retryWrites=true&w=majority
+REMOTE_MONGODB_DB=acquedotto-zuel
+.venv/bin/python documents/script/sync_databases.py --direction pull
+```
+
+Esempio per inviare il locale al remoto:
+
+```bash
+.venv/bin/python documents/script/sync_databases.py --direction push
+```
+
+Per fare una copia speculare, eliminando dal target i documenti non presenti nella sorgente:
+
+```bash
+.venv/bin/python documents/script/sync_databases.py --direction pull --delete-missing
+```
+
+Prima di una sync delicata puoi controllare i conteggi:
+
+```bash
+.venv/bin/python documents/script/sync_databases.py --direction pull --dry-run
+```
+
+Di default vengono sincronizzate le collection dati e `note_attachments`; `users` resta fuori per non sovrascrivere gli account. Se serve:
+
+```bash
+.venv/bin/python documents/script/sync_databases.py --include-users
 ```

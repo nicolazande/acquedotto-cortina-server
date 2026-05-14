@@ -7,6 +7,7 @@ const connectDB = require('./config/db');
 
 const app = express();
 const port = process.env.PORT || 5000;
+const requestBodyLimit = process.env.REQUEST_BODY_LIMIT || '10mb';
 
 const parseBoolean = (value) => ['1', 'true', 'yes', 'y', 'on'].includes(String(value).trim().toLowerCase());
 
@@ -45,8 +46,8 @@ if (parseBoolean(process.env.TRUST_PROXY)) {
 }
 
 app.use(cors(corsOptions));
-app.use(express.json({ limit: '2mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: requestBodyLimit }));
+app.use(express.urlencoded({ extended: true, limit: requestBodyLimit }));
 
 const startServer = async () => {
     await connectDB();
