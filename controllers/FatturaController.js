@@ -3,6 +3,12 @@ const Cliente = require('../models/Cliente');
 const Servizio = require('../models/Servizio');
 const Scadenza = require('../models/Scadenza');
 const { sendPaginated } = require('./utils/paginatedQuery');
+const {
+    createInvoiceFromReadings,
+    previewBillingBatch,
+    verifyInvoiceCalculation,
+} = require('../services/invoiceGenerator');
+const { generateInvoicePdf } = require('../services/invoicePdf');
 
 class FatturaController
 {
@@ -39,15 +45,49 @@ class FatturaController
         return sendPaginated(Fattura, req, res, {
             defaultSort: 'data_fattura',
             errorMessage: 'Error fetching fatture',
-            populate: 'cliente',
+            populate: 'cliente scadenza',
         });
+    }
+
+    static async generateFromReadings(req, res)
+    {
+        try
+        {
+            const result = await createInvoiceFromReadings({
+                letture: req.body.letture || req.body.letturaIds,
+                data_fattura: req.body.data_fattura,
+                tipo_documento: req.body.tipo_documento,
+                confermata: req.body.confermata,
+            });
+
+            res.status(201).json(result);
+        }
+        catch (error)
+        {
+            console.error(error);
+            res.status(error.status || 400).json({ error: error.message || 'Error generating fattura' });
+        }
+    }
+
+    static async getGenerationPreview(req, res)
+    {
+        try
+        {
+            const result = await previewBillingBatch({ limit: req.query.limit });
+            res.status(200).json(result);
+        }
+        catch (error)
+        {
+            console.error(error);
+            res.status(error.status || 500).json({ error: error.message || 'Error fetching billing generation preview' });
+        }
     }
 
     static async getFattura(req, res)
     {
         try
         {
-            const fattura = await Fattura.findById(req.params.id).populate('cliente');
+            const fattura = await Fattura.findById(req.params.id).populate('cliente scadenza');
             if (!fattura)
             {
                 return res.status(404).json({ error: 'Fattura not found' });
@@ -58,6 +98,37 @@ class FatturaController
         {
             console.error(error);
             res.status(500).json({ error: 'Error fetching fattura' });
+        }
+    }
+
+    static async verifyCalcolo(req, res)
+    {
+        try
+        {
+            const result = await verifyInvoiceCalculation(req.params.id);
+            res.status(200).json(result);
+        }
+        catch (error)
+        {
+            console.error(error);
+            res.status(error.status || 500).json({ error: error.message || 'Error verifying fattura calculation' });
+        }
+    }
+
+    static async downloadPdf(req, res)
+    {
+        try
+        {
+            const { buffer, filename } = await generateInvoicePdf(req.params.id);
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+            res.setHeader('Content-Length', buffer.length);
+            res.status(200).send(buffer);
+        }
+        catch (error)
+        {
+            console.error(error);
+            res.status(error.status || 500).json({ error: error.message || 'Error generating fattura PDF' });
         }
     }
 
@@ -173,7 +244,7 @@ class FatturaController
     {
         try
         {
-            const servizi = await Servizio.find({ fattura: req.params.id });
+            const servizi = await Servizio.find({ fattura: req.params.id }).populate('lettura articolo listino fascia');
             res.status(200).json(servizi);
         }
         catch (error)

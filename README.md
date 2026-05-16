@@ -15,6 +15,20 @@ In produzione:
 npm start
 ```
 
+Puoi usare anche lo script locale, che imposta automaticamente il Node incluso
+nel workspace, crea `.env` da `.env.example` se manca e installa le dipendenze
+se necessario:
+
+```bash
+./start-local.sh
+```
+
+Se vuoi far partire anche MongoDB locale via Docker:
+
+```bash
+START_MONGO=true ./start-local.sh
+```
+
 ## Configurazione
 
 Crea un file `.env` partendo da `.env.example`.
@@ -74,6 +88,31 @@ ATTACHMENT_MAX_BYTES=6291456
 
 `ATTACHMENT_MAX_BYTES` limita la dimensione di ogni allegato dopo l'eventuale compressione lato client.
 
+## Fatturazione automatica
+
+La generazione da letture passa dal servizio `services/invoiceGenerator.js` e dal calcolatore puro `services/billingCalculator.js`.
+
+Endpoint principali:
+
+```text
+GET  /api/fatture/generazione/anteprima
+POST /api/fatture/genera-da-letture
+GET  /api/letture/:id/calcolo
+GET  /api/fatture/:id/verifica-calcolo
+GET  /api/fatture/:id/pdf
+```
+
+Le fatture generate salvano:
+
+- numero progressivo per anno tramite `invoice_counters`
+- riferimenti alle letture fatturate
+- righe servizio con listino, fascia, aliquota IVA e snapshot del calcolo
+- stato iniziale `bozza` o `confermata`
+
+Su MongoDB con replica set o Atlas la generazione usa una transazione: fattura, righe servizio e flag `fatturata` delle letture vengono salvati insieme. Su MongoDB locale standalone il codice resta compatibile e usa un fallback non transazionale.
+
+Il PDF fattura e' generato lato server senza servizi esterni. I testi aziendali e bancari si configurano con le variabili `INVOICE_COMPANY_*`, `INVOICE_PHONE_DIRECT`, `INVOICE_BANK_NAME` e `INVOICE_IBAN`.
+
 ## Struttura utile
 
 - `server.js`: bootstrap Express, CORS e middleware globali
@@ -100,7 +139,7 @@ Risponde `503` se Express e' raggiungibile ma MongoDB non e' connesso.
 
 ## Test e smoke check
 
-Per verificare API, MongoDB, liste paginate e allegati immagini:
+Per verificare API, MongoDB, liste paginate, fatturazione e allegati:
 
 ```bash
 npm run test:smoke
@@ -122,6 +161,12 @@ Il test crea e cancella piccoli allegati temporanei su un cliente esistente. Per
 
 ```bash
 SMOKE_SKIP_MUTATION=true npm run test:smoke
+```
+
+Per confrontare il calcolo attuale con le righe storiche importate:
+
+```bash
+npm run test:billing
 ```
 
 ## Import dati

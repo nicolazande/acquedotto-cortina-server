@@ -2,6 +2,7 @@ const Lettura = require('../models/Lettura');
 const Contatore = require('../models/Contatore');
 const Servizio = require('../models/Servizio');
 const { sendPaginated } = require('./utils/paginatedQuery');
+const { calculateReadingById } = require('../services/invoiceGenerator');
 
 class LetturaController
 {
@@ -32,7 +33,10 @@ class LetturaController
     {
         try
         {
-            const lettura = await Lettura.findById(req.params.id).populate('contatore');
+            const lettura = await Lettura.findById(req.params.id).populate({
+                path: 'contatore',
+                populate: 'listino',
+            });
             if (!lettura)
             {
                 return res.status(404).json({ error: 'Lettura not found' });
@@ -43,6 +47,23 @@ class LetturaController
         {
             console.error(error);
             res.status(500).json({ error: 'Error fetching lettura' });
+        }
+    }
+
+    static async getCalcolo(req, res)
+    {
+        try
+        {
+            const calculation = await calculateReadingById(req.params.id, {
+                previousValue: req.query.previousValue,
+                currentValue: req.query.currentValue,
+            });
+            res.status(200).json(calculation);
+        }
+        catch (error)
+        {
+            console.error(error);
+            res.status(error.status || 500).json({ error: error.message || 'Error calculating lettura invoice preview' });
         }
     }
 

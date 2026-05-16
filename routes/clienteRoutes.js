@@ -4,6 +4,8 @@ const ClienteController = require('../controllers/ClienteController');
 
 router.post('/', ClienteController.createCliente);
 router.get('/', ClienteController.getClienti);
+router.get('/:id/fatturazione', ClienteController.getFatturazionePreview);
+router.post('/:id/fatture/genera', ClienteController.generateFattura);
 router.get('/:id', ClienteController.getCliente);
 router.put('/:id', ClienteController.updateCliente);
 router.delete('/:id', ClienteController.deleteCliente);

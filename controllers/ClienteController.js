@@ -2,6 +2,10 @@ const Cliente = require('../models/Cliente');
 const Contatore = require('../models/Contatore');
 const Fattura = require('../models/Fattura');
 const { sendPaginated } = require('./utils/paginatedQuery');
+const {
+    createInvoiceFromReadings,
+    previewClienteBilling,
+} = require('../services/invoiceGenerator');
 
 class ClienteController
 {
@@ -42,6 +46,48 @@ class ClienteController
         {
             console.error(error);
             res.status(500).json({ error: 'Error fetching cliente' });
+        }
+    }
+
+    static async getFatturazionePreview(req, res)
+    {
+        try
+        {
+            const result = await previewClienteBilling(req.params.id);
+            res.status(200).json(result);
+        }
+        catch (error)
+        {
+            console.error(error);
+            res.status(error.status || 500).json({ error: error.message || 'Error fetching cliente billing preview' });
+        }
+    }
+
+    static async generateFattura(req, res)
+    {
+        try
+        {
+            const preview = await previewClienteBilling(req.params.id);
+            const requestedIds = req.body.letture || req.body.letturaIds;
+            const letture = requestedIds && requestedIds.length
+                ? requestedIds
+                : preview.previews
+                    .filter((item) => !item.error && item.lines?.length)
+                    .map((item) => item.lettura._id);
+
+            const result = await createInvoiceFromReadings({
+                letture,
+                data_fattura: req.body.data_fattura,
+                tipo_documento: req.body.tipo_documento,
+                confermata: req.body.confermata,
+            });
+
+            res.status(201).json(result);
+        }
+        catch (error)
+        {
+            console.error(error);
+            res.status(error.status || 400).json({ error: error.message || 'Error generating cliente fattura' });
         }
     }
 

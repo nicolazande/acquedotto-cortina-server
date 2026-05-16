@@ -8,8 +8,7 @@ class FasciaController
     {
         try
         {
-            const { tipo, min, max, prezzo, scadenza, fisso } = req.body;
-            const fascia = new Fascia({ tipo, min, max, prezzo, scadenza, fisso });
+            const fascia = new Fascia(req.body);
 
             await fascia.save();
             res.status(201).json(fascia);
@@ -33,7 +32,7 @@ class FasciaController
     {
         try
         {
-            const fascia = await Fascia.findById(req.params.id);
+            const fascia = await Fascia.findById(req.params.id).populate('listino');
             if (!fascia)
             {
                 return res.status(404).json({ error: 'Fascia not found' });

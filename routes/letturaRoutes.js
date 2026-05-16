@@ -4,6 +4,7 @@ const LetturaController = require('../controllers/LetturaController');
 
 router.post('/', LetturaController.createLettura);
 router.get('/', LetturaController.getLetture);
+router.get('/:id/calcolo', LetturaController.getCalcolo);
 router.get('/:id', LetturaController.getLettura);
 router.put('/:id', LetturaController.updateLettura);
 router.delete('/:id', LetturaController.deleteLettura);
