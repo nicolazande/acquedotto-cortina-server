@@ -3,196 +3,99 @@ const Contatore = require('../models/Contatore');
 const Fattura = require('../models/Fattura');
 const { sendPaginated } = require('./utils/paginatedQuery');
 const {
+    associateRecords,
+    createRecord,
+    deleteRecord,
+    getManyByField,
+    getRecord,
+    updateRecord,
+} = require('./utils/controllerActions');
+const {
     createInvoiceFromReadings,
     previewClienteBilling,
 } = require('../services/invoiceGenerator');
 
-class ClienteController
-{
-    static async createCliente(req, res)
-    {
-        try
-        {
-            const cliente = new Cliente(req.body);
-            await cliente.save();
-            res.status(201).json(cliente);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(400).json({ error: 'Error creating cliente' });
-        }
-    }
+const handleError = (res, error, message, status = 500) => {
+    console.error(error);
+    res.status(error.status || status).json({ error: error.message || message });
+};
 
-    static async getClienti(req, res) {
-        return sendPaginated(Cliente, req, res, {
-            defaultSort: 'nome',
-            errorMessage: 'Error fetching clienti',
+const getClienti = (req, res) => sendPaginated(Cliente, req, res, {
+    defaultSort: 'nome',
+    errorMessage: 'Error fetching clienti',
+});
+
+const getFatturazionePreview = async (req, res) => {
+    try {
+        const result = await previewClienteBilling(req.params.id);
+        res.status(200).json(result);
+    } catch (error) {
+        handleError(res, error, 'Error fetching cliente billing preview');
+    }
+};
+
+const generateFattura = async (req, res) => {
+    try {
+        const preview = await previewClienteBilling(req.params.id);
+        const requestedIds = req.body.letture || req.body.letturaIds;
+        const letture = requestedIds?.length
+            ? requestedIds
+            : preview.previews
+                .filter((item) => !item.error && item.lines?.length)
+                .map((item) => item.lettura._id);
+
+        const result = await createInvoiceFromReadings({
+            letture,
+            data_fattura: req.body.data_fattura,
+            data_scadenza: req.body.data_scadenza,
+            tipo_documento: req.body.tipo_documento,
+            confermata: req.body.confermata,
         });
+
+        res.status(201).json(result);
+    } catch (error) {
+        handleError(res, error, 'Error generating cliente fattura', 400);
     }
+};
 
-    static async getCliente(req, res)
-    {
-        try
-        {
-            const cliente = await Cliente.findById(req.params.id);
-            if (!cliente)
-            {
-                return res.status(404).json({ error: 'Cliente not found' });
-            }
-            res.status(200).json(cliente);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching cliente' });
-        }
-    }
-
-    static async getFatturazionePreview(req, res)
-    {
-        try
-        {
-            const result = await previewClienteBilling(req.params.id);
-            res.status(200).json(result);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(error.status || 500).json({ error: error.message || 'Error fetching cliente billing preview' });
-        }
-    }
-
-    static async generateFattura(req, res)
-    {
-        try
-        {
-            const preview = await previewClienteBilling(req.params.id);
-            const requestedIds = req.body.letture || req.body.letturaIds;
-            const letture = requestedIds && requestedIds.length
-                ? requestedIds
-                : preview.previews
-                    .filter((item) => !item.error && item.lines?.length)
-                    .map((item) => item.lettura._id);
-
-            const result = await createInvoiceFromReadings({
-                letture,
-                data_fattura: req.body.data_fattura,
-                tipo_documento: req.body.tipo_documento,
-                confermata: req.body.confermata,
-            });
-
-            res.status(201).json(result);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(error.status || 400).json({ error: error.message || 'Error generating cliente fattura' });
-        }
-    }
-
-    static async updateCliente(req, res)
-    {
-        try
-        {
-            const updateData = req.body;
-            const cliente = await Cliente.findByIdAndUpdate(req.params.id, updateData, { new: true });
-            res.status(200).json(cliente);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(400).json({ error: 'Error updating cliente' });
-        }
-    }
-
-    static async deleteCliente(req, res)
-    {
-        try
-        {
-            const cliente = await Cliente.findByIdAndDelete(req.params.id);
-            if (!cliente)
-            {
-                return res.status(404).json({ error: 'Cliente not found' });
-            }
-            res.status(204).json({ message: 'Cliente deleted' });
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error deleting cliente' });
-        }
-    }
-
-    static async associateContatore(req, res)
-    {
-        try
-        {
-            const cliente = await Cliente.findById(req.params.clienteId);
-            const contatore = await Contatore.findById(req.params.contatoreId);
-            if (!cliente || !contatore)
-            {
-                return res.status(404).json({ error: 'Cliente or Contatore not found' });
-            }
-            contatore.cliente = cliente._id;
-            await contatore.save();
-            res.status(200).json({ message: 'Contatore associated to Cliente', contatore });
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error associating contatore to cliente' });
-        }
-    }
-
-    static async associateFattura(req, res)
-    {
-        try
-        {
-            const cliente = await Cliente.findById(req.params.clienteId);
-            const fattura = await Fattura.findById(req.params.fatturaId);
-            if (!cliente || !fattura)
-            {
-                return res.status(404).json({ error: 'Cliente or Fattura not found' });
-            }
-            fattura.cliente = cliente._id;
-            await fattura.save();
-            res.status(200).json({ message: 'Fattura associated to Cliente', fattura });
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error associating fattura to cliente' });
-        }
-    }
-
-    static async getContatoriAssociati(req, res)
-    {
-        try
-        {
-            const contatori = await Contatore.find({ cliente: req.params.id });
-            res.status(200).json(contatori);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching contatori associati' });
-        }
-    }
-
-    static async getFattureAssociate(req, res)
-    {
-        try
-        {
-            const fatture = await Fattura.find({ cliente: req.params.id });
-            res.status(200).json(fatture);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching fatture associate' });
-        }
-    }
-}
-
-module.exports = ClienteController;
+module.exports = {
+    createCliente: createRecord(Cliente, { name: 'Cliente' }),
+    getClienti,
+    getCliente: getRecord(Cliente, { name: 'Cliente' }),
+    getFatturazionePreview,
+    generateFattura,
+    updateCliente: updateRecord(Cliente, { name: 'Cliente' }),
+    deleteCliente: deleteRecord(Cliente, { name: 'Cliente' }),
+    associateContatore: associateRecords({
+        field: 'cliente',
+        responseKey: 'contatore',
+        setOn: 'target',
+        sourceModel: Cliente,
+        sourceName: 'Cliente',
+        sourceParam: 'clienteId',
+        targetModel: Contatore,
+        targetName: 'Contatore',
+        targetParam: 'contatoreId',
+    }),
+    associateFattura: associateRecords({
+        field: 'cliente',
+        responseKey: 'fattura',
+        setOn: 'target',
+        sourceModel: Cliente,
+        sourceName: 'Cliente',
+        sourceParam: 'clienteId',
+        targetModel: Fattura,
+        targetName: 'Fattura',
+        targetParam: 'fatturaId',
+    }),
+    getContatoriAssociati: getManyByField({
+        Model: Contatore,
+        field: 'cliente',
+        errorMessage: 'Error fetching contatori associati',
+    }),
+    getFattureAssociate: getManyByField({
+        Model: Fattura,
+        field: 'cliente',
+        errorMessage: 'Error fetching fatture associate',
+    }),
+};

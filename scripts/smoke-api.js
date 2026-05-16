@@ -294,6 +294,22 @@ const testBillingGeneration = async () => {
             fatturata: false,
             contatore: contatore._id,
         });
+        const manualFattura = await createRecord('fatture', {
+            cliente: cliente._id,
+            data_fattura: '2026-05-16',
+            tipo_documento: 'Fattura',
+            imponibile: 0,
+            iva: 0,
+            totale_fattura: 0,
+        });
+        createdRecords.push({ resource: 'fatture', id: manualFattura._id });
+        assert(manualFattura.scadenza, 'manual invoice should generate a scadenza');
+        createdRecords.push({ resource: 'scadenze', id: manualFattura.scadenza });
+
+        const manualDeadline = await request(`/fatture/${manualFattura._id}/scadenza`);
+        assert(manualDeadline.body?._id === manualFattura.scadenza, 'manual invoice deadline relation is missing');
+        assert(manualDeadline.body.scadenza.startsWith('2026-06-15'), 'manual invoice deadline should default to 30 days');
+        assert(manualDeadline.body.ritardo === 0, 'manual invoice deadline delay should start at 0');
 
         const preview = await request(`/letture/${lettura._id}/calcolo`);
         assert(preview.body.billableConsumption === 125, 'billing preview did not calculate expected consumption');
@@ -310,6 +326,9 @@ const testBillingGeneration = async () => {
         assert(fattura.imponibile === 160, 'generated invoice imponibile is wrong');
         assert(fattura.stato === 'bozza', 'generated invoice should start as bozza');
         assert(fattura.origine === 'letture', 'generated invoice origin should be letture');
+        assert(fattura.scadenza, 'generated invoice should create a deadline');
+        const generatedDeadline = await request(`/fatture/${fattura._id}/scadenza`);
+        assert(generatedDeadline.body.scadenza.startsWith('2026-06-15'), 'generated invoice deadline should default to 30 days');
         assert((fattura.letture || []).includes(lettura._id), 'generated invoice should keep billed reading ids');
         assert(servizi.length === 3, 'generated invoice should have 3 service rows');
         assert(servizi.every((servizio) => servizio.listino), 'generated services should store listino snapshot reference');
@@ -318,6 +337,7 @@ const testBillingGeneration = async () => {
 
         createdRecords.push(...servizi.map((servizio) => ({ resource: 'servizi', id: servizio._id })));
         createdRecords.push({ resource: 'fatture', id: fattura._id });
+        createdRecords.push({ resource: 'scadenze', id: fattura.scadenza });
 
         const verification = await request(`/fatture/${fattura._id}/verifica-calcolo`);
         assert(verification.body.summary.serviziCoerenti, 'generated invoice services do not match recalculation');

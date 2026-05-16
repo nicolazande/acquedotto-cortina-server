@@ -48,6 +48,7 @@ const sendPaginated = async (Model, req, res, options = {}) => {
         defaultSort = '_id',
         errorMessage = 'Error fetching records',
         populate,
+        transform,
     } = options;
 
     try {
@@ -66,10 +67,11 @@ const sendPaginated = async (Model, req, res, options = {}) => {
             findQuery = findQuery.populate(populate);
         }
 
-        const data = await findQuery
+        const records = await findQuery
             .sort({ [sortField]: sortOrder })
             .skip(skip)
             .limit(limit);
+        const data = transform ? records.map(transform) : records;
 
         res.status(200).json({
             data,

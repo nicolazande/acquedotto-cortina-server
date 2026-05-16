@@ -4,291 +4,143 @@ const Servizio = require('../models/Servizio');
 const Scadenza = require('../models/Scadenza');
 const { sendPaginated } = require('./utils/paginatedQuery');
 const {
+    associateRecords,
+    deleteRecord,
+    getManyByField,
+    getPopulatedRelation,
+    getRecord,
+    updateRecord,
+} = require('./utils/controllerActions');
+const {
+    createManualInvoice,
     createInvoiceFromReadings,
     previewBillingBatch,
     verifyInvoiceCalculation,
 } = require('../services/invoiceGenerator');
+const { withComputedDelay } = require('../services/deadlineService');
 const { generateInvoicePdf } = require('../services/invoicePdf');
 
-class FatturaController
-{
-    static async createFattura(req, res) {
-        try {
-            const currentYear = new Date().getFullYear(); // Get the current year
+const handleError = (res, error, message, status = 500) => {
+    console.error(error);
+    res.status(error.status || status).json({ error: error.message || message });
+};
 
-            // Find the highest numero for the current year
-            const highestFattura = await Fattura.findOne({ anno: currentYear })
-                .sort({ numero: -1 })
-                .limit(1)
-                .select('numero');
-
-            // Determine the new numero
-            const newNumero = highestFattura ? highestFattura.numero + 1 : 0;
-
-            // Create the new fattura with anno and numero
-            const fattura = new Fattura({
-                ...req.body,
-                anno: currentYear,
-                numero: newNumero,
-            });
-
-            await fattura.save();
-
-            res.status(201).json(fattura);
-        } catch (error) {
-            console.error(error);
-            res.status(400).json({ error: 'Error creating fattura' });
-        }
+const createFattura = async (req, res) => {
+    try {
+        const result = await createManualInvoice(req.body);
+        res.status(201).json(result.fattura);
+    } catch (error) {
+        handleError(res, error, 'Error creating fattura', 400);
     }
+};
 
-    static async getFatture(req, res) {
-        return sendPaginated(Fattura, req, res, {
-            defaultSort: 'data_fattura',
-            errorMessage: 'Error fetching fatture',
-            populate: 'cliente scadenza',
+const getFatture = (req, res) => sendPaginated(Fattura, req, res, {
+    defaultSort: 'data_fattura',
+    errorMessage: 'Error fetching fatture',
+    populate: 'cliente scadenza',
+});
+
+const generateFromReadings = async (req, res) => {
+    try {
+        const result = await createInvoiceFromReadings({
+            letture: req.body.letture || req.body.letturaIds,
+            data_fattura: req.body.data_fattura,
+            data_scadenza: req.body.data_scadenza,
+            tipo_documento: req.body.tipo_documento,
+            confermata: req.body.confermata,
         });
+
+        res.status(201).json(result);
+    } catch (error) {
+        handleError(res, error, 'Error generating fattura', 400);
     }
+};
 
-    static async generateFromReadings(req, res)
-    {
-        try
-        {
-            const result = await createInvoiceFromReadings({
-                letture: req.body.letture || req.body.letturaIds,
-                data_fattura: req.body.data_fattura,
-                tipo_documento: req.body.tipo_documento,
-                confermata: req.body.confermata,
-            });
-
-            res.status(201).json(result);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(error.status || 400).json({ error: error.message || 'Error generating fattura' });
-        }
+const getGenerationPreview = async (req, res) => {
+    try {
+        const result = await previewBillingBatch({ limit: req.query.limit });
+        res.status(200).json(result);
+    } catch (error) {
+        handleError(res, error, 'Error fetching billing generation preview');
     }
+};
 
-    static async getGenerationPreview(req, res)
-    {
-        try
-        {
-            const result = await previewBillingBatch({ limit: req.query.limit });
-            res.status(200).json(result);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(error.status || 500).json({ error: error.message || 'Error fetching billing generation preview' });
-        }
+const verifyCalcolo = async (req, res) => {
+    try {
+        const result = await verifyInvoiceCalculation(req.params.id);
+        res.status(200).json(result);
+    } catch (error) {
+        handleError(res, error, 'Error verifying fattura calculation');
     }
+};
 
-    static async getFattura(req, res)
-    {
-        try
-        {
-            const fattura = await Fattura.findById(req.params.id).populate('cliente scadenza');
-            if (!fattura)
-            {
-                return res.status(404).json({ error: 'Fattura not found' });
-            }
-            res.status(200).json(fattura);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching fattura' });
-        }
+const downloadPdf = async (req, res) => {
+    try {
+        const { buffer, filename } = await generateInvoicePdf(req.params.id);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+        res.setHeader('Content-Length', buffer.length);
+        res.status(200).send(buffer);
+    } catch (error) {
+        handleError(res, error, 'Error generating fattura PDF');
     }
+};
 
-    static async verifyCalcolo(req, res)
-    {
-        try
-        {
-            const result = await verifyInvoiceCalculation(req.params.id);
-            res.status(200).json(result);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(error.status || 500).json({ error: error.message || 'Error verifying fattura calculation' });
-        }
-    }
-
-    static async downloadPdf(req, res)
-    {
-        try
-        {
-            const { buffer, filename } = await generateInvoicePdf(req.params.id);
-            res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
-            res.setHeader('Content-Length', buffer.length);
-            res.status(200).send(buffer);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(error.status || 500).json({ error: error.message || 'Error generating fattura PDF' });
-        }
-    }
-
-    static async updateFattura(req, res)
-    {
-        try
-        {
-            const updateData = req.body;
-            const fattura = await Fattura.findByIdAndUpdate(req.params.id, updateData, { new: true });
-
-            res.status(200).json(fattura);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(400).json({ error: 'Error updating fattura' });
-        }
-    }
-
-    static async deleteFattura(req, res)
-    {
-        try
-        {
-            const fattura = await Fattura.findByIdAndDelete(req.params.id);
-
-            if (!fattura)
-            {
-                return res.status(404).json({ error: 'Fattura not found' });
-            }
-
-            res.status(204).json({ message: 'Fattura deleted' });
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error deleting fattura' });
-        }
-    }
-
-    static async associateCliente(req, res)
-    {
-        try
-        {
-            const fattura = await Fattura.findById(req.params.fatturaId);
-            const cliente = await Cliente.findById(req.params.clienteId);
-
-            if (!fattura || !cliente)
-            {
-                return res.status(404).json({ error: 'Fattura or Cliente not found' });
-            }
-
-            fattura.cliente = cliente._id;
-            await fattura.save();
-
-            res.status(200).json({ message: 'Cliente associated to Fattura', fattura });
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error associating cliente to fattura' });
-        }
-    }
-
-    static async associateServizio(req, res)
-    {
-        try
-        {
-            const fattura = await Fattura.findById(req.params.fatturaId);
-            const servizio = await Servizio.findById(req.params.servizioId);
-
-            if (!fattura || !servizio)
-            {
-                return res.status(404).json({ error: 'Fattura or Servizio not found' });
-            }
-
-            servizio.fattura = fattura._id;
-            await servizio.save();
-
-            res.status(200).json({ message: 'Servizio associated to Fattura', servizio });
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error associating servizio to fattura' });
-        }
-    }
-
-    static async associateScadenza(req, res)
-    {
-        try
-        {
-            const fattura = await Fattura.findById(req.params.fatturaId);
-            const scadenza = await Scadenza.findById(req.params.scadenzaId);
-
-            if (!fattura || !scadenza)
-            {
-                return res.status(404).json({ error: 'Fattura or Scadenza not found' });
-            }
-
-            fattura.scadenza = scadenza._id;
-            await fattura.save();
-
-            res.status(200).json({ message: 'Scadenza associated to Fattura', scadenza });
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error associating scadenza to fattura' });
-        }
-    }
-
-    static async getServiziAssociati(req, res)
-    {
-        try
-        {
-            const servizi = await Servizio.find({ fattura: req.params.id }).populate('lettura articolo listino fascia');
-            res.status(200).json(servizi);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching servizi associati' });
-        }
-    }
-
-    static async getClienteAssociato(req, res)
-    {
-        try
-        {
-            const fattura = await Fattura.findById(req.params.id).populate('cliente');
-            if (!fattura)
-            {
-                return res.status(404).json({ error: 'Fattura not found' });
-            }
-            res.status(200).json(fattura.cliente);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching cliente associato' });
-        }
-    }
-
-    static async getScadenzaAssociata(req, res)
-    {
-        try
-        {
-            const fattura = await Fattura.findById(req.params.id).populate('scadenza');
-            if (!fattura)
-            {
-                return res.status(404).json({ error: 'Fattura not found' });
-            }
-            res.status(200).json(fattura.scadenza);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching scadenza associato' });
-        }
-    }
-}
-
-module.exports = FatturaController;
+module.exports = {
+    createFattura,
+    getFatture,
+    generateFromReadings,
+    getGenerationPreview,
+    getFattura: getRecord(Fattura, { name: 'Fattura', populate: 'cliente scadenza' }),
+    verifyCalcolo,
+    downloadPdf,
+    updateFattura: updateRecord(Fattura, { name: 'Fattura' }),
+    deleteFattura: deleteRecord(Fattura, { name: 'Fattura' }),
+    associateCliente: associateRecords({
+        field: 'cliente',
+        responseKey: 'fattura',
+        setOn: 'source',
+        sourceModel: Fattura,
+        sourceName: 'Fattura',
+        sourceParam: 'fatturaId',
+        targetModel: Cliente,
+        targetName: 'Cliente',
+        targetParam: 'clienteId',
+    }),
+    associateServizio: associateRecords({
+        field: 'fattura',
+        responseKey: 'servizio',
+        setOn: 'target',
+        sourceModel: Fattura,
+        sourceName: 'Fattura',
+        sourceParam: 'fatturaId',
+        targetModel: Servizio,
+        targetName: 'Servizio',
+        targetParam: 'servizioId',
+    }),
+    associateScadenza: associateRecords({
+        field: 'scadenza',
+        responseKey: 'scadenza',
+        responseRecord: 'target',
+        setOn: 'source',
+        sourceModel: Fattura,
+        sourceName: 'Fattura',
+        sourceParam: 'fatturaId',
+        targetModel: Scadenza,
+        targetName: 'Scadenza',
+        targetParam: 'scadenzaId',
+    }),
+    getServiziAssociati: getManyByField({
+        Model: Servizio,
+        field: 'fattura',
+        populate: 'lettura articolo listino fascia',
+        errorMessage: 'Error fetching servizi associati',
+    }),
+    getClienteAssociato: getPopulatedRelation({ Model: Fattura, name: 'Fattura', path: 'cliente' }),
+    getScadenzaAssociata: getPopulatedRelation({
+        Model: Fattura,
+        name: 'Fattura',
+        path: 'scadenza',
+        transform: withComputedDelay,
+    }),
+};

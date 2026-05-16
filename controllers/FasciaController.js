@@ -1,128 +1,35 @@
 const Fascia = require('../models/Fascia');
 const Listino = require('../models/Listino');
 const { sendPaginated } = require('./utils/paginatedQuery');
+const {
+    associateRecords,
+    createRecord,
+    deleteRecord,
+    getPopulatedRelation,
+    getRecord,
+    updateRecord,
+} = require('./utils/controllerActions');
 
-class FasciaController
-{
-    static async createFascia(req, res)
-    {
-        try
-        {
-            const fascia = new Fascia(req.body);
-
-            await fascia.save();
-            res.status(201).json(fascia);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(400).json({ error: 'Error creating fascia' });
-        }
-    }
-
-    static async getFasce(req, res) {
-        return sendPaginated(Fascia, req, res, {
-            defaultSort: 'tipo',
-            errorMessage: 'Error fetching fasce',
-            populate: 'listino',
-        });
-    }
-
-    static async getFascia(req, res)
-    {
-        try
-        {
-            const fascia = await Fascia.findById(req.params.id).populate('listino');
-            if (!fascia)
-            {
-                return res.status(404).json({ error: 'Fascia not found' });
-            }
-            res.status(200).json(fascia);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching fascia' });
-        }
-    }
-
-    static async updateFascia(req, res)
-    {
-        try
-        {
-            const updateData = req.body;
-            const fascia = await Fascia.findByIdAndUpdate(req.params.id, updateData, { new: true });
-
-            res.status(200).json(fascia);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(400).json({ error: 'Error updating fascia' });
-        }
-    }
-
-    static async deleteFascia(req, res)
-    {
-        try
-        {
-            const fascia = await Fascia.findByIdAndDelete(req.params.id);
-
-            if (!fascia)
-            {
-                return res.status(404).json({ error: 'Fascia not found' });
-            }
-
-            res.status(204).json({ message: 'Fascia deleted' });
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error deleting fascia' });
-        }
-    }
-
-    static async associateListino(req, res)
-    {
-        try
-        {
-            const fascia = await Fascia.findById(req.params.fasciaId);
-            const listino = await Listino.findById(req.params.listinoId);
-
-            if (!fascia || !listino)
-            {
-                return res.status(404).json({ error: 'Fascia or Listino not found' });
-            }
-
-            fascia.listino = listino._id;
-            await fascia.save();
-
-            res.status(200).json({ message: 'Listino associated to Fascia', fascia });
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error associating listino to fascia' });
-        }
-    }
-
-    static async getListinoAssociato(req, res)
-    {
-        try
-        {
-            const fascia = await Fascia.findById(req.params.id).populate('listino');
-            if (!fascia)
-            {
-                return res.status(404).json({ error: 'Fascia not found' });
-            }
-            res.status(200).json(fascia.listino);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching listino associato' });
-        }
-    }
-}
-
-module.exports = FasciaController;
+module.exports = {
+    createFascia: createRecord(Fascia, { name: 'Fascia' }),
+    getFasce: (req, res) => sendPaginated(Fascia, req, res, {
+        defaultSort: 'tipo',
+        errorMessage: 'Error fetching fasce',
+        populate: 'listino',
+    }),
+    getFascia: getRecord(Fascia, { name: 'Fascia', populate: 'listino' }),
+    updateFascia: updateRecord(Fascia, { name: 'Fascia' }),
+    deleteFascia: deleteRecord(Fascia, { name: 'Fascia' }),
+    associateListino: associateRecords({
+        field: 'listino',
+        responseKey: 'fascia',
+        setOn: 'source',
+        sourceModel: Fascia,
+        sourceName: 'Fascia',
+        sourceParam: 'fasciaId',
+        targetModel: Listino,
+        targetName: 'Listino',
+        targetParam: 'listinoId',
+    }),
+    getListinoAssociato: getPopulatedRelation({ Model: Fascia, name: 'Fascia', path: 'listino' }),
+};

@@ -2,177 +2,72 @@ const Lettura = require('../models/Lettura');
 const Contatore = require('../models/Contatore');
 const Servizio = require('../models/Servizio');
 const { sendPaginated } = require('./utils/paginatedQuery');
+const {
+    associateRecords,
+    createRecord,
+    deleteRecord,
+    getManyByField,
+    getPopulatedRelation,
+    getRecord,
+    updateRecord,
+} = require('./utils/controllerActions');
 const { calculateReadingById } = require('../services/invoiceGenerator');
 
-class LetturaController
-{
-    static async createLettura(req, res)
-    {
-        try
-        {
-            const lettura = new Lettura(req.body);
-            await lettura.save();
-            res.status(201).json(lettura);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(400).json({ error: 'Error creating lettura' });
-        }
-    }
+const populatedContatore = {
+    path: 'contatore',
+    populate: 'listino',
+};
 
-    static async getLetture(req, res) {
-        return sendPaginated(Lettura, req, res, {
-            defaultSort: 'data_lettura',
-            errorMessage: 'Error fetching letture',
-            populate: 'contatore',
+const getCalcolo = async (req, res) => {
+    try {
+        const calculation = await calculateReadingById(req.params.id, {
+            previousValue: req.query.previousValue,
+            currentValue: req.query.currentValue,
         });
+        res.status(200).json(calculation);
+    } catch (error) {
+        console.error(error);
+        res.status(error.status || 500).json({ error: error.message || 'Error calculating lettura invoice preview' });
     }
+};
 
-    static async getLettura(req, res)
-    {
-        try
-        {
-            const lettura = await Lettura.findById(req.params.id).populate({
-                path: 'contatore',
-                populate: 'listino',
-            });
-            if (!lettura)
-            {
-                return res.status(404).json({ error: 'Lettura not found' });
-            }
-            res.status(200).json(lettura);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching lettura' });
-        }
-    }
-
-    static async getCalcolo(req, res)
-    {
-        try
-        {
-            const calculation = await calculateReadingById(req.params.id, {
-                previousValue: req.query.previousValue,
-                currentValue: req.query.currentValue,
-            });
-            res.status(200).json(calculation);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(error.status || 500).json({ error: error.message || 'Error calculating lettura invoice preview' });
-        }
-    }
-
-    static async updateLettura(req, res)
-    {
-        try
-        {
-            const updateData = req.body;
-            const lettura = await Lettura.findByIdAndUpdate(req.params.id, updateData, { new: true });
-            res.status(200).json(lettura);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(400).json({ error: 'Error updating lettura' });
-        }
-    }
-
-    static async deleteLettura(req, res)
-    {
-        try
-        {
-            const lettura = await Lettura.findByIdAndDelete(req.params.id);
-            if (!lettura)
-            {
-                return res.status(404).json({ error: 'Lettura not found' });
-            }
-            res.status(204).json({ message: 'Lettura deleted' });
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error deleting lettura' });
-        }
-    }
-
-    static async associateContatore(req, res)
-    {
-        try
-        {
-            const lettura = await Lettura.findById(req.params.letturaId);
-            const contatore = await Contatore.findById(req.params.contatoreId);
-            if (!lettura || !contatore)
-            {
-                return res.status(404).json({ error: 'Lettura or Contatore not found' });
-            }
-            lettura.contatore = contatore._id;
-            await lettura.save();
-            res.status(200).json({ message: 'Contatore associated to Lettura', lettura });
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error associating contatore to lettura' });
-        }
-    }
-
-    static async associateServizio(req, res)
-    {
-        try
-        {
-            const lettura = await Lettura.findById(req.params.letturaId);
-            const servizio = await Servizio.findById(req.params.servizioId);
-            if (!lettura || !servizio)
-            {
-                return res.status(404).json({ error: 'Lettura or Servizio not found' });
-            }
-            servizio.lettura = lettura._id;
-            await servizio.save();
-            res.status(200).json({ message: 'Servizio associated to Lettura', servizio });
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error associating servizio to lettura' });
-        }
-    }
-
-    static async getContatoreAssociato(req, res)
-    {
-        try
-        {
-            const lettura = await Lettura.findById(req.params.id).populate('contatore');
-            if (!lettura)
-            {
-                return res.status(404).json({ error: 'Lettura not found' });
-            }
-            res.status(200).json(lettura.contatore);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching contatore associato' });
-        }
-    }
-
-    static async getServiziAssociati(req, res)
-    {
-        try
-        {
-            const servizi = await Servizio.find({ lettura: req.params.id });
-            res.status(200).json(servizi);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching servizi associati' });
-        }
-    }
-}
-
-module.exports = LetturaController;
+module.exports = {
+    createLettura: createRecord(Lettura, { name: 'Lettura' }),
+    getLetture: (req, res) => sendPaginated(Lettura, req, res, {
+        defaultSort: 'data_lettura',
+        errorMessage: 'Error fetching letture',
+        populate: 'contatore',
+    }),
+    getLettura: getRecord(Lettura, { name: 'Lettura', populate: populatedContatore }),
+    getCalcolo,
+    updateLettura: updateRecord(Lettura, { name: 'Lettura' }),
+    deleteLettura: deleteRecord(Lettura, { name: 'Lettura' }),
+    associateContatore: associateRecords({
+        field: 'contatore',
+        responseKey: 'lettura',
+        setOn: 'source',
+        sourceModel: Lettura,
+        sourceName: 'Lettura',
+        sourceParam: 'letturaId',
+        targetModel: Contatore,
+        targetName: 'Contatore',
+        targetParam: 'contatoreId',
+    }),
+    associateServizio: associateRecords({
+        field: 'lettura',
+        responseKey: 'servizio',
+        setOn: 'target',
+        sourceModel: Lettura,
+        sourceName: 'Lettura',
+        sourceParam: 'letturaId',
+        targetModel: Servizio,
+        targetName: 'Servizio',
+        targetParam: 'servizioId',
+    }),
+    getContatoreAssociato: getPopulatedRelation({ Model: Lettura, name: 'Lettura', path: 'contatore' }),
+    getServiziAssociati: getManyByField({
+        Model: Servizio,
+        field: 'lettura',
+        errorMessage: 'Error fetching servizi associati',
+    }),
+};

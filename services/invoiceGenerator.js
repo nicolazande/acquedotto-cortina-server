@@ -7,6 +7,7 @@ const Fattura = require('../models/Fattura');
 const InvoiceCounter = require('../models/InvoiceCounter');
 const Lettura = require('../models/Lettura');
 const Servizio = require('../models/Servizio');
+const { ensureInvoiceDeadline } = require('./deadlineService');
 const {
     DEFAULT_FIXED_ARTICLE_CODE,
     DEFAULT_WATER_ARTICLE_CODE,
@@ -215,11 +216,54 @@ const cleanServiceLine = (line, fatturaId, riga) => ({
     fattura: fatturaId,
 });
 
-const getInvoiceStatus = (confermata) => (confermata ? 'confermata' : 'bozza');
+const toBoolean = (value) => value === true || ['1', 'true', 'yes'].includes(String(value).toLowerCase());
+const getInvoiceStatus = (confermata) => (toBoolean(confermata) ? 'confermata' : 'bozza');
+
+const createManualInvoiceInSession = async (input = {}, session) => {
+    const invoiceDate = input.data_fattura ? new Date(input.data_fattura) : new Date();
+    const year = input.anno || invoiceDate.getFullYear();
+    const numero = hasValue(input.numero) ? numberOrZero(input.numero) : await reserveInvoiceNumber(year, session);
+    const cliente = input.cliente
+        ? await withSession(Cliente.findById(input.cliente), session).lean()
+        : null;
+    const customerLabel = getCustomerLabel(cliente);
+    const confermata = toBoolean(input.confermata);
+    const [fattura] = await Fattura.create([{
+        ...input,
+        tipo_documento: input.tipo_documento || 'Fattura',
+        ragione_sociale: input.ragione_sociale || customerLabel,
+        confermata,
+        stato: input.stato || getInvoiceStatus(confermata),
+        origine: input.origine || 'manuale',
+        anno: year,
+        numero,
+        codice: input.codice || `${year}-${String(numero).padStart(4, '0')}`,
+        data_fattura: invoiceDate,
+        nome_cliente: input.nome_cliente || customerLabel,
+        cliente: cliente?._id || input.cliente,
+        scadenza: input.scadenza || undefined,
+    }], { session });
+    const scadenza = await ensureInvoiceDeadline({
+        cliente,
+        dueDate: input.data_scadenza,
+        fattura,
+        session,
+    });
+
+    return {
+        fattura,
+        scadenza,
+    };
+};
+
+const createManualInvoice = (input) => runWithOptionalTransaction((session) => (
+    createManualInvoiceInSession(input, session)
+));
 
 const createInvoiceFromReadingsInSession = async ({
     confermata = false,
     data_fattura,
+    data_scadenza,
     letture,
     tipo_documento = 'Fattura',
 }, session) => {
@@ -274,7 +318,7 @@ const createInvoiceFromReadingsInSession = async ({
     const [fattura] = await Fattura.create([{
         tipo_documento,
         ragione_sociale: getCustomerLabel(cliente),
-        confermata,
+        confermata: toBoolean(confermata),
         stato: getInvoiceStatus(confermata),
         origine: 'letture',
         anno: year,
@@ -292,6 +336,12 @@ const createInvoiceFromReadingsInSession = async ({
         allLines.map((line, index) => cleanServiceLine(line, fattura._id, index + 1)),
         { session }
     );
+    const scadenza = await ensureInvoiceDeadline({
+        cliente,
+        dueDate: data_scadenza,
+        fattura,
+        session,
+    });
 
     if (!session) {
         await Lettura.updateMany({ _id: { $in: letturaIds } }, { fatturata: true });
@@ -299,6 +349,7 @@ const createInvoiceFromReadingsInSession = async ({
 
     return {
         fattura,
+        scadenza,
         servizi: services,
         calculations,
     };
@@ -475,6 +526,7 @@ const verifyInvoiceCalculation = async (fatturaId) => {
 
 module.exports = {
     calculateReadingById,
+    createManualInvoice,
     createInvoiceFromReadings,
     previewBillingBatch,
     previewClienteBilling,

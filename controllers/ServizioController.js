@@ -3,211 +3,61 @@ const Lettura = require('../models/Lettura');
 const Articolo = require('../models/Articolo');
 const Fattura = require('../models/Fattura');
 const { sendPaginated } = require('./utils/paginatedQuery');
+const {
+    associateRecords,
+    createRecord,
+    deleteRecord,
+    getPopulatedRelation,
+    getRecord,
+    updateRecord,
+} = require('./utils/controllerActions');
 
-class ServizioController
-{
-    static async createServizio(req, res)
-    {
-        try
-        {
-            const servizio = new Servizio(req.body);
-            await servizio.save();
-            res.status(201).json(servizio);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(400).json({ error: 'Error creating servizio' });
-        }
-    }
+const populate = 'lettura articolo fattura listino fascia';
 
-    static async getServizi(req, res) {
-        return sendPaginated(Servizio, req, res, {
-            defaultSort: 'descrizione',
-            errorMessage: 'Error fetching servizi',
-            populate: 'lettura articolo fattura listino fascia',
-        });
-    }
-
-    static async getServizio(req, res)
-    {
-        try
-        {
-            const servizio = await Servizio.findById(req.params.id).populate('lettura articolo fattura listino fascia');
-            if (!servizio)
-            {
-                return res.status(404).json({ error: 'Servizio not found' });
-            }
-            res.status(200).json(servizio);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching servizio' });
-        }
-    }
-
-    static async updateServizio(req, res)
-    {
-        try
-        {
-            const updateData = req.body;
-            const servizio = await Servizio.findByIdAndUpdate(req.params.id, updateData, { new: true });
-
-            res.status(200).json(servizio);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(400).json({ error: 'Error updating servizio' });
-        }
-    }
-
-    static async deleteServizio(req, res)
-    {
-        try
-        {
-            const servizio = await Servizio.findByIdAndDelete(req.params.id);
-
-            if (!servizio)
-            {
-                return res.status(404).json({ error: 'Servizio not found' });
-            }
-
-            res.status(204).json({ message: 'Servizio deleted' });
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error deleting servizio' });
-        }
-    }
-
-    static async associateLettura(req, res)
-    {
-        try
-        {
-            const servizio = await Servizio.findById(req.params.servizioId);
-            const lettura = await Lettura.findById(req.params.letturaId);
-
-            if (!servizio || !lettura)
-            {
-                return res.status(404).json({ error: 'Servizio or Lettura not found' });
-            }
-
-            servizio.lettura = lettura._id;
-            await servizio.save();
-
-            res.status(200).json({ message: 'Lettura associated to Servizio', servizio });
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error associating lettura to servizio' });
-        }
-    }
-
-    static async associateArticolo(req, res)
-    {
-        try
-        {
-            const servizio = await Servizio.findById(req.params.servizioId);
-            const articolo = await Articolo.findById(req.params.articoloId);
-
-            if (!servizio || !articolo)
-            {
-                return res.status(404).json({ error: 'Servizio or Articolo not found' });
-            }
-
-            servizio.articolo = articolo._id;
-            await servizio.save();
-
-            res.status(200).json({ message: 'Articolo associated to Servizio', servizio });
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error associating articolo to servizio' });
-        }
-    }
-
-    static async associateFattura(req, res)
-    {
-        try
-        {
-            const servizio = await Servizio.findById(req.params.servizioId);
-            const fattura = await Fattura.findById(req.params.fatturaId);
-
-            if (!servizio || !fattura)
-            {
-                return res.status(404).json({ error: 'Servizio or Fattura not found' });
-            }
-
-            servizio.fattura = fattura._id;
-            await servizio.save();
-
-            res.status(200).json({ message: 'Fattura associated to Servizio', servizio });
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error associating fattura to servizio' });
-        }
-    }
-
-    static async getLetturaAssociata(req, res)
-    {
-        try
-        {
-            const servizio = await Servizio.findById(req.params.id).populate('lettura');
-            if (!servizio)
-            {
-                return res.status(404).json({ error: 'Servizio not found' });
-            }
-            res.status(200).json(servizio.lettura);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching lettura associata' });
-        }
-    }
-
-    static async getFatturaAssociata(req, res)
-    {
-        try
-        {
-            const servizio = await Servizio.findById(req.params.id).populate('fattura');
-            if (!servizio)
-            {
-                return res.status(404).json({ error: 'Servizio not found' });
-            }
-            res.status(200).json(servizio.fattura);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching fattura associata' });
-        }
-    }
-
-    static async getArticoloAssociato(req, res)
-    {
-        try
-        {
-            const servizio = await Servizio.findById(req.params.id).populate('articolo');
-            if (!servizio)
-            {
-                return res.status(404).json({ error: 'Servizio not found' });
-            }
-            res.status(200).json(servizio.articolo);
-        }
-        catch (error)
-        {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching articolo associato' });
-        }
-    }
-}
-
-module.exports = ServizioController;
+module.exports = {
+    createServizio: createRecord(Servizio, { name: 'Servizio' }),
+    getServizi: (req, res) => sendPaginated(Servizio, req, res, {
+        defaultSort: 'descrizione',
+        errorMessage: 'Error fetching servizi',
+        populate,
+    }),
+    getServizio: getRecord(Servizio, { name: 'Servizio', populate }),
+    updateServizio: updateRecord(Servizio, { name: 'Servizio' }),
+    deleteServizio: deleteRecord(Servizio, { name: 'Servizio' }),
+    associateLettura: associateRecords({
+        field: 'lettura',
+        responseKey: 'servizio',
+        setOn: 'source',
+        sourceModel: Servizio,
+        sourceName: 'Servizio',
+        sourceParam: 'servizioId',
+        targetModel: Lettura,
+        targetName: 'Lettura',
+        targetParam: 'letturaId',
+    }),
+    associateArticolo: associateRecords({
+        field: 'articolo',
+        responseKey: 'servizio',
+        setOn: 'source',
+        sourceModel: Servizio,
+        sourceName: 'Servizio',
+        sourceParam: 'servizioId',
+        targetModel: Articolo,
+        targetName: 'Articolo',
+        targetParam: 'articoloId',
+    }),
+    associateFattura: associateRecords({
+        field: 'fattura',
+        responseKey: 'servizio',
+        setOn: 'source',
+        sourceModel: Servizio,
+        sourceName: 'Servizio',
+        sourceParam: 'servizioId',
+        targetModel: Fattura,
+        targetName: 'Fattura',
+        targetParam: 'fatturaId',
+    }),
+    getLetturaAssociata: getPopulatedRelation({ Model: Servizio, name: 'Servizio', path: 'lettura' }),
+    getFatturaAssociata: getPopulatedRelation({ Model: Servizio, name: 'Servizio', path: 'fattura' }),
+    getArticoloAssociato: getPopulatedRelation({ Model: Servizio, name: 'Servizio', path: 'articolo' }),
+};
