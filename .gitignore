@@ -96,6 +96,7 @@ env
 
 # Runtime uploads / downloaded imports
 uploads/
+backups/
 *.dump
 *.archive
 

@@ -1,6 +1,7 @@
 import os
 import tempfile
 from pathlib import Path
+from time import sleep
 from urllib.parse import unquote, urlparse
 
 from dotenv import load_dotenv
@@ -12,7 +13,7 @@ from selenium import webdriver
 from bs4 import BeautifulSoup
 import requests
 from bson import ObjectId
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 SERVER_ROOT = Path(__file__).resolve().parents[2]
@@ -69,6 +70,10 @@ def env_list(name: str, default: list[str]) -> list[str]:
     if not value:
         return default
     return [item.strip().lower() for item in value.split(",") if item.strip()]
+
+def log_verbose(message: str):
+    if env_flag("IMPORT_VERBOSE"):
+        print(message)
 
 def get_database_name(mongo_uri: str) -> str:
     env_db = os.getenv("MONGODB_DB")
@@ -222,10 +227,18 @@ def collect_paged_ids(session_cookie, label: str, url_for_page, parse_ids, max_p
     return id_list
 
 def run_threaded(items, worker, max_workers: int):
+    errors = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(worker, item) for item in items]
-        for future in futures:
-            future.result()
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as error:
+                errors.append(error)
+                print(f"Worker failed: {error}")
+
+    if errors:
+        raise RuntimeError(f"{len(errors)} worker(s) failed during import.")
 
 def parse_date(value: str) -> datetime | None:
     """Parses a date string in the format '01/gen/1900' into a datetime object."""
@@ -295,14 +308,26 @@ def get_session_cookie(email, password):
         driver.quit()
 
 def fetch_html(session_cookie, url):
-    print(f"Fetching URL: {url}")
     headers = {
         'Cookie': f'.AspNet.ApplicationCookie={session_cookie}',
         'User-Agent': DEFAULT_USER_AGENT,
     }
-    response = requests.get(url, headers=headers, timeout=env_int("FASTTOOLS_TIMEOUT_SECONDS", 30))
-    response.raise_for_status()
-    return response.text
+    retries = env_int("FASTTOOLS_RETRIES", 4)
+    timeout = env_int("FASTTOOLS_TIMEOUT_SECONDS", 45)
+    backoff_seconds = env_int("FASTTOOLS_RETRY_BACKOFF_SECONDS", 3)
+
+    for attempt in range(1, retries + 1):
+        try:
+            log_verbose(f"Fetching URL: {url}")
+            response = requests.get(url, headers=headers, timeout=timeout)
+            response.raise_for_status()
+            return response.text
+        except requests.RequestException:
+            if attempt == retries:
+                raise
+            wait_seconds = backoff_seconds * attempt
+            print(f"FastTools request failed ({attempt}/{retries}). Retrying in {wait_seconds}s...")
+            sleep(wait_seconds)
 
 def parse_client_list(html):
     print("Parsing client list...")
@@ -357,7 +382,6 @@ def parse_client_details(html):
         "note": get_nested(details, "ALTRI DATI", "Note")
     }
 
-    print(f"Mapped Client Details: {mapped_details}")
     return mapped_details
 
 def parse_letture_from_counter(html, counter_mongo_id):
@@ -570,7 +594,7 @@ def fetch_all_listini(session_cookie, db):
     run_threaded(
         listino_id_list,
         lambda listino_id: fetch_listino_and_fasce(session_cookie, listino_id, db),
-        env_int("IMPORT_LISTINI_WORKERS", 10),
+        env_int("IMPORT_LISTINI_WORKERS", 8),
     )
 
     print("All Listini and Fasce have been processed.")
@@ -589,7 +613,7 @@ def fetch_all_clients(session_cookie, db):
     run_threaded(
         client_id_list,
         lambda client_id: fetch_client_and_counters_with_letture(session_cookie, client_id, db),
-        env_int("IMPORT_CLIENTI_WORKERS", 50),
+        env_int("IMPORT_CLIENTI_WORKERS", 12),
     )
 
     print("All clients, counters, and letture have been processed and imported into MongoDB.")
@@ -608,7 +632,7 @@ def fetch_all_edifici(session_cookie, db):
     run_threaded(
         edifici_id_list,
         lambda edificio_id: fetch_and_store_edificio(session_cookie, edificio_id, db),
-        env_int("IMPORT_EDIFICI_WORKERS", 50),
+        env_int("IMPORT_EDIFICI_WORKERS", 12),
     )
 
     print("All Edifici have been processed and imported into MongoDB.")
@@ -816,8 +840,6 @@ def fetch_fattura_and_servizi(session_cookie, fattura_id, db):
         "cognome": cognome
     })
 
-    if scadenza:
-        print("(nome = %s, cognome = %s) (scdenza nome = %s, scadenza cognome = %s)" % (nome, cognome, scadenza["nome"], scadenza["cognome"]))
     if client:
         fattura_details["cliente"] = client["_id"]
     else:
@@ -847,7 +869,7 @@ def fetch_all_fatture(session_cookie, db):
     run_threaded(
         fattura_id_list,
         lambda fattura_id: fetch_fattura_and_servizi(session_cookie, fattura_id, db),
-        env_int("IMPORT_FATTURE_WORKERS", 40),
+        env_int("IMPORT_FATTURE_WORKERS", 12),
     )
 
     print("All fatture and servizi have been processed.")
