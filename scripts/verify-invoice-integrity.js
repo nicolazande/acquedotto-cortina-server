@@ -7,8 +7,10 @@ const Scadenza = require('../models/Scadenza');
 const Servizio = require('../models/Servizio');
 require('../models/Cliente');
 const { calculateDelay } = require('../services/deadlineService');
+const { getTaxRate } = require('../services/billingCalculator');
 
 const money = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+const TOLERANCE = 0.02;
 const strict = ['1', 'true', 'yes'].includes(String(process.env.INVOICE_VERIFY_STRICT).toLowerCase());
 
 const sample = (items, limit = 8) => items.slice(0, limit).map((item) => JSON.stringify(item));
@@ -32,31 +34,57 @@ const countMissingReferences = async ({ from, localField, target, targetField = 
 };
 
 const getInvoiceTotalMismatches = async () => {
-    const rows = await Servizio.aggregate([
-        { $match: { fattura: { $ne: null } } },
-        { $group: { _id: '$fattura', serviziImponibile: { $sum: { $ifNull: ['$valore_unitario', 0] } } } },
-        {
-            $lookup: {
-                from: Fattura.collection.collectionName,
-                localField: '_id',
-                foreignField: '_id',
-                as: 'fattura',
-            },
-        },
-        { $unwind: '$fattura' },
-        {
-            $project: {
-                _id: 1,
-                anno: '$fattura.anno',
-                numero: '$fattura.numero',
-                fatturaImponibile: '$fattura.imponibile',
-                serviziImponibile: 1,
-                delta: { $subtract: [{ $ifNull: ['$fattura.imponibile', 0] }, '$serviziImponibile'] },
-            },
-        },
-    ]);
+    const rows = await Servizio.find({ fattura: { $ne: null } })
+        .populate('fattura articolo')
+        .lean();
+    const groups = new Map();
 
-    return rows.filter((row) => Math.abs(money(row.delta)) > 0.01);
+    rows.forEach((service) => {
+        const fattura = service.fattura;
+        if (!fattura?._id) {
+            return;
+        }
+
+        const key = String(fattura._id);
+        const current = groups.get(key) || {
+            _id: fattura._id,
+            anno: fattura.anno,
+            numero: fattura.numero,
+            fatturaImponibile: fattura.imponibile,
+            fatturaIva: fattura.iva,
+            fatturaTotale: fattura.totale_fattura,
+            serviziImponibile: 0,
+            serviziIva: 0,
+        };
+        const imponibile = money(service.valore_unitario);
+        const ivaPercent = service.aliquota_iva ?? getTaxRate(service.articolo);
+
+        current.serviziImponibile += imponibile;
+        current.serviziIva += imponibile * ivaPercent / 100;
+        groups.set(key, current);
+    });
+
+    return [...groups.values()]
+        .map((row) => {
+            const serviziImponibile = money(row.serviziImponibile);
+            const serviziIva = money(row.serviziIva);
+            const serviziTotale = money(serviziImponibile + serviziIva);
+
+            return {
+                ...row,
+                serviziImponibile,
+                serviziIva,
+                serviziTotale,
+                deltaImponibile: money(money(row.fatturaImponibile) - serviziImponibile),
+                deltaIva: money(money(row.fatturaIva) - serviziIva),
+                deltaTotale: money(money(row.fatturaTotale) - serviziTotale),
+            };
+        })
+        .filter((row) => (
+            Math.abs(row.deltaImponibile) > TOLERANCE
+            || Math.abs(row.deltaIva) > TOLERANCE
+            || Math.abs(row.deltaTotale) > TOLERANCE
+        ));
 };
 
 const getDelayMismatches = async () => {
@@ -146,11 +174,11 @@ const main = async () => {
     console.log(`Servizi con fattura inesistente: ${serviziFatturaMancante.length}`);
     console.log(`Servizi con articolo inesistente: ${serviziArticoloMancante.length}`);
     console.log(`Scadenze non collegate a fatture: ${unlinkedDeadlinesCount}`);
-    console.log(`Fatture con imponibile diverso dalla somma servizi: ${totalMismatches.length}`);
+    console.log(`Fatture con totali diversi dalla somma servizi: ${totalMismatches.length}`);
     console.log(`Scadenze con ritardo non aggiornato: ${delayMismatches.length}`);
 
     if (totalMismatches.length) {
-        console.log('\nEsempi delta imponibile:');
+        console.log('\nEsempi delta totali:');
         console.log(sample(totalMismatches).join('\n'));
     }
 

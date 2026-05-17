@@ -6,23 +6,37 @@ const Fascia = require('../models/Fascia');
 const Fattura = require('../models/Fattura');
 const InvoiceCounter = require('../models/InvoiceCounter');
 const Lettura = require('../models/Lettura');
+require('../models/Listino');
 const Servizio = require('../models/Servizio');
-const { ensureInvoiceDeadline } = require('./deadlineService');
 const {
+    annualFixedKey,
+    createAnnualFixedContext,
+    getDate,
+    hasPreviousAnnualFixedCharge,
+} = require('./annualFixedChargeService');
+const { calculateDelay, ensureInvoiceDeadline } = require('./deadlineService');
+const {
+    DEFAULT_CONDOMINIUM_ARTICLE_CODE,
+    DEFAULT_CONDOMINIUM_FIXED_ARTICLE_CODE,
+    DEFAULT_DELAY_ARTICLE_CODE,
     DEFAULT_FIXED_ARTICLE_CODE,
     DEFAULT_WATER_ARTICLE_CODE,
     calculateReadingInvoice,
     calculateTotals,
+    getTaxRate,
     numberOrZero,
+    recordId,
     roundMoney,
 } = require('./billingCalculator');
 
 const createError = (message, status = 400) => Object.assign(new Error(message), { status });
+const DEFAULT_DELAY_FEE = Number.parseFloat(process.env.INVOICE_DELAY_FEE || '6');
+const MONEY_TOLERANCE = 0.01;
 
 const uniqueById = (records) => {
     const seen = new Set();
     return records.filter((record) => {
-        const key = String(record?._id || record || '');
+        const key = recordId(record);
         if (!key || seen.has(key)) {
             return false;
         }
@@ -37,6 +51,16 @@ const sumMoneyBy = (records, getter) => roundMoney(
     records.reduce((total, record) => total + numberOrZero(getter(record)), 0)
 );
 const isBillablePreview = (preview) => !preview.error && preview.lines?.length;
+const summarizeBillablePreviews = (previews) => {
+    const billablePreviews = previews.filter(isBillablePreview);
+
+    return {
+        letture: billablePreviews.length,
+        imponibile: sumMoneyBy(billablePreviews, (preview) => preview.totals.imponibile),
+        iva: sumMoneyBy(billablePreviews, (preview) => preview.totals.iva),
+        totale_fattura: sumMoneyBy(billablePreviews, (preview) => preview.totals.totale_fattura),
+    };
+};
 const getTransactionErrorMessage = (error) => [
     error?.message,
     error?.cause?.message,
@@ -51,6 +75,31 @@ const getCustomerLabel = (cliente) => (
     || [cliente?.cognome, cliente?.nome].filter(Boolean).join(' ').trim()
     || ''
 );
+
+const normalizeText = (value) => String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const isCondominiumSplitCounter = (contatore) => {
+    const counterType = normalizeText(contatore?.tipo_contatore);
+    const activity = normalizeText(contatore?.tipo_attivita);
+    const share = numberOrZero(contatore?.consumo);
+    const hasSplitShare = share > 0 && Math.abs(share - 100) > 0.001;
+
+    return (
+        counterType.includes('condominiale') && (
+            counterType.includes('utenze private')
+            || counterType.includes('virtuale')
+            || counterType.includes('ripartit')
+            || hasSplitShare
+        )
+    ) || (
+        activity === 'utenza condominiale' && counterType.includes('ripartit')
+    );
+};
 
 const reserveInvoiceNumber = async (year, session) => {
     const highestFattura = await withSession(Fattura.findOne({ anno: year }), session)
@@ -119,13 +168,18 @@ const getPreviousReading = (lettura, session) => {
 
 const getArticlesByCode = async (session) => {
     const articles = await withSession(Articolo.find({
-        codice: { $in: [DEFAULT_WATER_ARTICLE_CODE, DEFAULT_FIXED_ARTICLE_CODE] },
+        codice: {
+            $in: [
+                DEFAULT_WATER_ARTICLE_CODE,
+                DEFAULT_FIXED_ARTICLE_CODE,
+                DEFAULT_CONDOMINIUM_ARTICLE_CODE,
+                DEFAULT_CONDOMINIUM_FIXED_ARTICLE_CODE,
+                DEFAULT_DELAY_ARTICLE_CODE,
+            ],
+        },
     }), session).lean();
 
-    return articles.reduce((map, article) => ({
-        ...map,
-        [article.codice]: article,
-    }), {});
+    return Object.fromEntries(articles.map((article) => [article.codice, article]));
 };
 
 const getLinkedInvoicesForReading = async (letturaId, session) => {
@@ -142,6 +196,68 @@ const loadReading = (id, session) => withSession(Lettura.findById(id), session).
     populate: ['listino', 'cliente'],
 }).lean();
 
+const calculateReadings = async (letturaIds, context, options = {}) => {
+    const calculations = [];
+
+    for (const id of letturaIds) {
+        calculations.push(await calculateReadingById(id, {
+            ...context,
+            ...options,
+        }));
+    }
+
+    return calculations;
+};
+
+const releaseReadingsForBilling = async (letturaIds) => {
+    if (!letturaIds.length) {
+        return;
+    }
+
+    await Lettura.updateMany(
+        { _id: { $in: letturaIds } },
+        { $set: { fatturata: false } }
+    );
+};
+
+const rollbackGeneratedInvoice = async ({ fatturaId, lockedReadingIds }) => {
+    try {
+        if (fatturaId) {
+            await Servizio.deleteMany({ fattura: fatturaId });
+            await Fattura.deleteOne({ _id: fatturaId });
+        }
+        await releaseReadingsForBilling(lockedReadingIds);
+    } catch (cleanupError) {
+        console.error('Rollback generazione fattura non completato:', cleanupError);
+    }
+};
+
+const lockReadingsForBilling = async (letturaIds, session) => {
+    const lockedIds = [];
+
+    for (const letturaId of letturaIds) {
+        const locked = await withSession(Lettura.findOneAndUpdate(
+            {
+                _id: letturaId,
+                $or: [{ fatturata: false }, { fatturata: { $exists: false } }],
+            },
+            { $set: { fatturata: true } },
+            { new: true }
+        ), session).select('_id').lean();
+
+        if (!locked) {
+            if (!session) {
+                await releaseReadingsForBilling(lockedIds);
+            }
+            throw createError('Almeno una lettura selezionata risulta gia fatturata', 409);
+        }
+
+        lockedIds.push(letturaId);
+    }
+
+    return lockedIds;
+};
+
 const calculateReadingById = async (letturaId, options = {}) => {
     const { session } = options;
     const lettura = await loadReading(letturaId, session);
@@ -153,6 +269,13 @@ const calculateReadingById = async (letturaId, options = {}) => {
         throw createError('La lettura deve avere un contatore con listino associato');
     }
 
+    if (!options.allowCondominiumSplit && isCondominiumSplitCounter(lettura.contatore)) {
+        throw createError(
+            'Questa lettura usa un riparto condominiale: va calcolata con le quote del contatore condominiale prima di generare la fattura automatica.',
+            422
+        );
+    }
+
     const previousReading = await getPreviousReading(lettura, session);
     const previousValue = hasValue(options.previousValue)
         ? options.previousValue
@@ -160,9 +283,23 @@ const calculateReadingById = async (letturaId, options = {}) => {
     const currentValue = hasValue(options.currentValue)
         ? options.currentValue
         : lettura.consumo;
+    const invoiceDate = getDate(options.invoiceDate || lettura.data_lettura);
+    const invoiceYear = options.invoiceYear || invoiceDate.getFullYear();
+    const fixedKey = annualFixedKey(invoiceYear, lettura.contatore._id);
+    const fixedAlreadyBilled = options.includeFixedCharge === false
+        || options.annualFixedKeys?.has(fixedKey) === true
+        || await hasPreviousAnnualFixedCharge({
+            beforeDate: invoiceDate,
+            cache: options.annualFixedLookupCache,
+            contatoreId: lettura.contatore._id,
+            excludeInvoiceId: options.excludeInvoiceId,
+            session,
+            year: invoiceYear,
+        });
+    const includeFixedCharge = !fixedAlreadyBilled;
     const [fasce, articlesByCode, linkedInvoices] = await Promise.all([
         withSession(Fascia.find({ listino: lettura.contatore.listino._id }), session).lean(),
-        getArticlesByCode(session),
+        options.articlesByCode || getArticlesByCode(session),
         getLinkedInvoicesForReading(lettura._id, session),
     ]);
     const calculation = calculateReadingInvoice({
@@ -170,13 +307,18 @@ const calculateReadingById = async (letturaId, options = {}) => {
         contatore: lettura.contatore,
         currentValue,
         fasce,
+        includeFixedCharge,
         lettura,
         previousValue,
     });
+    if (calculation.lines.some((line) => line.tipo_quota)) {
+        options.annualFixedKeys?.add(fixedKey);
+    }
 
     return {
         lettura,
         contatore: lettura.contatore,
+        fixedChargeAlreadyBilled: !includeFixedCharge,
         previousReading,
         linkedInvoices,
         ...calculation,
@@ -215,6 +357,132 @@ const cleanServiceLine = (line, fatturaId, riga) => ({
     calcolo_snapshot: line.calcolo_snapshot,
     fattura: fatturaId,
 });
+
+const buildDelayLine = ({ article, invoiceDate, previousInvoice }) => {
+    const taxRate = getTaxRate(article);
+    const price = roundMoney(Number.isFinite(DEFAULT_DELAY_FEE) ? DEFAULT_DELAY_FEE : 6);
+    const previousCode = hasValue(previousInvoice?.numero) ? previousInvoice.numero : previousInvoice?.codice;
+    const previousCodeLabel = hasValue(previousCode) ? String(previousCode) : undefined;
+
+    return {
+        descrizione: 'Ritardo pagamento fattura precedente',
+        tipo_attivita: previousCodeLabel ? `-${previousCodeLabel}` : undefined,
+        metri_cubi: 1,
+        prezzo: price,
+        valore_unitario: price,
+        descrizione_attivita: previousCodeLabel,
+        articolo: article?._id || article || undefined,
+        iva_percentuale: taxRate,
+        aliquota_iva: taxRate,
+        calcolo_snapshot: {
+            articolo: article ? {
+                _id: recordId(article),
+                codice: article.codice,
+                descrizione: article.descrizione,
+                iva: article.iva,
+            } : undefined,
+            precedente_fattura: previousInvoice ? {
+                _id: recordId(previousInvoice),
+                anno: previousInvoice.anno,
+                numero: previousInvoice.numero,
+                data_fattura: previousInvoice.data_fattura,
+            } : undefined,
+            scadenza: previousInvoice?.scadenza ? {
+                _id: recordId(previousInvoice.scadenza),
+                scadenza: previousInvoice.scadenza.scadenza,
+                pagamento: previousInvoice.scadenza.pagamento,
+                saldo: previousInvoice.scadenza.saldo,
+            } : undefined,
+            totale_riga: price,
+            quota: 'delay',
+        },
+    };
+};
+
+const getArticleCode = (line) => line.articolo_dettaglio?.codice || line.articolo?.codice || '';
+const sameMoney = (left, right) => Math.abs(roundMoney(left) - roundMoney(right)) <= MONEY_TOLERANCE;
+const sameLineText = (left, right) => normalizeText(left || '') === normalizeText(right || '');
+
+const isSameBillingLine = (service, line) => (
+    sameLineText(getArticleCode(service), getArticleCode(line))
+    && sameLineText(service.tipo_tariffa, line.tipo_tariffa)
+    && sameLineText(service.tipo_quota, line.tipo_quota)
+    && sameMoney(service.metri_cubi, line.metri_cubi)
+    && sameMoney(service.prezzo, line.prezzo)
+    && sameMoney(service.valore_unitario, line.valore_unitario)
+);
+
+const toLineIssue = (line, lettura) => ({
+    articolo: getArticleCode(line),
+    tipo_tariffa: line.tipo_tariffa,
+    tipo_quota: line.tipo_quota,
+    metri_cubi: line.metri_cubi,
+    prezzo: line.prezzo,
+    valore_unitario: line.valore_unitario,
+    lettura: lettura?._id || lettura,
+});
+
+const getMissingCalculatedLines = (servizi, calculations) => {
+    const unusedServices = [...servizi];
+    const missingLines = [];
+
+    calculations.forEach((calculation) => {
+        calculation.lines.forEach((line) => {
+            const matchIndex = unusedServices.findIndex((service) => isSameBillingLine(service, line));
+
+            if (matchIndex === -1) {
+                missingLines.push(toLineIssue(line, calculation.lettura));
+                return;
+            }
+
+            unusedServices.splice(matchIndex, 1);
+        });
+    });
+
+    return missingLines;
+};
+
+const groupServicesByReading = (servizi) => servizi.reduce((groups, servizio) => {
+    const key = recordId(servizio.lettura);
+    if (!key) {
+        return groups;
+    }
+
+    const rows = groups.get(key) || [];
+    rows.push(servizio);
+    groups.set(key, rows);
+
+    return groups;
+}, new Map());
+
+const getReadingServices = (servizi) => servizi.filter((servizio) => servizio.lettura);
+const getExtraServices = (servizi) => servizi.filter((servizio) => !servizio.lettura);
+const getServicesTotal = (servizi) => sumMoneyBy(servizi, (servizio) => servizio.valore_unitario);
+const getCalculatedTotal = (calculations) => sumMoneyBy(
+    calculations,
+    (calculation) => calculation.totals.imponibile
+);
+
+const getDelayLineForCustomer = async ({ articlesByCode, clienteId, invoiceDate, session }) => {
+    const previousInvoice = await withSession(Fattura.findOne({
+        cliente: clienteId,
+        data_fattura: { $lt: invoiceDate },
+    }), session)
+        .sort({ data_fattura: -1, _id: -1 })
+        .populate('scadenza')
+        .lean();
+
+    if (!previousInvoice?.scadenza || calculateDelay(previousInvoice.scadenza, invoiceDate) <= 0) {
+        return null;
+    }
+
+    const article = articlesByCode[DEFAULT_DELAY_ARTICLE_CODE];
+    if (!article) {
+        throw createError('Articolo GG_DELAY mancante: impossibile calcolare il ritardo in modo sicuro');
+    }
+
+    return buildDelayLine({ article, invoiceDate, previousInvoice });
+};
 
 const toBoolean = (value) => value === true || ['1', 'true', 'yes'].includes(String(value).toLowerCase());
 const getInvoiceStatus = (confermata) => (toBoolean(confermata) ? 'confermata' : 'bozza');
@@ -267,92 +535,100 @@ const createInvoiceFromReadingsInSession = async ({
     letture,
     tipo_documento = 'Fattura',
 }, session) => {
+    let createdFatturaId = null;
+    let lockedReadingIds = [];
+
     const letturaIds = [...new Set((letture || []).filter(Boolean).map(String))];
-    if (letturaIds.length === 0) {
-        throw createError('Seleziona almeno una lettura da fatturare');
-    }
 
-    const readings = await Promise.all(letturaIds.map((id) => loadReading(id, session)));
-    if (readings.some((lettura) => !lettura)) {
-        throw createError('Una o piu letture non esistono', 404);
-    }
+    try {
+        if (letturaIds.length === 0) {
+            throw createError('Seleziona almeno una lettura da fatturare');
+        }
 
-    if (readings.some((lettura) => lettura.fatturata)) {
-        throw createError('Almeno una lettura selezionata risulta gia fatturata', 409);
-    }
+        const readings = await Promise.all(letturaIds.map((id) => loadReading(id, session)));
+        if (readings.some((lettura) => !lettura)) {
+            throw createError('Una o piu letture non esistono', 404);
+        }
 
-    const alreadyLinked = await withSession(
-        Servizio.find({ lettura: { $in: letturaIds }, fattura: { $ne: null } }),
-        session
-    ).limit(1).lean();
-    if (alreadyLinked.length > 0) {
-        throw createError('Almeno una lettura selezionata e gia collegata a una fattura', 409);
-    }
-
-    const cliente = getClienteFromReadings(readings);
-    const calculations = await Promise.all(letturaIds.map((id) => calculateReadingById(id, { session })));
-    const invoiceDate = data_fattura ? new Date(data_fattura) : new Date();
-    const year = invoiceDate.getFullYear();
-    const numero = await reserveInvoiceNumber(year, session);
-    const allLines = calculations.flatMap((calculation) => calculation.lines);
-    if (allLines.length === 0) {
-        throw createError('Le letture selezionate non generano righe fatturabili');
-    }
-
-    const totals = calculateTotals(allLines);
-    if (session) {
-        const lockResult = await Lettura.updateMany(
-            {
-                _id: { $in: letturaIds },
-                $or: [{ fatturata: false }, { fatturata: { $exists: false } }],
-            },
-            { fatturata: true },
-            { session }
-        );
-
-        if (lockResult.modifiedCount !== letturaIds.length) {
+        if (readings.some((lettura) => lettura.fatturata)) {
             throw createError('Almeno una lettura selezionata risulta gia fatturata', 409);
         }
+
+        const alreadyLinked = await withSession(
+            Servizio.find({ lettura: { $in: letturaIds }, fattura: { $ne: null } }),
+            session
+        ).limit(1).lean();
+        if (alreadyLinked.length > 0) {
+            throw createError('Almeno una lettura selezionata e gia collegata a una fattura', 409);
+        }
+
+        const invoiceDate = data_fattura ? new Date(data_fattura) : new Date();
+        const year = invoiceDate.getFullYear();
+        const billingContext = createAnnualFixedContext({ invoiceDate, invoiceYear: year });
+        const cliente = getClienteFromReadings(readings);
+        const articlesByCode = await getArticlesByCode(session);
+        const calculations = await calculateReadings(letturaIds, billingContext, { articlesByCode, session });
+
+        const delayLine = await getDelayLineForCustomer({
+            articlesByCode,
+            clienteId: cliente._id,
+            invoiceDate,
+            session,
+        });
+        const allLines = [
+            ...calculations.flatMap((calculation) => calculation.lines),
+            ...(delayLine ? [delayLine] : []),
+        ];
+        if (allLines.length === 0) {
+            throw createError('Le letture selezionate non generano righe fatturabili');
+        }
+
+        const totals = calculateTotals(allLines);
+        lockedReadingIds = await lockReadingsForBilling(letturaIds, session);
+        const numero = await reserveInvoiceNumber(year, session);
+
+        const [fattura] = await Fattura.create([{
+            tipo_documento,
+            ragione_sociale: getCustomerLabel(cliente),
+            confermata: toBoolean(confermata),
+            stato: getInvoiceStatus(confermata),
+            origine: 'letture',
+            anno: year,
+            numero,
+            codice: `${year}-${String(numero).padStart(4, '0')}`,
+            data_fattura: invoiceDate,
+            imponibile: totals.imponibile,
+            iva: totals.iva,
+            totale_fattura: totals.totale_fattura,
+            nome_cliente: getCustomerLabel(cliente),
+            cliente: cliente._id,
+            letture: letturaIds,
+        }], { session });
+        createdFatturaId = fattura._id;
+
+        const services = await Servizio.insertMany(
+            allLines.map((line, index) => cleanServiceLine(line, fattura._id, index + 1)),
+            { session }
+        );
+        const scadenza = await ensureInvoiceDeadline({
+            cliente,
+            dueDate: data_scadenza,
+            fattura,
+            session,
+        });
+
+        return {
+            fattura,
+            scadenza,
+            servizi: services,
+            calculations,
+        };
+    } catch (error) {
+        if (!session) {
+            await rollbackGeneratedInvoice({ fatturaId: createdFatturaId, lockedReadingIds });
+        }
+        throw error;
     }
-
-    const [fattura] = await Fattura.create([{
-        tipo_documento,
-        ragione_sociale: getCustomerLabel(cliente),
-        confermata: toBoolean(confermata),
-        stato: getInvoiceStatus(confermata),
-        origine: 'letture',
-        anno: year,
-        numero,
-        codice: `${year}-${String(numero).padStart(4, '0')}`,
-        data_fattura: invoiceDate,
-        imponibile: totals.imponibile,
-        iva: totals.iva,
-        totale_fattura: totals.totale_fattura,
-        nome_cliente: getCustomerLabel(cliente),
-        cliente: cliente._id,
-        letture: letturaIds,
-    }], { session });
-    const services = await Servizio.insertMany(
-        allLines.map((line, index) => cleanServiceLine(line, fattura._id, index + 1)),
-        { session }
-    );
-    const scadenza = await ensureInvoiceDeadline({
-        cliente,
-        dueDate: data_scadenza,
-        fattura,
-        session,
-    });
-
-    if (!session) {
-        await Lettura.updateMany({ _id: { $in: letturaIds } }, { fatturata: true });
-    }
-
-    return {
-        fattura,
-        scadenza,
-        servizi: services,
-        calculations,
-    };
 };
 
 const createInvoiceFromReadings = (input) => runWithOptionalTransaction((session) => (
@@ -370,28 +646,22 @@ const previewClienteBilling = async (clienteId) => {
         contatore: { $in: contatori.map((contatore) => contatore._id) },
         $or: [{ fatturata: false }, { fatturata: { $exists: false } }],
     }).sort({ data_lettura: 1, _id: 1 }).lean();
+    const billingContext = createAnnualFixedContext();
     const previews = [];
 
     for (const lettura of letture) {
         try {
-            previews.push(await calculateReadingById(lettura._id));
+            previews.push(await calculateReadingById(lettura._id, billingContext));
         } catch (error) {
             previews.push({ lettura, error: error.message });
         }
     }
 
-    const billablePreviews = previews.filter(isBillablePreview);
-
     return {
         cliente,
         contatori,
         previews,
-        totals: {
-            letture: billablePreviews.length,
-            imponibile: sumMoneyBy(billablePreviews, (preview) => preview.totals.imponibile),
-            iva: sumMoneyBy(billablePreviews, (preview) => preview.totals.iva),
-            totale_fattura: sumMoneyBy(billablePreviews, (preview) => preview.totals.totale_fattura),
-        },
+        totals: summarizeBillablePreviews(previews),
     };
 };
 
@@ -408,18 +678,11 @@ const getOrCreateBillingGroup = (groups, cliente) => {
 };
 
 const toBillingGroupSummary = (group) => {
-    const billablePreviews = group.previews.filter(isBillablePreview);
-
     return {
         cliente: group.cliente,
         previews: group.previews,
         anomalies: group.anomalies,
-        totals: {
-            letture: billablePreviews.length,
-            imponibile: sumMoneyBy(billablePreviews, (preview) => preview.totals.imponibile),
-            iva: sumMoneyBy(billablePreviews, (preview) => preview.totals.iva),
-            totale_fattura: sumMoneyBy(billablePreviews, (preview) => preview.totals.totale_fattura),
-        },
+        totals: summarizeBillablePreviews(group.previews),
     };
 };
 
@@ -437,6 +700,7 @@ const previewBillingBatch = async ({ limit = 500 } = {}) => {
         .lean();
     const groups = new Map();
     const globalAnomalies = [];
+    const billingContext = createAnnualFixedContext();
 
     for (const lettura of letture) {
         const cliente = lettura.contatore?.cliente;
@@ -452,7 +716,7 @@ const previewBillingBatch = async ({ limit = 500 } = {}) => {
         const group = getOrCreateBillingGroup(groups, cliente);
 
         try {
-            group.previews.push(await calculateReadingById(lettura._id));
+            group.previews.push(await calculateReadingById(lettura._id, billingContext));
         } catch (error) {
             group.anomalies.push({
                 lettura,
@@ -482,7 +746,7 @@ const previewBillingBatch = async ({ limit = 500 } = {}) => {
     };
 };
 
-const verifyInvoiceCalculation = async (fatturaId) => {
+const verifyInvoiceCalculation = async (fatturaId, options = {}) => {
     const fattura = await Fattura.findById(fatturaId).populate('cliente scadenza').lean();
     if (!fattura) {
         throw createError('Fattura not found', 404);
@@ -490,36 +754,63 @@ const verifyInvoiceCalculation = async (fatturaId) => {
 
     const servizi = await Servizio.find({ fattura: fatturaId }).populate('lettura articolo listino fascia').lean();
     const letturaIds = uniqueById(servizi.map((servizio) => servizio.lettura).filter(Boolean)).map((lettura) => lettura._id);
+    const serviziByReading = groupServicesByReading(servizi);
+    const invoiceDate = getDate(fattura.data_fattura);
+    const billingContext = createAnnualFixedContext({
+        annualFixedLookupCache: options.annualFixedLookupCache,
+        invoiceDate,
+        invoiceYear: fattura.anno || invoiceDate.getFullYear(),
+    });
     const calculations = [];
 
     for (const letturaId of letturaIds) {
-        const relatedRows = servizi.filter((servizio) => String(servizio.lettura?._id) === String(letturaId));
+        const relatedRows = serviziByReading.get(recordId(letturaId)) || [];
         const firstRow = relatedRows[0] || {};
         calculations.push(await calculateReadingById(letturaId, {
+            allowCondominiumSplit: true,
+            excludeInvoiceId: fattura._id,
+            ...billingContext,
             previousValue: firstRow.lettura_precedente,
             currentValue: firstRow.lettura_fatturazione,
         }));
     }
 
-    const storicoImponibile = sumMoneyBy(servizi, (servizio) => servizio.valore_unitario);
-    const calcolatoImponibile = sumMoneyBy(calculations, (calculation) => calculation.totals.imponibile);
+    const serviziLettura = getReadingServices(servizi);
+    const serviziExtra = getExtraServices(servizi);
+    const storicoImponibile = getServicesTotal(servizi);
+    const lettureImponibile = getServicesTotal(serviziLettura);
+    const extraImponibile = getServicesTotal(serviziExtra);
+    const calcolatoImponibile = getCalculatedTotal(calculations);
+    const deltaLetture = roundMoney(lettureImponibile - calcolatoImponibile);
     const deltaServizi = roundMoney(storicoImponibile - calcolatoImponibile);
     const deltaFattura = roundMoney(numberOrZero(fattura.imponibile) - storicoImponibile);
+    const missingLines = getMissingCalculatedLines(servizi, calculations);
+    const missingFixedTotal = sumMoneyBy(
+        missingLines.filter((line) => line.tipo_quota),
+        (line) => line.valore_unitario
+    );
 
     return {
         fattura,
         servizi,
         calculations,
+        missingLines,
         summary: {
             letture: letturaIds.length,
             righe: servizi.length,
+            righeCalcolate: calculations.reduce((total, calculation) => total + calculation.lines.length, 0),
+            righeCalcolateMancanti: missingLines.length,
+            quotaFissaMancante: missingFixedTotal,
             storicoImponibile,
+            lettureImponibile,
+            extraImponibile,
             calcolatoImponibile,
             fatturaImponibile: roundMoney(fattura.imponibile),
+            deltaLetture,
             deltaServizi,
             deltaFattura,
-            serviziCoerenti: Math.abs(deltaServizi) <= 0.01,
-            fatturaCoerente: Math.abs(deltaFattura) <= 0.01,
+            serviziCoerenti: Math.abs(deltaLetture) <= MONEY_TOLERANCE,
+            fatturaCoerente: Math.abs(deltaFattura) <= MONEY_TOLERANCE,
         },
     };
 };

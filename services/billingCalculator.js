@@ -1,6 +1,12 @@
 const DEFAULT_WATER_ARTICLE_CODE = 'ACQUA';
 const DEFAULT_FIXED_ARTICLE_CODE = 'ACQUAF';
+const DEFAULT_CONDOMINIUM_ARTICLE_CODE = 'COND';
+const DEFAULT_CONDOMINIUM_FIXED_ARTICLE_CODE = 'CONDF';
+const DEFAULT_DELAY_ARTICLE_CODE = 'GG_DELAY';
 const DEFAULT_FIXED_QUOTA = 'Q.Fissa';
+const MONEY_TOLERANCE = 0.01;
+
+const createCalculationError = (message) => Object.assign(new Error(message), { status: 422 });
 
 const numberOrZero = (value) => {
     const number = Number(String(value ?? '').replace(',', '.'));
@@ -23,12 +29,14 @@ const pickSnapshotFields = (record, fields) => {
         return undefined;
     }
 
-    return fields.reduce((snapshot, field) => {
+    const snapshot = { _id: recordId(record) };
+    fields.forEach((field) => {
         if (record[field] !== undefined && record[field] !== null) {
-            return { ...snapshot, [field]: record[field] };
+            snapshot[field] = record[field];
         }
-        return snapshot;
-    }, { _id: recordId(record) });
+    });
+
+    return snapshot;
 };
 
 const getDateValue = (value) => {
@@ -92,10 +100,75 @@ const getApplicableBands = (bands, { date, listinoId } = {}) => sortBands(
 
 const getArticleByCode = (articlesByCode, code) => articlesByCode?.[code] || null;
 
+const isSplitCondominiumCounter = (contatore) => {
+    const counterType = normalizeText(contatore?.tipo_contatore);
+    const activity = normalizeText(contatore?.tipo_attivita);
+
+    return activity === 'utenza condominiale' && counterType.includes('ripartit');
+};
+
+const getWaterArticles = (articlesByCode, contatore) => {
+    if (isSplitCondominiumCounter(contatore)) {
+        return {
+            fixedArticle: getArticleByCode(articlesByCode, DEFAULT_CONDOMINIUM_FIXED_ARTICLE_CODE),
+            waterArticle: getArticleByCode(articlesByCode, DEFAULT_CONDOMINIUM_ARTICLE_CODE),
+        };
+    }
+
+    return {
+        fixedArticle: getArticleByCode(articlesByCode, DEFAULT_FIXED_ARTICLE_CODE),
+        waterArticle: getArticleByCode(articlesByCode, DEFAULT_WATER_ARTICLE_CODE),
+    };
+};
+
+const getListinoLabel = (contatore) => (
+    contatore?.listino?.categoria
+    || contatore?.listino?.descrizione
+    || 'listino'
+);
+
+const assertArticle = (article, code, context) => {
+    if (!article) {
+        throw createCalculationError(`Articolo ${code} mancante: impossibile calcolare ${context} in modo sicuro`);
+    }
+};
+
+const assertConsumptionCoverage = ({ consumption, fixedBands, lines, listinoLabel, variableBands }) => {
+    if (consumption <= 0) {
+        return;
+    }
+
+    if (variableBands.length === 0 && fixedBands.length > 0) {
+        return;
+    }
+
+    if (variableBands.length === 0) {
+        throw createCalculationError(`Il listino ${listinoLabel} non ha fasce consumo valide per questa data`);
+    }
+
+    const billedConsumption = roundMoney(lines
+        .filter((line) => !line.tipo_quota)
+        .reduce((total, line) => total + numberOrZero(line.metri_cubi), 0));
+
+    if (Math.abs(billedConsumption - consumption) > MONEY_TOLERANCE) {
+        throw createCalculationError(
+            `Il listino ${listinoLabel} copre ${billedConsumption} mc su ${consumption} mc: aggiorna le fasce prima di generare la fattura`
+        );
+    }
+};
+
 const getTaxRate = (articleOrTax) => {
     const source = typeof articleOrTax === 'string' ? articleOrTax : articleOrTax?.iva;
     const match = String(source || '').match(/(\d+(?:[,.]\d+)?)\s*%/);
     return match ? numberOrZero(match[1]) : 0;
+};
+
+const getLineTotal = ({ quantity, type, unitPrice }) => {
+    if (type === 'fixed') {
+        return roundMoney(unitPrice);
+    }
+
+    return roundMoney(quantity * unitPrice);
 };
 
 const createLine = ({
@@ -109,7 +182,7 @@ const createLine = ({
     type,
 }) => {
     const unitPrice = numberOrZero(band.prezzo);
-    const total = roundMoney(quantity * unitPrice);
+    const total = getLineTotal({ quantity, type, unitPrice });
     const taxRate = getTaxRate(article);
     const listinoLabel = contatore?.listino?.categoria || contatore?.listino?.descrizione || '';
     const listino = contatore?.listino;
@@ -165,7 +238,7 @@ const calculateTotals = (lines) => {
     };
 };
 
-const getFixedBandsToBill = (fixedBands, consumption) => {
+const getFixedChargeBands = (fixedBands, consumption) => {
     if (fixedBands.length <= 1) {
         return fixedBands;
     }
@@ -179,6 +252,7 @@ const calculateReadingInvoice = ({
     contatore,
     currentValue,
     fasce,
+    includeFixedCharge = true,
     lettura,
     previousValue = 0,
 }) => {
@@ -189,43 +263,58 @@ const calculateReadingInvoice = ({
         date: lettura?.data_lettura,
         listinoId: contatore?.listino,
     });
-    const waterArticle = getArticleByCode(articlesByCode, DEFAULT_WATER_ARTICLE_CODE);
-    const fixedArticle = getArticleByCode(articlesByCode, DEFAULT_FIXED_ARTICLE_CODE) || waterArticle;
+    const listinoLabel = getListinoLabel(contatore);
+    const { waterArticle, fixedArticle } = getWaterArticles(articlesByCode, contatore);
+    const variableBands = applicableBands.filter((band) => !isFixedBand(band) && numberOrZero(band.prezzo) >= 0);
+    const applicableFixedBands = applicableBands.filter((band) => isFixedBand(band) && numberOrZero(band.prezzo) >= 0);
+    const fixedBands = includeFixedCharge ? getFixedChargeBands(applicableFixedBands, billableConsumption) : [];
     const lines = [];
 
-    applicableBands
-        .filter((band) => !isFixedBand(band) && numberOrZero(band.prezzo) >= 0)
-        .forEach((band) => {
-            const quantity = roundMoney(getBandQuantity(billableConsumption, band));
-            if (quantity <= 0) {
-                return;
-            }
+    if (variableBands.length > 0) {
+        assertArticle(waterArticle, isSplitCondominiumCounter(contatore) ? DEFAULT_CONDOMINIUM_ARTICLE_CODE : DEFAULT_WATER_ARTICLE_CODE, 'i consumi');
+    }
+    if (fixedBands.length > 0) {
+        assertArticle(fixedArticle, isSplitCondominiumCounter(contatore) ? DEFAULT_CONDOMINIUM_FIXED_ARTICLE_CODE : DEFAULT_FIXED_ARTICLE_CODE, 'la quota fissa');
+    }
 
-            lines.push(createLine({
-                article: waterArticle,
-                band,
-                contatore,
-                currentValue: endValue,
-                lettura,
-                previousValue: startValue,
-                quantity,
-                type: 'variable',
-            }));
-        });
+    variableBands.forEach((band) => {
+        const quantity = roundMoney(getBandQuantity(billableConsumption, band));
+        if (quantity <= 0) {
+            return;
+        }
 
-    getFixedBandsToBill(applicableBands.filter((band) => isFixedBand(band) && numberOrZero(band.prezzo) >= 0), billableConsumption)
-        .forEach((band) => {
-            lines.push(createLine({
-                article: fixedArticle,
-                band,
-                contatore,
-                currentValue: endValue,
-                lettura,
-                previousValue: startValue,
-                quantity: 1,
-                type: 'fixed',
-            }));
-        });
+        lines.push(createLine({
+            article: waterArticle,
+            band,
+            contatore,
+            currentValue: endValue,
+            lettura,
+            previousValue: startValue,
+            quantity,
+            type: 'variable',
+        }));
+    });
+
+    fixedBands.forEach((band) => {
+        lines.push(createLine({
+            article: fixedArticle,
+            band,
+            contatore,
+            currentValue: endValue,
+            lettura,
+            previousValue: startValue,
+            quantity: 1,
+            type: 'fixed',
+        }));
+    });
+
+    assertConsumptionCoverage({
+        consumption: billableConsumption,
+        fixedBands: applicableFixedBands,
+        lines,
+        listinoLabel,
+        variableBands,
+    });
 
     return {
         previousValue: startValue,
@@ -237,6 +326,9 @@ const calculateReadingInvoice = ({
 };
 
 module.exports = {
+    DEFAULT_CONDOMINIUM_ARTICLE_CODE,
+    DEFAULT_CONDOMINIUM_FIXED_ARTICLE_CODE,
+    DEFAULT_DELAY_ARTICLE_CODE,
     DEFAULT_FIXED_ARTICLE_CODE,
     DEFAULT_WATER_ARTICLE_CODE,
     calculateReadingInvoice,
@@ -246,5 +338,6 @@ module.exports = {
     getTaxRate,
     isFixedBand,
     numberOrZero,
+    recordId,
     roundMoney,
 };
