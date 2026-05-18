@@ -7,6 +7,7 @@ router.post('/genera-da-letture', FatturaController.generateFromReadings);
 router.get('/generazione/anteprima', FatturaController.getGenerationPreview);
 router.get('/', FatturaController.getFatture);
 router.get('/:id/verifica-calcolo', FatturaController.verifyCalcolo);
+router.post('/:id/quota-fissa', FatturaController.applyFixedCharge);
 router.get('/:id/pdf', FatturaController.downloadPdf);
 router.get('/:id', FatturaController.getFattura);
 router.put('/:id', FatturaController.updateFattura);

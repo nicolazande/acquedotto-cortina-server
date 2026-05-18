@@ -9,9 +9,12 @@ const {
     getManyByField,
     getPopulatedRelation,
     getRecord,
+    sendServiceError,
     updateRecord,
 } = require('./utils/controllerActions');
+const { parseOptionalBoolean } = require('./utils/requestOptions');
 const {
+    applyFixedChargeToInvoice,
     createManualInvoice,
     createInvoiceFromReadings,
     previewBillingBatch,
@@ -20,17 +23,12 @@ const {
 const { withComputedDelay } = require('../services/deadlineService');
 const { generateInvoicePdf } = require('../services/invoicePdf');
 
-const handleError = (res, error, message, status = 500) => {
-    console.error(error);
-    res.status(error.status || status).json({ error: error.message || message });
-};
-
 const createFattura = async (req, res) => {
     try {
         const result = await createManualInvoice(req.body);
         res.status(201).json(result.fattura);
     } catch (error) {
-        handleError(res, error, 'Error creating fattura', 400);
+        sendServiceError(res, error, 'Error creating fattura', 400);
     }
 };
 
@@ -46,22 +44,26 @@ const generateFromReadings = async (req, res) => {
             letture: req.body.letture || req.body.letturaIds,
             data_fattura: req.body.data_fattura,
             data_scadenza: req.body.data_scadenza,
+            includeFixedCharge: parseOptionalBoolean(req.body.includeFixedCharge),
             tipo_documento: req.body.tipo_documento,
             confermata: req.body.confermata,
         });
 
         res.status(201).json(result);
     } catch (error) {
-        handleError(res, error, 'Error generating fattura', 400);
+        sendServiceError(res, error, 'Error generating fattura', 400);
     }
 };
 
 const getGenerationPreview = async (req, res) => {
     try {
-        const result = await previewBillingBatch({ limit: req.query.limit });
+        const result = await previewBillingBatch({
+            includeFixedCharge: parseOptionalBoolean(req.query.includeFixedCharge),
+            limit: req.query.limit,
+        });
         res.status(200).json(result);
     } catch (error) {
-        handleError(res, error, 'Error fetching billing generation preview');
+        sendServiceError(res, error, 'Error fetching billing generation preview');
     }
 };
 
@@ -70,7 +72,16 @@ const verifyCalcolo = async (req, res) => {
         const result = await verifyInvoiceCalculation(req.params.id);
         res.status(200).json(result);
     } catch (error) {
-        handleError(res, error, 'Error verifying fattura calculation');
+        sendServiceError(res, error, 'Error verifying fattura calculation');
+    }
+};
+
+const applyFixedCharge = async (req, res) => {
+    try {
+        const result = await applyFixedChargeToInvoice(req.params.id);
+        res.status(200).json(result);
+    } catch (error) {
+        sendServiceError(res, error, 'Error applying fixed charge to fattura', 400);
     }
 };
 
@@ -82,7 +93,7 @@ const downloadPdf = async (req, res) => {
         res.setHeader('Content-Length', buffer.length);
         res.status(200).send(buffer);
     } catch (error) {
-        handleError(res, error, 'Error generating fattura PDF');
+        sendServiceError(res, error, 'Error generating fattura PDF');
     }
 };
 
@@ -91,6 +102,7 @@ module.exports = {
     getFatture,
     generateFromReadings,
     getGenerationPreview,
+    applyFixedCharge,
     getFattura: getRecord(Fattura, { name: 'Fattura', populate: 'cliente scadenza' }),
     verifyCalcolo,
     downloadPdf,

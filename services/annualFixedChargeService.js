@@ -115,6 +115,13 @@ const hasPreviousAnnualFixedCharge = async ({ beforeDate, cache, contatoreId, ex
     });
 };
 
+const hasAnnualFixedCharge = async ({ cache, contatoreId, excludeInvoiceId, session, year }) => {
+    const excluded = recordId(excludeInvoiceId);
+    const rows = await getAnnualFixedCharges({ cache, contatoreId, session, year });
+
+    return rows.some((row) => !excluded || recordId(row.fattura) !== excluded);
+};
+
 const buildAnnualFixedLookupCache = async () => {
     const rows = await Servizio.aggregate(fixedChargePipeline({ includeCounter: true }));
     const cache = new Map();
@@ -139,5 +146,6 @@ module.exports = {
     buildAnnualFixedLookupCache,
     createAnnualFixedContext,
     getDate,
+    hasAnnualFixedCharge,
     hasPreviousAnnualFixedCharge,
 };

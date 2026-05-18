@@ -9,8 +9,10 @@ const {
     getManyByField,
     getPopulatedRelation,
     getRecord,
+    sendServiceError,
     updateRecord,
 } = require('./utils/controllerActions');
+const { parseOptionalBoolean } = require('./utils/requestOptions');
 const { calculateReadingById } = require('../services/invoiceGenerator');
 
 const populatedContatore = {
@@ -21,13 +23,13 @@ const populatedContatore = {
 const getCalcolo = async (req, res) => {
     try {
         const calculation = await calculateReadingById(req.params.id, {
+            includeFixedCharge: parseOptionalBoolean(req.query.includeFixedCharge),
             previousValue: req.query.previousValue,
             currentValue: req.query.currentValue,
         });
         res.status(200).json(calculation);
     } catch (error) {
-        console.error(error);
-        res.status(error.status || 500).json({ error: error.message || 'Error calculating lettura invoice preview' });
+        sendServiceError(res, error, 'Error calculating lettura invoice preview');
     }
 };
 

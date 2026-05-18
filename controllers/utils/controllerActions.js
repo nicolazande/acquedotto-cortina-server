@@ -7,6 +7,13 @@ const sendError = (res, error, fallbackMessage, fallbackStatus = 500) => {
     });
 };
 
+const sendServiceError = (res, error, fallbackMessage, fallbackStatus = 500) => {
+    console.error(error);
+    res.status(error.status || fallbackStatus).json({
+        error: error.message || fallbackMessage,
+    });
+};
+
 const applyPopulate = (query, populate) => (populate ? query.populate(populate) : query);
 
 const createRecord = (Model, { name, mapBody = (body) => body, transform = (record) => record }) => (
@@ -139,5 +146,6 @@ module.exports = {
     getManyByField,
     getPopulatedRelation,
     getRecord,
+    sendServiceError,
     updateRecord,
 };

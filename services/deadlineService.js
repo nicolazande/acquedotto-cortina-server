@@ -102,11 +102,25 @@ const ensureInvoiceDeadline = async ({ cliente, dueDate, fattura, session }) => 
     return deadline;
 };
 
+const syncInvoiceDeadlineTotal = async ({ fattura, session }) => {
+    if (!fattura?.scadenza) {
+        return null;
+    }
+
+    const deadlineId = fattura.scadenza?._id || fattura.scadenza;
+    return Scadenza.findByIdAndUpdate(
+        deadlineId,
+        { $set: { totale: numberOrZero(fattura.totale_fattura) } },
+        { new: true, session }
+    );
+};
+
 module.exports = {
     buildDeadlinePayload,
     calculateDelay,
     createDeadlineForInvoice,
     ensureInvoiceDeadline,
     getDueDate,
+    syncInvoiceDeadlineTotal,
     withComputedDelay,
 };

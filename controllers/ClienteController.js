@@ -8,17 +8,14 @@ const {
     deleteRecord,
     getManyByField,
     getRecord,
+    sendServiceError,
     updateRecord,
 } = require('./utils/controllerActions');
+const { parseOptionalBoolean } = require('./utils/requestOptions');
 const {
     createInvoiceFromReadings,
     previewClienteBilling,
 } = require('../services/invoiceGenerator');
-
-const handleError = (res, error, message, status = 500) => {
-    console.error(error);
-    res.status(error.status || status).json({ error: error.message || message });
-};
 
 const getClienti = (req, res) => sendPaginated(Cliente, req, res, {
     defaultSort: 'nome',
@@ -27,10 +24,12 @@ const getClienti = (req, res) => sendPaginated(Cliente, req, res, {
 
 const getFatturazionePreview = async (req, res) => {
     try {
-        const result = await previewClienteBilling(req.params.id);
+        const result = await previewClienteBilling(req.params.id, {
+            includeFixedCharge: parseOptionalBoolean(req.query.includeFixedCharge),
+        });
         res.status(200).json(result);
     } catch (error) {
-        handleError(res, error, 'Error fetching cliente billing preview');
+        sendServiceError(res, error, 'Error fetching cliente billing preview');
     }
 };
 
@@ -48,13 +47,14 @@ const generateFattura = async (req, res) => {
             letture,
             data_fattura: req.body.data_fattura,
             data_scadenza: req.body.data_scadenza,
+            includeFixedCharge: parseOptionalBoolean(req.body.includeFixedCharge),
             tipo_documento: req.body.tipo_documento,
             confermata: req.body.confermata,
         });
 
         res.status(201).json(result);
     } catch (error) {
-        handleError(res, error, 'Error generating cliente fattura', 400);
+        sendServiceError(res, error, 'Error generating cliente fattura', 400);
     }
 };
 

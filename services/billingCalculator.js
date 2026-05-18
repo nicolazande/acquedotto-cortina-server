@@ -14,6 +14,9 @@ const numberOrZero = (value) => {
 };
 
 const roundMoney = (value) => Math.round((numberOrZero(value) + Number.EPSILON) * 100) / 100;
+const sumMoneyBy = (records, getter) => roundMoney(
+    records.reduce((total, record) => total + numberOrZero(getter(record)), 0)
+);
 
 const normalizeText = (value) => String(value || '')
     .toLowerCase()
@@ -163,6 +166,16 @@ const getTaxRate = (articleOrTax) => {
     return match ? numberOrZero(match[1]) : 0;
 };
 
+const getLineTaxRate = (line) => {
+    const storedRate = line.iva_percentuale ?? line.aliquota_iva;
+
+    if (storedRate !== undefined && storedRate !== null && storedRate !== '') {
+        return numberOrZero(storedRate);
+    }
+
+    return getTaxRate(line.articolo_dettaglio || line.articolo);
+};
+
 const getLineTotal = ({ quantity, type, unitPrice }) => {
     if (type === 'fixed') {
         return roundMoney(unitPrice);
@@ -228,7 +241,7 @@ const createLine = ({
 const calculateTotals = (lines) => {
     const imponibile = roundMoney(lines.reduce((total, line) => total + numberOrZero(line.valore_unitario), 0));
     const iva = roundMoney(lines.reduce((total, line) => (
-        total + (numberOrZero(line.valore_unitario) * numberOrZero(line.iva_percentuale) / 100)
+        total + (numberOrZero(line.valore_unitario) * getLineTaxRate(line) / 100)
     ), 0));
 
     return {
@@ -267,7 +280,8 @@ const calculateReadingInvoice = ({
     const { waterArticle, fixedArticle } = getWaterArticles(articlesByCode, contatore);
     const variableBands = applicableBands.filter((band) => !isFixedBand(band) && numberOrZero(band.prezzo) >= 0);
     const applicableFixedBands = applicableBands.filter((band) => isFixedBand(band) && numberOrZero(band.prezzo) >= 0);
-    const fixedBands = includeFixedCharge ? getFixedChargeBands(applicableFixedBands, billableConsumption) : [];
+    const availableFixedBands = getFixedChargeBands(applicableFixedBands, billableConsumption);
+    const fixedBands = includeFixedCharge ? availableFixedBands : [];
     const lines = [];
 
     if (variableBands.length > 0) {
@@ -322,6 +336,12 @@ const calculateReadingInvoice = ({
         billableConsumption,
         lines: lines.map((line, index) => ({ riga: index + 1, ...line })),
         totals: calculateTotals(lines),
+        fixedCharge: {
+            available: availableFixedBands.length > 0,
+            applied: fixedBands.length > 0,
+            estimatedTotal: sumMoneyBy(availableFixedBands, (band) => band.prezzo),
+            total: sumMoneyBy(fixedBands, (band) => band.prezzo),
+        },
     };
 };
 
