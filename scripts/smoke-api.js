@@ -21,14 +21,21 @@ const normalizeApiUrl = (value) => {
 
 const apiUrl = normalizeApiUrl(process.env.SMOKE_API_URL || process.env.API_URL);
 const skipMutation = ['1', 'true', 'yes'].includes(String(process.env.SMOKE_SKIP_MUTATION).toLowerCase());
+let authToken = process.env.SMOKE_TOKEN || '';
 
 const request = async (path, options = {}) => {
+    const { skipAuth, ...requestOptions } = options;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const headers = {
+        ...(authToken && !skipAuth ? { Authorization: `Bearer ${authToken}` } : {}),
+        ...(requestOptions.headers || {}),
+    };
 
     try {
         const response = await fetch(`${apiUrl}${path}`, {
-            ...options,
+            ...requestOptions,
+            headers,
             signal: controller.signal,
         });
 
@@ -45,6 +52,25 @@ const request = async (path, options = {}) => {
     } finally {
         clearTimeout(timeout);
     }
+};
+
+const loginForSmoke = async () => {
+    if (authToken) {
+        return;
+    }
+
+    const { SMOKE_USERNAME, SMOKE_PASSWORD } = process.env;
+    if (!SMOKE_USERNAME || !SMOKE_PASSWORD) {
+        throw new Error('Smoke API richiede SMOKE_TOKEN oppure SMOKE_USERNAME/SMOKE_PASSWORD');
+    }
+
+    const { body } = await request('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: SMOKE_USERNAME, password: SMOKE_PASSWORD }),
+        skipAuth: true,
+    });
+    authToken = body.token;
 };
 
 const assert = (condition, message) => {
@@ -366,6 +392,7 @@ const testBillingGeneration = async () => {
 const main = async () => {
     console.log(`Smoke API target: ${apiUrl}`);
     await step('health endpoint', testHealth);
+    await step('login smoke', loginForSmoke);
     await step('paginated resource lists', testResourceLists);
     await step('relation references create/read/delete', testRelationReferences);
     await step('billing preview/generation/verification', testBillingGeneration);

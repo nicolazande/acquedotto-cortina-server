@@ -29,6 +29,7 @@ const {
     recordId,
     roundMoney,
 } = require('./billingCalculator');
+const { assertInvoiceEditable } = require('./invoiceLockService');
 
 const createError = (message, status = 400) => Object.assign(new Error(message), { status });
 const DEFAULT_DELAY_FEE = Number.parseFloat(process.env.INVOICE_DELAY_FEE || '6');
@@ -875,6 +876,7 @@ const applyFixedChargeToInvoiceInSession = async (fatturaId, session) => {
     if (!fattura) {
         throw createError('Fattura not found', 404);
     }
+    assertInvoiceEditable(fattura, 'aggiungere la quota fissa');
 
     const servizi = await withSession(
         Servizio.find({ fattura: fatturaId }).populate('lettura articolo listino fascia'),

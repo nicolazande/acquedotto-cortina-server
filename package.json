@@ -11,8 +11,11 @@
     "test:billing-formulas": "node scripts/verify-billing-formulas.js",
     "test:billing-history": "node scripts/verify-historical-invoice-calculation.js",
     "test:billing-preview": "node scripts/verify-new-invoice-preview.js",
+    "test:customer-portal": "node scripts/verify-customer-portal-users.js",
     "test:fixed-charge": "node scripts/verify-fixed-charge-actions.js",
-    "test:invoices": "node scripts/verify-invoice-integrity.js"
+    "test:invoice-ops": "node scripts/verify-invoice-operations.js",
+    "test:invoices": "node scripts/verify-invoice-integrity.js",
+    "maintenance:user-indexes": "node scripts/ensure-user-indexes.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",

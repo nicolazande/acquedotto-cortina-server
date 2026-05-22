@@ -2,6 +2,7 @@ const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 const { JWT_SECRET } = require('../config/auth');
+const { getUserRole } = require('../middlewares/AuthorizationMiddleware');
 
 // Health check route
 const healthCheck = (req, res) => {
@@ -22,7 +23,7 @@ const register = async (req, res) => {
             return res.status(403).json({ error: 'Registrazione disabilitata, limite utenti.' });
         }
 
-        const user = new User({ username, password });
+        const user = new User({ username, password, role: 'admin' });
         await user.save();
 
         res.status(201).json({ message: 'Utente registrato correttamente' });
@@ -41,6 +42,9 @@ const login = async (req, res) => {
             console.warn('[Login] User not found:', username);
             return res.status(401).json({ error: 'Invalid credentials' });
         }
+        if (user.active === false) {
+            return res.status(403).json({ error: 'Account disabilitato' });
+        }
 
         const isPasswordValid = await user.comparePassword(password);
 
@@ -49,7 +53,7 @@ const login = async (req, res) => {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '1h' });
+        const token = jwt.sign({ userId: user._id, role: getUserRole(user) }, JWT_SECRET, { expiresIn: '1h' });
         res.json({ token });
     } catch (error) {
         console.error('[Login] Error logging in:', error.message);
@@ -60,7 +64,7 @@ const login = async (req, res) => {
 // Get user profile
 const getProfile = async (req, res) => {
     try {
-        const user = await User.findById(req.user._id).select('-password');
+        const user = await User.findById(req.user._id).select('-password').populate('cliente', 'ragione_sociale cognome nome codice_cliente_erp email');
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
@@ -70,6 +74,8 @@ const getProfile = async (req, res) => {
             username: user.username,
             email: user.email,
             numero_telefono: user.numero_telefono,
+            role: getUserRole(user),
+            cliente: user.cliente || null,
         });
     } catch (error) {
         console.error('[GetProfile] Error fetching profile:', error.message);

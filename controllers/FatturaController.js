@@ -5,12 +5,10 @@ const Scadenza = require('../models/Scadenza');
 const { sendPaginated } = require('./utils/paginatedQuery');
 const {
     associateRecords,
-    deleteRecord,
     getManyByField,
     getPopulatedRelation,
     getRecord,
     sendServiceError,
-    updateRecord,
 } = require('./utils/controllerActions');
 const { parseOptionalBoolean } = require('./utils/requestOptions');
 const {
@@ -20,12 +18,46 @@ const {
     previewBillingBatch,
     verifyInvoiceCalculation,
 } = require('../services/invoiceGenerator');
+const {
+    assertInvoiceEditable,
+    assertInvoiceEditableById,
+} = require('../services/invoiceLockService');
+const { getAuditLogs } = require('../services/auditLogService');
+const {
+    invoiceLabel,
+    writeInvoiceAudit,
+    writeInvoiceUpdateAudit,
+} = require('../services/invoiceAuditService');
 const { withComputedDelay } = require('../services/deadlineService');
+const { getInvoiceControlDashboard } = require('../services/invoiceControlService');
 const { generateInvoicePdf } = require('../services/invoicePdf');
+
+const invoiceStatus = (confermata) => (parseOptionalBoolean(confermata) ? 'confermata' : 'bozza');
+
+const normalizeInvoicePayload = (body = {}) => {
+    const payload = { ...body };
+
+    if (payload.confermata !== undefined) {
+        payload.confermata = parseOptionalBoolean(payload.confermata);
+        payload.stato = payload.stato || invoiceStatus(payload.confermata);
+    }
+
+    return payload;
+};
+
+const withEditableInvoice = (handler, idParam, action) => async (req, res) => {
+    try {
+        await assertInvoiceEditableById(req.params[idParam], action);
+        return handler(req, res);
+    } catch (error) {
+        return sendServiceError(res, error, 'Fattura confermata', error.status || 400);
+    }
+};
 
 const createFattura = async (req, res) => {
     try {
         const result = await createManualInvoice(req.body);
+        await writeInvoiceAudit(req, result.fattura, 'fattura.creata', `Creata ${invoiceLabel(result.fattura)}`);
         res.status(201).json(result.fattura);
     } catch (error) {
         sendServiceError(res, error, 'Error creating fattura', 400);
@@ -49,6 +81,11 @@ const generateFromReadings = async (req, res) => {
             confermata: req.body.confermata,
         });
 
+        await writeInvoiceAudit(req, result.fattura, 'fattura.generata', `Generata ${invoiceLabel(result.fattura)}`, {
+            metadata: {
+                letture: result.fattura.letture?.length || result.calculations?.length || 0,
+            },
+        });
         res.status(201).json(result);
     } catch (error) {
         sendServiceError(res, error, 'Error generating fattura', 400);
@@ -67,6 +104,18 @@ const getGenerationPreview = async (req, res) => {
     }
 };
 
+const getControlDashboard = async (req, res) => {
+    try {
+        const result = await getInvoiceControlDashboard({
+            limit: req.query.limit,
+            year: req.query.year || new Date().getFullYear(),
+        });
+        res.status(200).json(result);
+    } catch (error) {
+        sendServiceError(res, error, 'Error fetching fatture controls');
+    }
+};
+
 const verifyCalcolo = async (req, res) => {
     try {
         const result = await verifyInvoiceCalculation(req.params.id);
@@ -78,7 +127,19 @@ const verifyCalcolo = async (req, res) => {
 
 const applyFixedCharge = async (req, res) => {
     try {
+        const before = await Fattura.findById(req.params.id).lean();
+        if (!before) {
+            return res.status(404).json({ error: 'Fattura not found' });
+        }
+        assertInvoiceEditable(before, 'aggiungere la quota fissa');
+
         const result = await applyFixedChargeToInvoice(req.params.id);
+        await writeInvoiceAudit(req, before, 'fattura.quota_fissa', 'Aggiunta quota fissa', {
+            metadata: {
+                serviziCreati: result.servizi?.length || 0,
+                totals: result.totals,
+            },
+        });
         res.status(200).json(result);
     } catch (error) {
         sendServiceError(res, error, 'Error applying fixed charge to fattura', 400);
@@ -97,51 +158,103 @@ const downloadPdf = async (req, res) => {
     }
 };
 
+const updateFattura = async (req, res) => {
+    try {
+        const before = await Fattura.findById(req.params.id).lean();
+        if (!before) {
+            return res.status(404).json({ error: 'Fattura not found' });
+        }
+        assertInvoiceEditable(before, 'modificare la fattura');
+
+        const payload = normalizeInvoicePayload(req.body);
+        const after = await Fattura.findByIdAndUpdate(req.params.id, payload, { new: true }).lean();
+        await writeInvoiceUpdateAudit(req, before, after, payload.confermata ? 'fattura.confermata' : 'fattura.modificata');
+        return res.status(200).json(after);
+    } catch (error) {
+        return sendServiceError(res, error, 'Error updating fattura', error.status || 400);
+    }
+};
+
+const deleteFattura = async (req, res) => {
+    try {
+        const fattura = await Fattura.findById(req.params.id).lean();
+        if (!fattura) {
+            return res.status(404).json({ error: 'Fattura not found' });
+        }
+        assertInvoiceEditable(fattura, 'cancellare la fattura');
+
+        await Fattura.deleteOne({ _id: req.params.id });
+        await writeInvoiceAudit(req, fattura, 'fattura.cancellata', `Cancellata ${invoiceLabel(fattura)}`, {
+            metadata: { numero: fattura.numero, anno: fattura.anno },
+        });
+        return res.status(204).json({ message: 'Fattura deleted' });
+    } catch (error) {
+        return sendServiceError(res, error, 'Error deleting fattura', error.status || 400);
+    }
+};
+
+const getAuditLog = async (req, res) => {
+    try {
+        const logs = await getAuditLogs('Fattura', req.params.id, { limit: req.query.limit });
+        res.status(200).json(logs);
+    } catch (error) {
+        sendServiceError(res, error, 'Error fetching fattura audit log');
+    }
+};
+
+const associateCliente = associateRecords({
+    field: 'cliente',
+    responseKey: 'fattura',
+    setOn: 'source',
+    sourceModel: Fattura,
+    sourceName: 'Fattura',
+    sourceParam: 'fatturaId',
+    targetModel: Cliente,
+    targetName: 'Cliente',
+    targetParam: 'clienteId',
+});
+
+const associateServizio = associateRecords({
+    field: 'fattura',
+    responseKey: 'servizio',
+    setOn: 'target',
+    sourceModel: Fattura,
+    sourceName: 'Fattura',
+    sourceParam: 'fatturaId',
+    targetModel: Servizio,
+    targetName: 'Servizio',
+    targetParam: 'servizioId',
+});
+
+const associateScadenza = associateRecords({
+    field: 'scadenza',
+    responseKey: 'scadenza',
+    responseRecord: 'target',
+    setOn: 'source',
+    sourceModel: Fattura,
+    sourceName: 'Fattura',
+    sourceParam: 'fatturaId',
+    targetModel: Scadenza,
+    targetName: 'Scadenza',
+    targetParam: 'scadenzaId',
+});
+
 module.exports = {
     createFattura,
     getFatture,
     generateFromReadings,
     getGenerationPreview,
+    getControlDashboard,
     applyFixedCharge,
     getFattura: getRecord(Fattura, { name: 'Fattura', populate: 'cliente scadenza' }),
     verifyCalcolo,
     downloadPdf,
-    updateFattura: updateRecord(Fattura, { name: 'Fattura' }),
-    deleteFattura: deleteRecord(Fattura, { name: 'Fattura' }),
-    associateCliente: associateRecords({
-        field: 'cliente',
-        responseKey: 'fattura',
-        setOn: 'source',
-        sourceModel: Fattura,
-        sourceName: 'Fattura',
-        sourceParam: 'fatturaId',
-        targetModel: Cliente,
-        targetName: 'Cliente',
-        targetParam: 'clienteId',
-    }),
-    associateServizio: associateRecords({
-        field: 'fattura',
-        responseKey: 'servizio',
-        setOn: 'target',
-        sourceModel: Fattura,
-        sourceName: 'Fattura',
-        sourceParam: 'fatturaId',
-        targetModel: Servizio,
-        targetName: 'Servizio',
-        targetParam: 'servizioId',
-    }),
-    associateScadenza: associateRecords({
-        field: 'scadenza',
-        responseKey: 'scadenza',
-        responseRecord: 'target',
-        setOn: 'source',
-        sourceModel: Fattura,
-        sourceName: 'Fattura',
-        sourceParam: 'fatturaId',
-        targetModel: Scadenza,
-        targetName: 'Scadenza',
-        targetParam: 'scadenzaId',
-    }),
+    updateFattura,
+    deleteFattura,
+    getAuditLog,
+    associateCliente: withEditableInvoice(associateCliente, 'fatturaId', 'associare il cliente'),
+    associateServizio: withEditableInvoice(associateServizio, 'fatturaId', 'associare il servizio'),
+    associateScadenza: withEditableInvoice(associateScadenza, 'fatturaId', 'associare la scadenza'),
     getServiziAssociati: getManyByField({
         Model: Servizio,
         field: 'fattura',

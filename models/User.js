@@ -18,12 +18,28 @@ const userSchema = new mongoose.Schema(
             type: String,
             required: false,
             unique: true,
+            sparse: true,
             trim: true,
         },
         numero_telefono: {
             type: String,
             required: false,
             unique: true,
+            sparse: true,
+        },
+        role: {
+            type: String,
+            enum: ['admin', 'cliente'],
+            default: 'admin',
+        },
+        cliente: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Cliente',
+            required: false,
+        },
+        active: {
+            type: Boolean,
+            default: true,
         },
     },
     {
