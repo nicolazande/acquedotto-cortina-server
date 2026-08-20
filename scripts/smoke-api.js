@@ -14,6 +14,20 @@ const TEST_ATTACHMENTS = [
 ];
 const { RESOURCE_NAMES } = require('../config/resources');
 
+// Le date del test sono relative a oggi: con date fisse il test iniziava a fallire
+// non appena la data scritta nel codice finiva nel passato (la scadenza risultava
+// gia in ritardo e il confronto sul ritardo atteso saltava).
+const giorniDopo = (giorni, base = new Date()) => {
+    const data = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate()));
+    data.setUTCDate(data.getUTCDate() + giorni);
+    return data.toISOString().slice(0, 10);
+};
+const OGGI = giorniDopo(0);
+const ANNO = new Date(OGGI).getUTCFullYear();
+const INIZIO_ANNO = `${ANNO}-01-01`;
+const FINE_ANNO = `${ANNO}-12-31`;
+const SCADENZA_ATTESA = giorniDopo(Number.parseInt(process.env.INVOICE_DUE_DAYS || '30', 10));
+
 const normalizeApiUrl = (value) => {
     const baseUrl = (value || DEFAULT_API_URL).replace(/\/+$/, '');
     return baseUrl.endsWith('/api') ? baseUrl : `${baseUrl}/api`;
@@ -102,15 +116,6 @@ const testResourceLists = async () => {
     assert(Array.isArray(billingPreview.body.clienti), 'billing generation preview did not return clienti array');
 };
 
-const firstRecord = async (resource, sortField = '') => {
-    const query = sortField ? `&sortField=${sortField}` : '';
-    const { body } = await request(`/${resource}?page=1&limit=1${query}`);
-    const record = body.data && body.data[0];
-
-    assert(record && record._id, `no ${resource} available for relation smoke test`);
-    return record;
-};
-
 const createRecord = async (resource, payload) => {
     const { body } = await request(`/${resource}`, {
         method: 'POST',
@@ -122,9 +127,18 @@ const createRecord = async (resource, payload) => {
     return body;
 };
 
+// La pulizia tollera i record gia rimossi: cancellare una fattura elimina a cascata
+// anche le sue righe servizio e la scadenza, quindi le cancellazioni successive
+// trovano legittimamente un 404.
 const deleteCreatedRecords = async (records) => {
     for (const { resource, id } of [...records].reverse()) {
-        await request(`/${resource}/${id}`, { method: 'DELETE' });
+        try {
+            await request(`/${resource}/${id}`, { method: 'DELETE' });
+        } catch (error) {
+            if (!/failed with 404/.test(error.message)) {
+                throw error;
+            }
+        }
     }
 };
 
@@ -132,6 +146,21 @@ const createTrackedRecord = async (createdRecords, resource, payload) => {
     const record = await createRecord(resource, payload);
     createdRecords.push({ resource, id: record._id });
     return record;
+};
+
+// Su un database vuoto (installazione nuova, esecuzione in CI) non esiste ancora
+// nulla da riusare: in quel caso il test si crea il minimo indispensabile e lo
+// rimuove alla fine, cosi la suite gira sia sui dati reali sia da zero.
+const firstOrCreateRecord = async (createdRecords, resource, sortField, payload) => {
+    const query = sortField ? `&sortField=${sortField}` : '';
+    const { body } = await request(`/${resource}?page=1&limit=1${query}`);
+    const record = body.data && body.data[0];
+
+    if (record && record._id) {
+        return record;
+    }
+
+    return createTrackedRecord(createdRecords, resource, payload);
 };
 
 const testRelationReferences = async () => {
@@ -143,11 +172,32 @@ const testRelationReferences = async () => {
     const createdRecords = [];
 
     try {
-        const cliente = await firstRecord('clienti', 'cognome');
-        const edificio = await firstRecord('edifici', 'descrizione');
-        const listino = await firstRecord('listini', 'categoria');
-        const articolo = await firstRecord('articoli', 'codice');
-        const fattura = await firstRecord('fatture', 'data_fattura');
+        const cliente = await firstOrCreateRecord(createdRecords, 'clienti', 'cognome', {
+            cognome: 'Smoke',
+            nome: 'Riferimento',
+            ragione_sociale: 'Smoke Riferimento',
+        });
+        const edificio = await firstOrCreateRecord(createdRecords, 'edifici', 'descrizione', {
+            descrizione: 'Smoke edificio',
+            localita: 'Cortina',
+        });
+        const listino = await firstOrCreateRecord(createdRecords, 'listini', 'categoria', {
+            categoria: 'SMOKE RIFERIMENTO',
+            descrizione: 'Listino temporaneo smoke test',
+        });
+        const articolo = await firstOrCreateRecord(createdRecords, 'articoli', 'codice', {
+            codice: 'SMOKE',
+            descrizione: 'Articolo temporaneo smoke test',
+            iva: 'IVA 10%',
+        });
+        // Le fatture storiche sono confermate e quindi bloccate in scrittura:
+        // il test si crea una bozza dedicata invece di riusarne una esistente.
+        const fattura = await createTrackedRecord(createdRecords, 'fatture', {
+            cliente: cliente._id,
+            data_fattura: OGGI,
+            tipo_documento: 'Fattura',
+            confermata: false,
+        });
 
         const contatore = await createTrackedRecord(createdRecords, 'contatori', {
             codice: 'SMOKE-REL',
@@ -165,7 +215,7 @@ const testRelationReferences = async () => {
         assert(loadedContatore.listino?._id === listino._id, 'contatore listino reference was not populated');
 
         const lettura = await createTrackedRecord(createdRecords, 'letture', {
-            data_lettura: '2026-05-16',
+            data_lettura: OGGI,
             consumo: 123,
             unita_misura: 'm3',
             contatore: contatore._id,
@@ -179,8 +229,8 @@ const testRelationReferences = async () => {
             min: 0,
             max: 1,
             prezzo: 1,
-            inizio: '2026-01-01',
-            scadenza: '2026-12-31',
+            inizio: INIZIO_ANNO,
+            scadenza: FINE_ANNO,
             listino: listino._id,
         });
 
@@ -205,8 +255,12 @@ const testRelationReferences = async () => {
     }
 };
 
-const getAttachmentTarget = async () => {
-    const record = await firstRecord('clienti');
+const getAttachmentTarget = async (createdRecords) => {
+    const record = await firstOrCreateRecord(createdRecords, 'clienti', '', {
+        cognome: 'Smoke',
+        nome: 'Allegati',
+        ragione_sociale: 'Smoke Allegati',
+    });
     return record._id;
 };
 
@@ -216,7 +270,8 @@ const testAttachments = async () => {
         return;
     }
 
-    const clienteId = await getAttachmentTarget();
+    const createdRecords = [];
+    const clienteId = await getAttachmentTarget(createdRecords);
     const createdIds = [];
 
     try {
@@ -248,6 +303,7 @@ const testAttachments = async () => {
         for (const createdId of createdIds) {
             await request(`/attachments/${createdId}`, { method: 'DELETE' });
         }
+        await deleteCreatedRecords(createdRecords);
     }
 };
 
@@ -275,8 +331,8 @@ const testBillingGeneration = async () => {
             min: 1,
             max: 100,
             prezzo: 1,
-            inizio: '2026-01-01',
-            scadenza: '2026-12-31',
+            inizio: INIZIO_ANNO,
+            scadenza: FINE_ANNO,
             listino: listino._id,
         });
         await createTrackedRecord(createdRecords, 'fasce', {
@@ -284,8 +340,8 @@ const testBillingGeneration = async () => {
             min: 101,
             max: 999,
             prezzo: 2,
-            inizio: '2026-01-01',
-            scadenza: '2026-12-31',
+            inizio: INIZIO_ANNO,
+            scadenza: FINE_ANNO,
             listino: listino._id,
         });
         await createTrackedRecord(createdRecords, 'fasce', {
@@ -293,8 +349,8 @@ const testBillingGeneration = async () => {
             min: 0,
             max: 999,
             prezzo: 10,
-            inizio: '2026-01-01',
-            scadenza: '2026-12-31',
+            inizio: INIZIO_ANNO,
+            scadenza: FINE_ANNO,
             listino: listino._id,
         });
 
@@ -307,14 +363,14 @@ const testBillingGeneration = async () => {
             tipo_attivita: 'SMOKE FATTURAZIONE',
         });
         await createTrackedRecord(createdRecords, 'letture', {
-            data_lettura: '2026-01-01',
+            data_lettura: INIZIO_ANNO,
             consumo: 10,
             unita_misura: 'm3',
             fatturata: true,
             contatore: contatore._id,
         });
         const lettura = await createTrackedRecord(createdRecords, 'letture', {
-            data_lettura: '2026-05-16',
+            data_lettura: OGGI,
             consumo: 135,
             unita_misura: 'm3',
             fatturata: false,
@@ -322,7 +378,7 @@ const testBillingGeneration = async () => {
         });
         const manualFattura = await createRecord('fatture', {
             cliente: cliente._id,
-            data_fattura: '2026-05-16',
+            data_fattura: OGGI,
             tipo_documento: 'Fattura',
             imponibile: 0,
             iva: 0,
@@ -334,7 +390,7 @@ const testBillingGeneration = async () => {
 
         const manualDeadline = await request(`/fatture/${manualFattura._id}/scadenza`);
         assert(manualDeadline.body?._id === manualFattura.scadenza, 'manual invoice deadline relation is missing');
-        assert(manualDeadline.body.scadenza.startsWith('2026-06-15'), 'manual invoice deadline should default to 30 days');
+        assert(manualDeadline.body.scadenza.startsWith(SCADENZA_ATTESA), 'manual invoice deadline should default to 30 days');
         assert(manualDeadline.body.ritardo === 0, 'manual invoice deadline delay should start at 0');
 
         const preview = await request(`/letture/${lettura._id}/calcolo`);
@@ -344,7 +400,7 @@ const testBillingGeneration = async () => {
         const generated = await request('/fatture/genera-da-letture', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ letture: [lettura._id], data_fattura: '2026-05-16' }),
+            body: JSON.stringify({ letture: [lettura._id], data_fattura: OGGI }),
         });
         const fattura = generated.body.fattura;
         const servizi = generated.body.servizi || [];
@@ -354,7 +410,7 @@ const testBillingGeneration = async () => {
         assert(fattura.origine === 'letture', 'generated invoice origin should be letture');
         assert(fattura.scadenza, 'generated invoice should create a deadline');
         const generatedDeadline = await request(`/fatture/${fattura._id}/scadenza`);
-        assert(generatedDeadline.body.scadenza.startsWith('2026-06-15'), 'generated invoice deadline should default to 30 days');
+        assert(generatedDeadline.body.scadenza.startsWith(SCADENZA_ATTESA), 'generated invoice deadline should default to 30 days');
         assert((fattura.letture || []).includes(lettura._id), 'generated invoice should keep billed reading ids');
         assert(servizi.length === 3, 'generated invoice should have 3 service rows');
         assert(servizi.every((servizio) => servizio.listino), 'generated services should store listino snapshot reference');
@@ -378,12 +434,110 @@ const testBillingGeneration = async () => {
             await request('/fatture/genera-da-letture', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ letture: [lettura._id], data_fattura: '2026-05-16' }),
+                body: JSON.stringify({ letture: [lettura._id], data_fattura: OGGI }),
             });
         } catch (error) {
             duplicateBlocked = error.message.includes('409');
         }
         assert(duplicateBlocked, 'already billed reading was not blocked');
+    } finally {
+        await deleteCreatedRecords(createdRecords);
+    }
+};
+
+// Cancellare una fattura deve ripulire tutto cio che ne dipende: senza questo
+// controllo tornerebbero le righe servizio orfane (non piu cancellabili via API)
+// e le letture bloccate per sempre su "fatturata".
+const testInvoiceDeletionCascade = async () => {
+    if (skipMutation) {
+        console.log('skipped');
+        return;
+    }
+
+    const createdRecords = [];
+
+    try {
+        const cliente = await createTrackedRecord(createdRecords, 'clienti', {
+            nome: 'Smoke',
+            cognome: 'Cascata',
+            ragione_sociale: 'Smoke Cascata',
+        });
+        const listino = await createTrackedRecord(createdRecords, 'listini', {
+            categoria: 'SMOKE CASCATA',
+            descrizione: 'Listino temporaneo smoke test',
+        });
+        await createTrackedRecord(createdRecords, 'fasce', {
+            tipo: 'Tariffa Base',
+            min: 1,
+            max: 100,
+            prezzo: 1,
+            inizio: INIZIO_ANNO,
+            scadenza: FINE_ANNO,
+            listino: listino._id,
+        });
+        const contatore = await createTrackedRecord(createdRecords, 'contatori', {
+            codice: 'SMOKE-DEL',
+            seriale: 'SMOKE-DEL',
+            cliente: cliente._id,
+            listino: listino._id,
+        });
+        await createTrackedRecord(createdRecords, 'letture', {
+            data_lettura: INIZIO_ANNO,
+            consumo: 0,
+            unita_misura: 'm3',
+            fatturata: true,
+            contatore: contatore._id,
+        });
+        const lettura = await createTrackedRecord(createdRecords, 'letture', {
+            data_lettura: OGGI,
+            consumo: 40,
+            unita_misura: 'm3',
+            fatturata: false,
+            contatore: contatore._id,
+        });
+
+        const { body: generated } = await request('/fatture/genera-da-letture', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ letture: [lettura._id], data_fattura: OGGI }),
+        });
+        const fattura = generated.fattura;
+        const servizi = generated.servizi || [];
+        assert(servizi.length > 0, 'generated invoice should have service rows');
+        assert(fattura.scadenza, 'generated invoice should have a deadline');
+
+        const { body: letturaBloccata } = await request(`/letture/${lettura._id}`);
+        assert(letturaBloccata.fatturata === true, 'billed reading should be locked');
+
+        const { response: deleteResponse } = await request(`/fatture/${fattura._id}`, { method: 'DELETE' });
+        assert(deleteResponse.status === 204, 'invoice delete should return 204');
+
+        const missing = async (path) => {
+            try {
+                await request(path);
+                return false;
+            } catch (error) {
+                return /failed with 404/.test(error.message);
+            }
+        };
+
+        assert(await missing(`/fatture/${fattura._id}`), 'deleted invoice should be gone');
+        for (const servizio of servizi) {
+            assert(await missing(`/servizi/${servizio._id}`), 'service rows should be deleted with the invoice');
+        }
+        assert(await missing(`/scadenze/${fattura.scadenza}`), 'deadline should be deleted with the invoice');
+
+        const { body: letturaLibera } = await request(`/letture/${lettura._id}`);
+        assert(letturaLibera.fatturata === false, 'reading should be billable again after invoice deletion');
+
+        // la lettura deve poter rientrare davvero in una nuova fattura
+        const { body: rigenerata } = await request('/fatture/genera-da-letture', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ letture: [lettura._id], data_fattura: OGGI }),
+        });
+        assert(rigenerata.fattura?._id, 'reading should be billable again');
+        await request(`/fatture/${rigenerata.fattura._id}`, { method: 'DELETE' });
     } finally {
         await deleteCreatedRecords(createdRecords);
     }
@@ -396,6 +550,7 @@ const main = async () => {
     await step('paginated resource lists', testResourceLists);
     await step('relation references create/read/delete', testRelationReferences);
     await step('billing preview/generation/verification', testBillingGeneration);
+    await step('invoice deletion cascade', testInvoiceDeletionCascade);
     await step('note attachments create/list/file/delete', testAttachments);
     console.log('Smoke API completed successfully.');
 };
