@@ -32,6 +32,7 @@ const { withComputedDelay } = require('../services/deadlineService');
 const { getInvoiceControlDashboard } = require('../services/invoiceControlService');
 const { deleteInvoice } = require('../services/invoiceDeletionService');
 const { generateInvoicePdf } = require('../services/invoicePdf');
+const { fatturaViews } = require('../config/listViews');
 
 const invoiceStatus = (confermata) => (parseOptionalBoolean(confermata) ? 'confermata' : 'bozza');
 
@@ -66,6 +67,7 @@ const createFattura = async (req, res) => {
 };
 
 const getFatture = (req, res) => sendPaginated(Fattura, req, res, {
+    views: fatturaViews,
     defaultSort: 'data_fattura',
     errorMessage: 'Error fetching fatture',
     populate: 'cliente scadenza',

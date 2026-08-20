@@ -14,11 +14,14 @@ const {
     updateRecord,
 } = require('./utils/controllerActions');
 
+const { contatoreViews } = require('../config/listViews');
+
 const populate = 'edificio listino cliente';
 
 module.exports = {
     createContatore: createRecord(Contatore, { name: 'Contatore' }),
     getContatori: (req, res) => sendPaginated(Contatore, req, res, {
+        views: contatoreViews,
         defaultSort: 'nome_cliente',
         errorMessage: 'Error fetching contatori',
         populate,

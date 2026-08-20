@@ -14,6 +14,7 @@ const {
 } = require('./utils/controllerActions');
 const { parseOptionalBoolean } = require('./utils/requestOptions');
 const { calculateReadingById } = require('../services/invoiceGenerator');
+const { letturaViews } = require('../config/listViews');
 
 const populatedContatore = {
     path: 'contatore',
@@ -36,6 +37,7 @@ const getCalcolo = async (req, res) => {
 module.exports = {
     createLettura: createRecord(Lettura, { name: 'Lettura' }),
     getLetture: (req, res) => sendPaginated(Lettura, req, res, {
+        views: letturaViews,
         defaultSort: 'data_lettura',
         errorMessage: 'Error fetching letture',
         populate: 'contatore',

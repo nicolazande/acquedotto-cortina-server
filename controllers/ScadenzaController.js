@@ -9,6 +9,7 @@ const {
     updateRecord,
 } = require('./utils/controllerActions');
 const { delayAggregation, withComputedDelay } = require('../services/deadlineService');
+const { scadenzaViews } = require('../config/listViews');
 
 module.exports = {
     createScadenza: createRecord(Scadenza, {
@@ -18,6 +19,7 @@ module.exports = {
     }),
     getScadenze: (req, res) => sendPaginated(Scadenza, req, res, {
         addFields: { ritardo: delayAggregation() },
+        views: scadenzaViews,
         defaultLimit: 100,
         defaultSort: 'scadenza',
         errorMessage: 'Error fetching scadenze',

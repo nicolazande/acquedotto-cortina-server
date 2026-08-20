@@ -18,6 +18,7 @@ const {
     previewClienteBilling,
 } = require('../services/invoiceGenerator');
 const { writeAuditLog } = require('../services/auditLogService');
+const { clienteViews } = require('../config/listViews');
 
 const serializePortalUser = (user) => ({
     id: user._id,
@@ -47,6 +48,7 @@ const validatePortalPassword = (password) => {
 };
 
 const getClienti = (req, res) => sendPaginated(Cliente, req, res, {
+    views: clienteViews,
     defaultSort: 'nome',
     errorMessage: 'Error fetching clienti',
 });

@@ -30,6 +30,33 @@ const buildSearchQuery = (Model, search) => {
     return conditions.length ? { $or: conditions } : {};
 };
 
+// Viste predefinite: ogni lista dichiara un insieme di filtri con un nome, e il
+// client li richiede con ?vista=<nome>. Tenere le condizioni qui, invece che
+// lasciarle comporre al client, evita che l'interfaccia possa interrogare campi
+// arbitrari e rende le viste verificabili.
+const getViewFilter = (views, requestedView) => {
+    if (!views || !requestedView) {
+        return null;
+    }
+
+    const view = views[requestedView];
+    return typeof view === 'function' ? view() : view || null;
+};
+
+const combineFilters = (searchQuery, viewFilter) => {
+    if (!viewFilter) {
+        return searchQuery;
+    }
+
+    if (!searchQuery || Object.keys(searchQuery).length === 0) {
+        return viewFilter;
+    }
+
+    // $and tiene separate le due condizioni: la ricerca usa gia $or al suo interno
+    // e fonderle sullo stesso livello ne cambierebbe il significato.
+    return { $and: [searchQuery, viewFilter] };
+};
+
 const getSortField = (requestedField, defaultField) => {
     if (requestedField && /^[\w.]+$/.test(requestedField)) {
         return requestedField;
@@ -68,6 +95,7 @@ const sendPaginated = async (Model, req, res, options = {}) => {
         errorMessage = 'Error fetching records',
         populate,
         transform,
+        views,
     } = options;
 
     try {
@@ -77,7 +105,7 @@ const sendPaginated = async (Model, req, res, options = {}) => {
         const sortField = getSortField(req.query.sortField, defaultSort);
         const sortOrder = req.query.sortOrder === 'desc' ? -1 : 1;
         const skip = (page - 1) * limit;
-        const query = buildSearchQuery(Model, search);
+        const query = combineFilters(buildSearchQuery(Model, search), getViewFilter(views, req.query.vista));
         const sort = { [sortField]: sortOrder };
 
         const totalItems = await Model.countDocuments(query);
@@ -99,5 +127,7 @@ const sendPaginated = async (Model, req, res, options = {}) => {
 };
 
 module.exports = {
+    combineFilters,
+    getViewFilter,
     sendPaginated,
 };

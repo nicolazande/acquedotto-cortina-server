@@ -6,6 +6,7 @@
 // Interventi:
 //   - fatture: allinea `stato` al booleano `confermata` (i due potevano divergere)
 //   - scadenze: rimuove `ritardo`, che e un valore derivato e invecchia da solo
+//   - scadenze: converte `saldo` in booleano dove e salvato come 1/0
 require('dotenv').config();
 
 const mongoose = require('mongoose');
@@ -52,6 +53,23 @@ const rimuoviRitardoSalvato = async () => {
     console.log(`  ripulite: ${risultato.modifiedCount}`);
 };
 
+// `saldo` arriva dall'import a volte come intero 1/0 e a volte come booleano.
+// Con due tipi nello stesso campo i filtri non funzionano: Mongoose converte il
+// valore della richiesta secondo lo schema (booleano) e non trova gli interi.
+const normalizzaSaldo = async () => {
+    const interi = await Scadenza.collection.countDocuments({ saldo: { $type: 'number' } });
+    console.log('Scadenze con `saldo` salvato come numero invece che booleano:');
+    console.log(`  da convertire: ${interi}`);
+
+    if (!applica || interi === 0) {
+        return;
+    }
+
+    const veri = await Scadenza.collection.updateMany({ saldo: { $in: [1] } }, { $set: { saldo: true } });
+    const falsi = await Scadenza.collection.updateMany({ saldo: { $in: [0] } }, { $set: { saldo: false } });
+    console.log(`  convertite: ${veri.modifiedCount + falsi.modifiedCount}`);
+};
+
 const main = async () => {
     await connectDB();
     console.log(applica ? '== APPLICO LE CORREZIONI ==\n' : '== SOLA LETTURA (usa --fix per applicare) ==\n');
@@ -59,6 +77,8 @@ const main = async () => {
     await allineaStatoFatture();
     console.log('');
     await rimuoviRitardoSalvato();
+    console.log('');
+    await normalizzaSaldo();
 
     await mongoose.disconnect();
 };
