@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -83,6 +84,35 @@ def chunked(items, size: int):
         yield items[index:index + size]
 
 
+def rischio_duplicati(source_db, target_db, collection_name: str) -> tuple[bool, str]:
+    """Rileva il caso in cui una sincronizzazione duplicherebbe invece di aggiornare.
+
+    I documenti si riconoscono dall'_id. Dopo un reimport completo da Gesco gli
+    _id sono tutti nuovi: senza --delete-missing la sincronizzazione non trova
+    corrispondenze e inserisce ogni documento accanto a quello vecchio,
+    raddoppiando la collection senza alcun errore. E successo davvero.
+    """
+    n_sorgente = source_db[collection_name].count_documents({})
+    n_destinazione = target_db[collection_name].count_documents({})
+
+    if n_sorgente == 0 or n_destinazione == 0:
+        return False, ""
+
+    campione = [d["_id"] for d in source_db[collection_name].find({}, {"_id": 1}).limit(200)]
+    comuni = target_db[collection_name].count_documents({"_id": {"$in": campione}})
+    quota = comuni / len(campione) if campione else 1.0
+
+    if quota < 0.1:
+        return True, (
+            f"{collection_name}: su {len(campione)} documenti di origine solo {comuni} "
+            f"esistono gia nella destinazione ({quota:.0%}). Gli identificativi non "
+            f"corrispondono: la sincronizzazione aggiungerebbe {n_sorgente} documenti "
+            f"ai {n_destinazione} presenti invece di aggiornarli."
+        )
+
+    return False, ""
+
+
 def sync_collection(source_db, target_db, collection_name: str, batch_size: int, delete_missing: bool, dry_run: bool):
     source_collection = source_db[collection_name]
     target_collection = target_db[collection_name]
@@ -145,6 +175,11 @@ def parse_args():
     parser.add_argument("--delete-missing", action="store_true", default=env_bool("SYNC_DELETE_MISSING"))
     parser.add_argument("--include-users", action="store_true", default=env_bool("SYNC_INCLUDE_USERS"))
     parser.add_argument("--dry-run", action="store_true", default=env_bool("SYNC_DRY_RUN"))
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="procede anche quando gli identificativi non corrispondono (rischio duplicati)",
+    )
     return parser.parse_args()
 
 
@@ -178,6 +213,27 @@ def main():
         if args.dry_run:
             print("Dry run: enabled")
 
+        # Con --delete-missing la sostituzione e integrale e il problema non si
+        # pone. Senza, identificativi che non corrispondono producono duplicati
+        # silenziosi: meglio fermarsi e dirlo.
+        if not args.delete_missing and not args.force:
+            avvisi = []
+            for collection_name in collections:
+                rischio, messaggio = rischio_duplicati(source_db, target_db, collection_name)
+                if rischio:
+                    avvisi.append(messaggio)
+
+            if avvisi:
+                print("\nSincronizzazione interrotta: rischio di duplicati.\n")
+                for messaggio in avvisi:
+                    print(f"  {messaggio}")
+                print(
+                    "\nSe la sorgente deve sostituire la destinazione (tipico dopo un"
+                    "\nreimport completo) usare --delete-missing. Per procedere comunque"
+                    "\ncon l'inserimento usare --force."
+                )
+                return 1
+
         totals = {"upserted": 0, "modified": 0, "deleted": 0}
         for collection_name in collections:
             result = sync_collection(
@@ -201,4 +257,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # Il codice di uscita deve riflettere l'esito: un'interruzione per rischio
+    # duplicati passava per riuscita in automazione.
+    sys.exit(main() or 0)

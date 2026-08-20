@@ -328,6 +328,12 @@ IMPORT_FATTURE_WORKERS=10
 
 Lo script `documents/script/sync_databases.py` copia velocemente le collection applicative tra MongoDB remoto e locale usando bulk upsert.
 
+> **Dopo un reimport completo usare sempre `--delete-missing`.** L'import da Gesco
+> rigenera tutti gli identificativi: senza quell'opzione la sincronizzazione non
+> riconosce i documenti esistenti e li **aggiunge** accanto ai vecchi, raddoppiando
+> ogni collection. Lo script ora se ne accorge e si ferma, ma la scelta giusta
+> resta `--delete-missing`, che sostituisce la destinazione.
+
 Esempio per scaricare il remoto in locale:
 
 ```bash
