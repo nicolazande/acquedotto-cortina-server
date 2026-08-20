@@ -249,6 +249,20 @@ npm run report:calcolo
 
 ## Import dati
 
+### Il login e separato dall'import
+
+Il login a Gesco richiede una persona: il CAPTCHA va risolto a mano. Per questo
+e un comando a se.
+
+```bash
+npm run gesco:login    # apre il browser, attende il CAPTCHA, salva la sessione
+npm run gesco:import   # scarica i dati, senza interazione
+```
+
+La sessione finisce in `.fasttools-session` (escluso da git) e vale finche resta
+valida su Gesco: nel frattempo l'import si puo ripetere o riprendere senza nuovi
+CAPTCHA.
+
 ### Rete di sicurezza dell'import
 
 | Comportamento | Perche |

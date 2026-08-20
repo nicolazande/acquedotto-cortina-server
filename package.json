@@ -22,7 +22,9 @@
     "report:integrita": "node scripts/verify-invoice-integrity.js",
     "maintenance:user-indexes": "node scripts/ensure-user-indexes.js",
     "maintenance:allinea-dati": "node scripts/allinea-dati.js",
-    "seed:articoli": "node scripts/seed-articoli.js"
+    "seed:articoli": "node scripts/seed-articoli.js",
+    "gesco:login": ".venv/bin/python documents/script/login_gesco.py",
+    "gesco:import": ".venv/bin/python documents/script/main.py"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
