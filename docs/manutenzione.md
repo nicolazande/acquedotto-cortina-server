@@ -139,6 +139,26 @@ perche `bcrypt` e `esbuild` distribuiscono binari gia compilati, ma se in futuro
 entrasse una dipendenza che deve compilarsi in fase di installazione andra
 autorizzata esplicitamente.
 
+## Capire cosa e pubblicato davvero
+
+Client e server stanno su due servizi distinti (Netlify e Render) e si aggiornano
+in momenti diversi. Quando uno resta indietro, l'interfaccia puo chiedere dati che
+il server non conosce ancora.
+
+Per sapere in pochi secondi cosa gira:
+
+```bash
+curl -s https://acquedotto-cortina-server.onrender.com/api/auth/health
+```
+
+Risponde con la versione, il commit pubblicato e da quando il processo e attivo.
+La stessa informazione compare passando il puntatore sull'indicatore **API** in
+alto a destra nell'interfaccia, che mostra le due versioni affiancate.
+
+Se le due non coincidono, controllare i log di deploy del servizio rimasto
+indietro: un deploy puo essere fallito senza che nulla lo segnali altrove, e il
+servizio continua a servire la versione precedente.
+
 ## Sincronizzazione con il database remoto
 
 Lo script `documents/script/sync_databases.py` copia le collection fra remoto e

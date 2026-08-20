@@ -7,11 +7,28 @@ const { getUserRole } = require('../middlewares/AuthorizationMiddleware');
 const MAX_ADMIN_USERS = Number.parseInt(process.env.MAX_ADMIN_USERS || '2', 10);
 
 // Health check route
+// Versione in esecuzione. Serve a rispondere in pochi secondi alla domanda
+// "cosa e effettivamente pubblicato": client e server stanno su due servizi
+// distinti e si aggiornano in momenti diversi. Finora non c'era modo di
+// accorgersi che uno dei due era rimasto indietro, e il disallineamento si
+// manifestava come un errore incomprensibile nell'interfaccia.
+const { version: APP_VERSION } = require('../package.json');
+
+const RELEASE = process.env.RENDER_GIT_COMMIT
+    || process.env.SOURCE_VERSION
+    || process.env.GIT_COMMIT
+    || '';
+
+const AVVIATO = new Date();
+
 const healthCheck = (req, res) => {
     const isDatabaseConnected = mongoose.connection.readyState === 1;
     res.status(isDatabaseConnected ? 200 : 503).json({
         status: isDatabaseConnected ? 'ok' : 'degraded',
         database: isDatabaseConnected ? 'connected' : 'disconnected',
+        version: APP_VERSION,
+        release: RELEASE ? RELEASE.slice(0, 12) : 'sconosciuta',
+        avviato: AVVIATO.toISOString(),
     });
 };
 
