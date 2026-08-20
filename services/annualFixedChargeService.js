@@ -1,21 +1,8 @@
-const mongoose = require('mongoose');
 const Fattura = require('../models/Fattura');
 const Lettura = require('../models/Lettura');
 const Servizio = require('../models/Servizio');
-
-const withSession = (query, session) => (session ? query.session(session) : query);
-
-const recordId = (record) => String(record?._id || record || '');
-
-const getDate = (value) => {
-    const date = value ? new Date(value) : new Date();
-    return Number.isNaN(date.getTime()) ? new Date() : date;
-};
-
-const toObjectId = (id) => {
-    const value = recordId(id);
-    return mongoose.Types.ObjectId.isValid(value) ? new mongoose.Types.ObjectId(value) : null;
-};
+const { getDate } = require('../utils/dates');
+const { recordId, toObjectId, withSession } = require('../utils/mongo');
 
 const annualFixedKey = (year, contatoreId) => `${year}:${recordId(contatoreId)}`;
 

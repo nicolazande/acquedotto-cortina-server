@@ -1,20 +1,14 @@
 const mongoose = require('mongoose');
+const { parseBoolean, parsePositiveInteger } = require('../utils/values');
 
 const DEFAULT_DB_NAME = 'acquedotto-zuel';
-
-const parsePositiveInteger = (value, fallback) => {
-    const parsed = Number.parseInt(value, 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-};
-
-const parseBoolean = (value) => ['1', 'true', 'yes', 'y', 'on'].includes(String(value).trim().toLowerCase());
 
 const getDatabaseNameFromUri = (mongoUri) => {
     try {
         const parsedUri = new URL(mongoUri);
         const dbName = decodeURIComponent(parsedUri.pathname.replace(/^\/+/, ''));
         return dbName || null;
-    } catch (error) {
+    } catch {
         return null;
     }
 };

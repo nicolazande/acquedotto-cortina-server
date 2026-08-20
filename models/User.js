@@ -47,6 +47,9 @@ const userSchema = new mongoose.Schema(
     }
 );
 
+// Ricerca dell'account portale a partire dal cliente.
+userSchema.index({ role: 1, cliente: 1 });
+
 // Pre-save hook per criptare la password
 userSchema.pre('save', async function (next) {
     if (!this.isModified('password')) {

@@ -4,12 +4,12 @@ const express = require('express');
 const cors = require('cors');
 const routes = require('./routes/index');
 const connectDB = require('./config/db');
+const { errorHandler, notFoundHandler } = require('./middlewares/ErrorMiddleware');
+const { parseBoolean } = require('./utils/values');
 
 const app = express();
 const port = process.env.PORT || 5000;
 const requestBodyLimit = process.env.REQUEST_BODY_LIMIT || '10mb';
-
-const parseBoolean = (value) => ['1', 'true', 'yes', 'y', 'on'].includes(String(value).trim().toLowerCase());
 
 const defaultOrigins = [
     'http://localhost:3000',
@@ -49,14 +49,24 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: requestBodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: requestBodyLimit }));
 
+app.use('/api', routes);
+app.use(notFoundHandler);
+app.use(errorHandler);
+
 const startServer = async () => {
     await connectDB();
-
-    app.use('/api', routes);
 
     app.listen(port, () => {
         console.log(`Server is running on port: ${port}`);
     });
 };
 
+// Un errore asincrono non gestito terminerebbe il processo Node senza spiegazioni:
+// meglio registrarlo e lasciare che il gestore del deploy decida cosa fare.
+process.on('unhandledRejection', (reason) => {
+    console.error('Promise non gestita:', reason);
+});
+
 startServer();
+
+module.exports = app;

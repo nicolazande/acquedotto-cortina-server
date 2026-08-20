@@ -17,4 +17,10 @@ const letturaSchema = new Schema(
     }
 );
 
+// La ricerca della lettura precedente (contatore + data) e il filtro sulle letture
+// ancora da fatturare sono nel percorso caldo della generazione fatture.
+letturaSchema.index({ contatore: 1, data_lettura: -1 });
+letturaSchema.index({ fatturata: 1, data_lettura: 1 });
+letturaSchema.index({ data_lettura: -1 });
+
 module.exports = mongoose.model('Lettura', letturaSchema);

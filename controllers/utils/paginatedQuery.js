@@ -1,9 +1,4 @@
-const toPositiveInteger = (value, fallback) => {
-    const parsed = Number.parseInt(value, 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-};
-
-const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const { escapeRegex, parsePositiveInteger: toPositiveInteger } = require('../../utils/values');
 
 const buildSearchQuery = (Model, search) => {
     if (!search) {
@@ -42,8 +37,32 @@ const getSortField = (requestedField, defaultField) => {
     return defaultField;
 };
 
+// Alcune liste ordinano su valori derivati (per esempio il ritardo di una scadenza,
+// che dipende da oggi e non dal dato salvato). In quel caso la query passa da una
+// aggregazione che calcola i campi prima di ordinare, cosi l'ordinamento coincide
+// con quello che la tabella mostra davvero.
+const findWithComputedFields = async ({
+    Model, addFields, limit, populate, query, skip, sort,
+}) => {
+    const records = await Model.aggregate([
+        { $match: query },
+        { $addFields: addFields },
+        { $sort: sort },
+        { $skip: skip },
+        { $limit: limit },
+    ]);
+
+    return populate ? Model.populate(records, populate) : records;
+};
+
+const findRecords = ({ Model, limit, populate, query, skip, sort }) => {
+    const findQuery = populate ? Model.find(query).populate(populate) : Model.find(query);
+    return findQuery.sort(sort).skip(skip).limit(limit);
+};
+
 const sendPaginated = async (Model, req, res, options = {}) => {
     const {
+        addFields,
         defaultLimit = 50,
         defaultSort = '_id',
         errorMessage = 'Error fetching records',
@@ -59,18 +78,12 @@ const sendPaginated = async (Model, req, res, options = {}) => {
         const sortOrder = req.query.sortOrder === 'desc' ? -1 : 1;
         const skip = (page - 1) * limit;
         const query = buildSearchQuery(Model, search);
+        const sort = { [sortField]: sortOrder };
 
         const totalItems = await Model.countDocuments(query);
-        let findQuery = Model.find(query);
-
-        if (populate) {
-            findQuery = findQuery.populate(populate);
-        }
-
-        const records = await findQuery
-            .sort({ [sortField]: sortOrder })
-            .skip(skip)
-            .limit(limit);
+        const records = await (addFields
+            ? findWithComputedFields({ Model, addFields, limit, populate, query, skip, sort })
+            : findRecords({ Model, limit, populate, query, skip, sort }));
         const data = transform ? records.map(transform) : records;
 
         res.status(200).json({

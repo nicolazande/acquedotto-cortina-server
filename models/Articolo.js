@@ -12,4 +12,6 @@ const articoloSchema = new Schema(
   }
 );
 
+articoloSchema.index({ codice: 1 });
+
 module.exports = mongoose.model('Articolo', articoloSchema);

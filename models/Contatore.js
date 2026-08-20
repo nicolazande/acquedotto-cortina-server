@@ -29,4 +29,9 @@ const contatoreSchema = new Schema(
     }
 );
 
+contatoreSchema.index({ cliente: 1 });
+contatoreSchema.index({ edificio: 1 });
+contatoreSchema.index({ listino: 1 });
+contatoreSchema.index({ nome_cliente: 1 });
+
 module.exports = mongoose.model('Contatore', contatoreSchema);

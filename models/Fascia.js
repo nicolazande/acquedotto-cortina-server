@@ -16,4 +16,6 @@ const fasciaSchema = new Schema(
     }
 );
 
+fasciaSchema.index({ listino: 1 });
+
 module.exports = mongoose.model('Fascia', fasciaSchema);

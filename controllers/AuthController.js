@@ -1,8 +1,10 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
-const { JWT_SECRET } = require('../config/auth');
+const { JWT_EXPIRES_IN, JWT_SECRET } = require('../config/auth');
 const { getUserRole } = require('../middlewares/AuthorizationMiddleware');
+
+const MAX_ADMIN_USERS = Number.parseInt(process.env.MAX_ADMIN_USERS || '2', 10);
 
 // Health check route
 const healthCheck = (req, res) => {
@@ -17,9 +19,9 @@ const healthCheck = (req, res) => {
 const register = async (req, res) => {
     const { username, password } = req.body;
     try {
-        const userCount = await User.countDocuments();
+        const userCount = await User.countDocuments({ role: { $ne: 'cliente' } });
 
-        if (userCount >= 2) {
+        if (userCount >= MAX_ADMIN_USERS) {
             return res.status(403).json({ error: 'Registrazione disabilitata, limite utenti.' });
         }
 
@@ -53,7 +55,7 @@ const login = async (req, res) => {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        const token = jwt.sign({ userId: user._id, role: getUserRole(user) }, JWT_SECRET, { expiresIn: '1h' });
+        const token = jwt.sign({ userId: user._id, role: getUserRole(user) }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
         res.json({ token });
     } catch (error) {
         console.error('[Login] Error logging in:', error.message);

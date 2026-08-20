@@ -1,4 +1,3 @@
-const mongoose = require('mongoose');
 const Articolo = require('../models/Articolo');
 const Cliente = require('../models/Cliente');
 const Contatore = require('../models/Contatore');
@@ -10,6 +9,7 @@ require('../models/Listino');
 const Servizio = require('../models/Servizio');
 const {
     annualFixedKey,
+    buildAnnualFixedLookupCache,
     createAnnualFixedContext,
     getDate,
     hasAnnualFixedCharge,
@@ -30,28 +30,15 @@ const {
     roundMoney,
 } = require('./billingCalculator');
 const { assertInvoiceEditable } = require('./invoiceLockService');
+const { runWithOptionalTransaction } = require('./transaction');
+const { createError } = require('../utils/errors');
+const { hasValue, normalizeText, sumMoneyBy } = require('../utils/values');
+const { uniqueById, withSession } = require('../utils/mongo');
+const { customerLabel } = require('../utils/customer');
 
-const createError = (message, status = 400) => Object.assign(new Error(message), { status });
 const DEFAULT_DELAY_FEE = Number.parseFloat(process.env.INVOICE_DELAY_FEE || '6');
 const MONEY_TOLERANCE = 0.01;
 
-const uniqueById = (records) => {
-    const seen = new Set();
-    return records.filter((record) => {
-        const key = recordId(record);
-        if (!key || seen.has(key)) {
-            return false;
-        }
-        seen.add(key);
-        return true;
-    });
-};
-
-const hasValue = (value) => value !== undefined && value !== null && value !== '';
-const withSession = (query, session) => (session ? query.session(session) : query);
-const sumMoneyBy = (records, getter) => roundMoney(
-    records.reduce((total, record) => total + numberOrZero(getter(record)), 0)
-);
 const isBillablePreview = (preview) => !preview.error && preview.lines?.length;
 const summarizeBillablePreviews = (previews) => {
     const billablePreviews = previews.filter(isBillablePreview);
@@ -63,27 +50,7 @@ const summarizeBillablePreviews = (previews) => {
         totale_fattura: sumMoneyBy(billablePreviews, (preview) => preview.totals.totale_fattura),
     };
 };
-const getTransactionErrorMessage = (error) => [
-    error?.message,
-    error?.cause?.message,
-    error?.errorLabels?.join(' '),
-].filter(Boolean).join(' ');
-
-const isTransactionUnsupported = (error) => /Transaction numbers are only allowed|replica set member|transactions?.*not supported/i
-    .test(getTransactionErrorMessage(error));
-
-const getCustomerLabel = (cliente) => (
-    cliente?.ragione_sociale
-    || [cliente?.cognome, cliente?.nome].filter(Boolean).join(' ').trim()
-    || ''
-);
-
-const normalizeText = (value) => String(value || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+const getCustomerLabel = (cliente) => customerLabel(cliente);
 
 const isCondominiumSplitCounter = (contatore) => {
     const counterType = normalizeText(contatore?.tipo_contatore);
@@ -129,27 +96,6 @@ const reserveInvoiceNumber = async (year, session) => {
     ).lean();
 
     return counter.value;
-};
-
-const runWithOptionalTransaction = async (operation) => {
-    const session = await mongoose.startSession();
-
-    try {
-        try {
-            let result;
-            await session.withTransaction(async () => {
-                result = await operation(session);
-            });
-            return result;
-        } catch (error) {
-            if (!isTransactionUnsupported(error)) {
-                throw error;
-            }
-            return operation(null);
-        }
-    } finally {
-        await session.endSession();
-    }
 };
 
 const getPreviousReading = (lettura, session) => {
@@ -375,7 +321,7 @@ const cleanServiceLine = (line, fatturaId, riga) => ({
     fattura: fatturaId,
 });
 
-const buildDelayLine = ({ article, invoiceDate, previousInvoice }) => {
+const buildDelayLine = ({ article, previousInvoice }) => {
     const taxRate = getTaxRate(article);
     const price = roundMoney(Number.isFinite(DEFAULT_DELAY_FEE) ? DEFAULT_DELAY_FEE : 6);
     const previousCode = hasValue(previousInvoice?.numero) ? previousInvoice.numero : previousInvoice?.codice;
@@ -549,7 +495,7 @@ const getDelayLineForCustomer = async ({ articlesByCode, clienteId, invoiceDate,
         throw createError('Articolo GG_DELAY mancante: impossibile calcolare il ritardo in modo sicuro');
     }
 
-    return buildDelayLine({ article, invoiceDate, previousInvoice });
+    return buildDelayLine({ article, previousInvoice });
 };
 
 const toBoolean = (value) => value === true || ['1', 'true', 'yes'].includes(String(value).toLowerCase());
@@ -719,6 +665,11 @@ const previewClienteBilling = async (clienteId, { includeFixedCharge = true } = 
         contatore: { $in: contatori.map((contatore) => contatore._id) },
         $or: [{ fatturata: false }, { fatturata: { $exists: false } }],
     }).sort({ data_lettura: 1, _id: 1 }).lean();
+    // Gli articoli si leggono una volta sola invece che per ogni lettura.
+    // Qui non si precarica l'intera cache delle quote fisse annuali: per un solo
+    // cliente l'aggregazione completa costerebbe piu di quanto faccia risparmiare,
+    // e la cache incrementale per contatore/anno basta.
+    const articlesByCode = await getArticlesByCode();
     const billingContext = createAnnualFixedContext();
     const previews = [];
 
@@ -726,6 +677,7 @@ const previewClienteBilling = async (clienteId, { includeFixedCharge = true } = 
         try {
             previews.push(await calculateReadingById(lettura._id, {
                 ...billingContext,
+                articlesByCode,
                 includeFixedCharge,
             }));
         } catch (error) {
@@ -774,9 +726,13 @@ const previewBillingBatch = async ({ includeFixedCharge = true, limit = 500 } = 
             populate: ['cliente', 'listino'],
         })
         .lean();
+    const [articlesByCode, annualFixedLookupCache] = await Promise.all([
+        getArticlesByCode(),
+        buildAnnualFixedLookupCache(),
+    ]);
     const groups = new Map();
     const globalAnomalies = [];
-    const billingContext = createAnnualFixedContext();
+    const billingContext = createAnnualFixedContext({ annualFixedLookupCache });
 
     for (const lettura of letture) {
         const cliente = lettura.contatore?.cliente;
@@ -794,6 +750,7 @@ const previewBillingBatch = async ({ includeFixedCharge = true, limit = 500 } = 
         try {
             group.previews.push(await calculateReadingById(lettura._id, {
                 ...billingContext,
+                articlesByCode,
                 includeFixedCharge,
             }));
         } catch (error) {

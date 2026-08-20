@@ -1,37 +1,9 @@
 const Scadenza = require('../models/Scadenza');
+const { numberOrZero } = require('../utils/values');
+const { addDays, daysBetween, startOfDay } = require('../utils/dates');
+const { customerLabel } = require('../utils/customer');
 
 const DEFAULT_DUE_DAYS = Number.parseInt(process.env.INVOICE_DUE_DAYS || '30', 10);
-
-const numberOrZero = (value) => {
-    const parsed = Number(String(value ?? '').replace(',', '.'));
-    return Number.isFinite(parsed) ? parsed : 0;
-};
-
-const toDate = (value) => {
-    if (!value) {
-        return null;
-    }
-
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? null : date;
-};
-
-const startOfDay = (value) => {
-    const date = toDate(value);
-    if (!date) {
-        return null;
-    }
-
-    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-};
-
-const addDays = (value, days) => {
-    const date = startOfDay(value) || startOfDay(new Date());
-    date.setUTCDate(date.getUTCDate() + days);
-    return date;
-};
-
-const daysBetween = (from, to) => Math.floor((startOfDay(to) - startOfDay(from)) / 86400000);
 
 const calculateDelay = (deadline, now = new Date()) => {
     const dueDate = startOfDay(deadline?.scadenza);
@@ -63,7 +35,7 @@ const getDueDate = (invoiceDate, dueDate) => (
 );
 
 const getCustomerNameParts = (cliente, fattura) => ({
-    cognome: cliente?.cognome || cliente?.ragione_sociale || fattura?.ragione_sociale || fattura?.nome_cliente || '',
+    cognome: cliente?.cognome || customerLabel(cliente, fattura),
     nome: cliente?.nome || '',
 });
 
@@ -115,8 +87,49 @@ const syncInvoiceDeadlineTotal = async ({ fattura, session }) => {
     );
 };
 
+// Stessa formula di calculateDelay, ma valutata da MongoDB: serve per ordinare
+// la lista scadenze sul ritardo reale invece che sul valore salvato, che invecchia
+// di un giorno al giorno.
+const delayAggregation = () => ({
+    $cond: [
+        { $ifNull: ['$scadenza', false] },
+        {
+            $max: [
+                0,
+                {
+                    $dateDiff: {
+                        startDate: { $dateTrunc: { date: '$scadenza', unit: 'day' } },
+                        endDate: {
+                            $dateTrunc: {
+                                date: {
+                                    $cond: [
+                                        {
+                                            $and: [
+                                                // saldo e salvato a volte come booleano e a volte come 1/0:
+                                                // $toBool allinea il confronto alla verita di JavaScript.
+                                                { $toBool: { $ifNull: ['$saldo', false] } },
+                                                { $toBool: { $ifNull: ['$pagamento', false] } },
+                                            ],
+                                        },
+                                        '$pagamento',
+                                        '$$NOW',
+                                    ],
+                                },
+                                unit: 'day',
+                            },
+                        },
+                        unit: 'day',
+                    },
+                },
+            ],
+        },
+        0,
+    ],
+});
+
 module.exports = {
     buildDeadlinePayload,
+    delayAggregation,
     calculateDelay,
     createDeadlineForInvoice,
     ensureInvoiceDeadline,
