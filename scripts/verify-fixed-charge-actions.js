@@ -1,7 +1,4 @@
-require('dotenv').config();
-
-const mongoose = require('mongoose');
-const connectDB = require('../config/db');
+const { runScript } = require('./utils/runScript');
 const Fattura = require('../models/Fattura');
 require('../models/Articolo');
 require('../models/Cliente');
@@ -55,7 +52,6 @@ const invoiceLabel = (verification) => ({
 
 const main = async () => {
     const args = parseArgs();
-    await connectDB();
 
     const query = args.year ? { anno: args.year } : {};
     const fatture = await Fattura.find(query)
@@ -122,15 +118,9 @@ const main = async () => {
         console.log(JSON.stringify(stats.errors.slice(0, args.verbose ? 50 : 10), null, 2));
     }
 
-    await mongoose.disconnect();
-
-    if (args.strict && stats.errors.length > 0) {
-        process.exit(1);
-    }
+    // Restituire false segnala l'esito negativo: disconnessione e codice
+    // di uscita sono compito di runScript.
+    return !(args.strict && stats.errors.length > 0);
 };
 
-main().catch(async (error) => {
-    console.error(error);
-    await mongoose.disconnect();
-    process.exit(1);
-});
+runScript(main);

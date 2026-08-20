@@ -142,7 +142,6 @@ module.exports = {
     delayAggregation,
     saldataExpression,
     calculateDelay,
-    createDeadlineForInvoice,
     ensureInvoiceDeadline,
     getDueDate,
     syncInvoiceDeadlineTotal,

@@ -14,6 +14,5 @@ const customerLabel = (cliente, fallbackRecord) => (
 );
 
 module.exports = {
-    cleanNamePart,
     customerLabel,
 };

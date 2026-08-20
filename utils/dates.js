@@ -32,13 +32,10 @@ const addDays = (value, days) => {
 
 const daysBetween = (from, to) => Math.floor((startOfDay(to) - startOfDay(from)) / MS_PER_DAY);
 
-const getYear = (value) => getDate(value).getFullYear();
-
 module.exports = {
     addDays,
     daysBetween,
     getDate,
-    getYear,
     startOfDay,
     toDate,
 };

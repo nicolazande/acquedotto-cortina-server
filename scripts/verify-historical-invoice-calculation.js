@@ -1,7 +1,5 @@
-require('dotenv').config();
-
+const { runScript } = require('./utils/runScript');
 const mongoose = require('mongoose');
-const connectDB = require('../config/db');
 const Fattura = require('../models/Fattura');
 require('../models/Articolo');
 require('../models/Cliente');
@@ -82,7 +80,6 @@ const summarizeMismatch = (verification) => ({
 
 const main = async () => {
     const args = parseArgs();
-    await connectDB();
 
     const query = args.year ? { anno: args.year } : {};
     const fatture = await Fattura.find(query)
@@ -196,8 +193,4 @@ const main = async () => {
     }
 };
 
-main().catch(async (error) => {
-    console.error(error);
-    await mongoose.disconnect();
-    process.exit(1);
-});
+runScript(main);

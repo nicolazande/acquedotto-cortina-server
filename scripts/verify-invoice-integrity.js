@@ -1,6 +1,5 @@
-require('dotenv').config();
+const { runScript } = require('./utils/runScript');
 const mongoose = require('mongoose');
-const connectDB = require('../config/db');
 const Articolo = require('../models/Articolo');
 const Fattura = require('../models/Fattura');
 const Scadenza = require('../models/Scadenza');
@@ -101,7 +100,6 @@ const getDelayMismatches = async () => {
 };
 
 const main = async () => {
-    await connectDB();
 
     const [
         totalFatture,
@@ -199,7 +197,4 @@ const main = async () => {
     }
 };
 
-main().catch((error) => {
-    console.error(error);
-    process.exit(1);
-});
+runScript(main);

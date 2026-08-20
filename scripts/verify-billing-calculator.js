@@ -1,7 +1,4 @@
-require('dotenv').config();
-
-const mongoose = require('mongoose');
-const connectDB = require('../config/db');
+const { runScript } = require('./utils/runScript');
 const Articolo = require('../models/Articolo');
 const Fascia = require('../models/Fascia');
 const Lettura = require('../models/Lettura');
@@ -84,7 +81,6 @@ const buildGroups = (rows) => {
 
 const main = async () => {
     const args = parseArgs();
-    await connectDB();
 
     const [articlesByCode, serviceRows] = await Promise.all([
         getArticlesByCode(),
@@ -225,11 +221,6 @@ const main = async () => {
         process.exitCode = 1;
     }
 
-    await mongoose.disconnect();
 };
 
-main().catch(async (error) => {
-    console.error(error);
-    await mongoose.disconnect();
-    process.exit(1);
-});
+runScript(main);

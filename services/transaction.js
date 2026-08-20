@@ -33,6 +33,5 @@ const runWithOptionalTransaction = async (operation) => {
 };
 
 module.exports = {
-    isTransactionUnsupported,
     runWithOptionalTransaction,
 };

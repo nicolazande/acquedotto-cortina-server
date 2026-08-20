@@ -12,8 +12,6 @@ const toObjectId = (id) => {
     return mongoose.Types.ObjectId.isValid(value) ? new mongoose.Types.ObjectId(value) : null;
 };
 
-const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(recordId(id));
-
 const uniqueById = (records) => {
     const seen = new Set();
     return records.filter((record) => {
@@ -27,7 +25,6 @@ const uniqueById = (records) => {
 };
 
 module.exports = {
-    isValidObjectId,
     recordId,
     toObjectId,
     uniqueById,

@@ -1,8 +1,6 @@
-require('dotenv').config();
-
+const { runScript } = require('./utils/runScript');
 const assert = require('assert');
 const mongoose = require('mongoose');
-const connectDB = require('../config/db');
 const AuditLog = require('../models/AuditLog');
 const Cliente = require('../models/Cliente');
 const Fattura = require('../models/Fattura');
@@ -37,7 +35,6 @@ const withSilencedErrors = async (action) => {
 };
 
 const main = async () => {
-    await connectDB();
 
     const suffix = Date.now();
     const cliente = await Cliente.create({
@@ -117,8 +114,4 @@ const main = async () => {
     }
 };
 
-main().catch(async (error) => {
-    console.error(error);
-    await mongoose.disconnect();
-    process.exit(1);
-});
+runScript(main);

@@ -1,7 +1,4 @@
-require('dotenv').config();
-
-const mongoose = require('mongoose');
-const connectDB = require('../config/db');
+const { runScript } = require('./utils/runScript');
 const { previewBillingBatch } = require('../services/invoiceGenerator');
 
 const parseArgs = () => {
@@ -14,7 +11,6 @@ const parseArgs = () => {
 
 const main = async () => {
     const args = parseArgs();
-    await connectDB();
 
     const preview = await previewBillingBatch({ limit: args.limit });
     const anomalies = [
@@ -36,15 +32,9 @@ const main = async () => {
         console.log(JSON.stringify(anomalies.slice(0, 20), null, 2));
     }
 
-    await mongoose.disconnect();
-
-    if (anomalies.length > 0) {
-        process.exit(1);
-    }
+    // Restituire false segnala l'esito negativo: alla disconnessione e al codice
+    // di uscita pensa runScript.
+    return anomalies.length === 0;
 };
 
-main().catch(async (error) => {
-    console.error(error);
-    await mongoose.disconnect();
-    process.exit(1);
-});
+runScript(main);

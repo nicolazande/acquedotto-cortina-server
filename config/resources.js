@@ -29,5 +29,4 @@ const getResourceModel = (resource) => resourceModels[resource];
 module.exports = {
     RESOURCE_NAMES,
     getResourceModel,
-    resourceModels,
 };

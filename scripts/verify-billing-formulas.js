@@ -1,7 +1,4 @@
-require('dotenv').config();
-
-const mongoose = require('mongoose');
-const connectDB = require('../config/db');
+const { runScript } = require('./utils/runScript');
 const Servizio = require('../models/Servizio');
 require('../models/Articolo');
 
@@ -46,7 +43,6 @@ const getLineType = (service) => {
 };
 
 const main = async () => {
-    await connectDB();
 
     const services = await Servizio.find({ fattura: { $ne: null } })
         .populate('articolo')
@@ -117,15 +113,9 @@ const main = async () => {
         console.log(JSON.stringify(stats.mismatches, null, 2));
     }
 
-    await mongoose.disconnect();
-
-    if (stats.mismatches.length > 0) {
-        process.exit(1);
-    }
+    // Restituire false segnala l'esito negativo: disconnessione e codice
+    // di uscita sono compito di runScript.
+    return !(stats.mismatches.length > 0);
 };
 
-main().catch(async (error) => {
-    console.error(error);
-    await mongoose.disconnect();
-    process.exit(1);
-});
+runScript(main);

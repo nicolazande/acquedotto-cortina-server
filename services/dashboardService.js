@@ -172,9 +172,5 @@ const getDashboard = async () => {
 };
 
 module.exports = {
-    FASCE_SCADUTO,
     getDashboard,
-    // esportati per i test
-    LETTURE_DA_FATTURARE,
-    scadenzeAperte,
 };

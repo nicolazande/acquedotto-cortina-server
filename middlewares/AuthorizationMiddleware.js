@@ -14,5 +14,4 @@ module.exports = {
     getUserRole,
     requireAdmin: requireRole('admin'),
     requireCustomer: requireRole('cliente'),
-    requireRole,
 };
