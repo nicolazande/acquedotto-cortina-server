@@ -249,6 +249,25 @@ npm run report:calcolo
 
 ## Import dati
 
+### Rete di sicurezza dell'import
+
+| Comportamento | Perche |
+|---------------|--------|
+| Con `IMPORT_RESET_DB` fa un **backup automatico** in `backups/before-import-<data>/` prima di svuotare | un import interrotto a meta lascerebbe il database vuoto. Si ripristina con `restore_backup.py`, si salta con `IMPORT_SKIP_BACKUP=1` |
+| **Fallisce** se un passo non importa nulla | con la sessione scaduta le pagine rispondono vuote: prima concludeva "processed" senza aver scaricato niente, uscendo con successo |
+| **Chiede conferma** se il database non e locale | lo stesso comando punta al database indicato da `MONGODB_URI`. Si salta con `IMPORT_ASSUME_YES=1` |
+| Stampa un **riepilogo** prima/dopo per collection | prima non si sapeva se avesse importato tutto, una parte o niente |
+| **Riusa la sessione** salvata in `.fasttools-session` | il login ha un CAPTCHA manuale: senza riuso ogni ripresa ne richiede un altro |
+
+Ripristino di un backup:
+
+```bash
+.venv/bin/python documents/script/restore_backup.py backups/before-import-20260820-120000
+.venv/bin/python documents/script/restore_backup.py backups/before-import-20260820-120000 --conferma
+```
+
+Senza `--conferma` lo script si limita a elencare cosa farebbe.
+
 Lo script in `documents/script/main.py` usa le stesse variabili MongoDB del server, quindi puo' importare anche su MongoDB remoto:
 
 ```bash

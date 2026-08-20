@@ -1,4 +1,6 @@
+import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 from time import sleep
@@ -12,7 +14,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium import webdriver
 from bs4 import BeautifulSoup
 import requests
-from bson import ObjectId
+from bson import ObjectId, json_util
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
@@ -48,6 +50,18 @@ IMPORT_STEPS = {
 }
 
 DEFAULT_IMPORT_ORDER = ["listini", "articoli", "clienti", "edifici", "scadenze", "fatture"]
+
+# Collection che ogni passo deve riempire. Serve a distinguere un import riuscito
+# da uno che non ha scaricato nulla: con un cookie scaduto le pagine rispondono
+# senza dati e il vecchio script concludeva "processed" senza importare niente.
+COLLECTION_PER_STEP = {
+    "listini": "listini",
+    "articoli": "articoli",
+    "clienti": "clienti",
+    "edifici": "edifici",
+    "scadenze": "scadenze",
+    "fatture": "fatture",
+}
 
 def env_flag(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
@@ -103,6 +117,49 @@ def get_database():
     mongo_db = get_database_name(mongo_uri)
     client = MongoClient(mongo_uri, **get_mongo_options())
     return client, client[mongo_db]
+
+def backup_before_reset(db) -> Path | None:
+    """Copia le collection su file prima di svuotarle.
+
+    Senza questa rete un import interrotto a meta lascia il database vuoto e non
+    c'e modo di tornare indietro: e l'operazione piu rischiosa dell'intero
+    sistema. Il backup e scritto in Python, senza strumenti esterni, cosi
+    funziona allo stesso modo su MongoDB locale e remoto.
+
+    Si puo saltare con IMPORT_SKIP_BACKUP=1, ma solo sapendo cosa si fa.
+    """
+    if env_flag("IMPORT_SKIP_BACKUP"):
+        print("!! Backup saltato su richiesta (IMPORT_SKIP_BACKUP)")
+        return None
+
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    destinazione = SERVER_ROOT / "backups" / f"before-import-{stamp}"
+    destinazione.mkdir(parents=True, exist_ok=True)
+
+    conteggi = {}
+    for nome in IMPORT_COLLECTIONS:
+        documenti = list(db[nome].find({}))
+        conteggi[nome] = len(documenti)
+        percorso = destinazione / f"{nome}.json"
+        percorso.write_text(json_util.dumps(documenti), encoding="utf-8")
+
+    manifest = {
+        "creato": datetime.now().isoformat(),
+        "database": db.name,
+        "motivo": "backup automatico prima di IMPORT_RESET_DB",
+        "documenti": conteggi,
+        "ripristino": "documents/script/restore_backup.py <cartella>",
+    }
+    (destinazione / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    totale = sum(conteggi.values())
+    print(f"Backup salvato in {destinazione} ({totale} documenti)")
+    return destinazione
+
+
+def conta_collection(db) -> dict:
+    return {nome: db[nome].count_documents({}) for nome in IMPORT_COLLECTIONS}
+
 
 def reset_import_collections(db):
     print("Resetting import collections...")
@@ -259,6 +316,32 @@ def parse_date(value: str) -> datetime | None:
     except ValueError:
         return None
 
+COOKIE_CACHE = SERVER_ROOT / ".fasttools-session"
+
+
+def cookie_salvato() -> str | None:
+    """Cookie dell'ultima sessione riuscita.
+
+    Il login richiede un CAPTCHA risolto a mano: senza riuso, ogni ripresa
+    dell'import - anche solo per rifare un passo fallito - ne richiede un altro.
+    """
+    if not COOKIE_CACHE.exists():
+        return None
+
+    valore = COOKIE_CACHE.read_text(encoding="utf-8").strip()
+    if not valore:
+        return None
+
+    eta_minuti = (datetime.now().timestamp() - COOKIE_CACHE.stat().st_mtime) / 60
+    print(f"Riuso la sessione salvata ({eta_minuti:.0f} minuti fa).")
+    return valore
+
+
+def salva_cookie(valore: str):
+    COOKIE_CACHE.write_text(valore, encoding="utf-8")
+    COOKIE_CACHE.chmod(0o600)
+
+
 def get_session_cookie(email, password):
     options = webdriver.ChromeOptions()
     chrome_binary = os.getenv("CHROME_BINARY")
@@ -273,7 +356,9 @@ def get_session_cookie(email, password):
     options.add_argument("--disable-gpu")
     options.add_argument("--no-first-run")
     options.add_argument("--no-default-browser-check")
-    options.add_argument("--remote-debugging-port=9222")
+    # Porta scelta dal sistema: una fissa va in conflitto con un browser gia
+    # aperto in debug e il login fallisce senza spiegazioni.
+    options.add_argument("--remote-debugging-port=0")
     options.add_argument(f"--user-data-dir={tempfile.mkdtemp(prefix='zuel-chrome-')}")
     if env_flag("IMPORT_HEADLESS"):
         options.add_argument("--headless=new")
@@ -300,6 +385,7 @@ def get_session_cookie(email, password):
         for cookie in cookies:
             if cookie['name'] == '.AspNet.ApplicationCookie':
                 print("Session cookie found.")
+                salva_cookie(cookie['value'])
                 return cookie['value']
 
         print("Session cookie not found.")
@@ -950,36 +1036,110 @@ def get_import_steps() -> list[str]:
         raise RuntimeError(f"Unknown IMPORT_STEPS values: {', '.join(unknown_steps)}. Valid values: {valid_steps}.")
     return requested_steps
 
-def run_import(session_cookie, db):
+def run_import(session_cookie, db) -> list[str]:
     steps = get_import_steps()
     print(f"Import steps: {', '.join(steps)}")
     for step in steps:
         globals()[IMPORT_STEPS[step]](session_cookie, db)
+    return steps
 
-if __name__ == "__main__":
+def passi_senza_risultato(steps: list[str], dopo: dict) -> list[str]:
+    """Passi eseguiti che non hanno prodotto alcun documento."""
+    return [
+        step for step in steps
+        if dopo.get(COLLECTION_PER_STEP[step], 0) == 0
+    ]
+
+
+def riepilogo(prima: dict, dopo: dict):
+    """Cosa e cambiato, collection per collection.
+
+    Prima l'import finiva senza dire nulla: non si sapeva se avesse scaricato
+    tutto, una parte o niente."""
+    print("\nRiepilogo import")
+    print(f"  {'collection':<14} {'prima':>8} {'dopo':>8} {'diff':>8}")
+    for nome in IMPORT_COLLECTIONS:
+        p, d = prima.get(nome, 0), dopo.get(nome, 0)
+        segno = f"{d - p:+d}" if d != p else "="
+        print(f"  {nome:<14} {p:>8} {d:>8} {segno:>8}")
+
+    vuote = [nome for nome in IMPORT_COLLECTIONS if dopo.get(nome, 0) == 0]
+    if vuote:
+        print(f"\n  ATTENZIONE: restano vuote {', '.join(vuote)}")
+
+
+def conferma_destinazione(db, mongo_uri: str) -> bool:
+    """Un import punta al database indicato da MONGODB_URI, che puo essere quello
+    di produzione. Meglio dirlo ad alta voce prima di toccarlo."""
+    remoto = not any(h in mongo_uri for h in ("localhost", "127.0.0.1"))
+    if not remoto or env_flag("IMPORT_ASSUME_YES"):
+        return True
+
+    print(f"\n!! Il database di destinazione NON e locale: {db.name}")
+    print("!! L'import sovrascrive i dati applicativi.")
+    risposta = input("Scrivere 'procedi' per continuare: ").strip().lower()
+    return risposta == "procedi"
+
+
+def main() -> int:
     email = os.getenv("FASTTOOLS_EMAIL")
     password = os.getenv("FASTTOOLS_PASSWORD")
-    session_cookie = os.getenv("FASTTOOLS_SESSION_COOKIE")
+    session_cookie = os.getenv("FASTTOOLS_SESSION_COOKIE") or cookie_salvato()
+    mongo_uri = os.getenv("MONGODB_URI", f"mongodb://localhost:27017/{DEFAULT_DB_NAME}")
     mongo_client, db = get_database()
 
     try:
         print(f"Import target database: {db.name}")
+        if not conferma_destinazione(db, mongo_uri):
+            print("Annullato.")
+            return 1
+
+        prima = conta_collection(db)
+        print("  stato attuale: " + ", ".join(f"{k}={v}" for k, v in prima.items() if v))
+
         if env_flag("IMPORT_RESET_DB"):
+            backup_before_reset(db)
             reset_import_collections(db)
 
         if not session_cookie:
             if not email or not password:
                 raise RuntimeError(
-                    "Set FASTTOOLS_SESSION_COOKIE or FASTTOOLS_EMAIL and FASTTOOLS_PASSWORD in .env."
+                    "Impostare FASTTOOLS_SESSION_COOKIE oppure FASTTOOLS_EMAIL e "
+                    "FASTTOOLS_PASSWORD nel file .env."
                 )
             session_cookie = get_session_cookie(email, password)
 
-        if session_cookie:
-            print("Session cookie retrieved successfully!")
-            run_import(session_cookie, db)
-        else:
-            print("Failed to retrieve session cookie.")
-    except Exception as e:
-        print(f"An error occurred: {e}")
+        if not session_cookie:
+            raise RuntimeError(
+                "Cookie di sessione non ottenuto: login non completato o CAPTCHA non risolto."
+            )
+
+        print("Session cookie retrieved successfully!")
+        steps = run_import(session_cookie, db)
+        dopo = conta_collection(db)
+        riepilogo(prima, dopo)
+
+        # Un import che non scarica nulla non e un import riuscito: con un cookie
+        # scaduto le pagine rispondono vuote e prima si concludeva con successo.
+        falliti = passi_senza_risultato(steps, dopo)
+        if falliti:
+            raise RuntimeError(
+                f"Nessun dato importato per: {', '.join(falliti)}. "
+                "Probabile sessione scaduta o CAPTCHA non superato."
+            )
+
+        return 0
+    except KeyboardInterrupt:
+        print("\nInterrotto dall'utente: il database puo essere in uno stato parziale.")
+        return 130
+    except Exception as errore:
+        # Un import fallito deve fallire davvero: prima stampava l'errore e
+        # usciva con codice 0, quindi in automazione passava per riuscito.
+        print(f"\nImport fallito: {errore}", file=sys.stderr)
+        return 1
     finally:
         mongo_client.close()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
