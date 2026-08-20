@@ -3,12 +3,10 @@
 // Vivono sul server perche il client possa solo sceglierne una, non comporre
 // interrogazioni arbitrarie, e perche restino verificabili con i test.
 
+const { NON_SALDATA, SALDATA } = require('../services/deadlineService');
+
 // Il flag puo mancare del tutto sui record importati dal gestionale precedente.
 const nonImpostato = (campo) => ({ $or: [{ [campo]: false }, { [campo]: { $exists: false } }] });
-
-// `saldo` puo mancare sui record piu vecchi: assente equivale a non saldata.
-const NON_SALDATA = nonImpostato('saldo');
-const SALDATA = { saldo: true };
 
 const scadenzaViews = {
     aperte: () => NON_SALDATA,

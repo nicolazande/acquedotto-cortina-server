@@ -53,11 +53,16 @@ test('fatture: bozze e confermate usano lo stato, unica verita del documento', (
     assert.deepEqual(fatturaViews.confermate(), { stato: 'confermata' });
 });
 
-test('getViewFilter: una vista sconosciuta non filtra invece di sbagliare', () => {
-    assert.equal(getViewFilter(scadenzaViews, 'inventata'), null);
+test('getViewFilter: una vista sconosciuta e un errore, non un elenco senza filtro', () => {
+    // Ignorarla in silenzio restituirebbe tutti i record a chi crede di
+    // guardarne un sottoinsieme: uno scarto fra client e server passerebbe inosservato.
+    assert.throws(() => getViewFilter(scadenzaViews, 'inventata'), /Vista non riconosciuta/);
+    assert.throws(() => getViewFilter(undefined, 'aperte'), /Vista non riconosciuta/);
+});
+
+test('getViewFilter: nessuna vista richiesta significa nessun filtro', () => {
     assert.equal(getViewFilter(scadenzaViews, ''), null);
     assert.equal(getViewFilter(scadenzaViews, undefined), null);
-    assert.equal(getViewFilter(undefined, 'aperte'), null);
 });
 
 test('getViewFilter: restituisce il filtro della vista richiesta', () => {

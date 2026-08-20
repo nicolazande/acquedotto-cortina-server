@@ -7,10 +7,7 @@
 //   - fatture: allinea `stato` al booleano `confermata` (i due potevano divergere)
 //   - scadenze: rimuove `ritardo`, che e un valore derivato e invecchia da solo
 //   - scadenze: converte `saldo` in booleano dove e salvato come 1/0
-require('dotenv').config();
-
-const mongoose = require('mongoose');
-const connectDB = require('../config/db');
+const { runScript } = require('./utils/runScript');
 const Fattura = require('../models/Fattura');
 const Scadenza = require('../models/Scadenza');
 
@@ -71,7 +68,6 @@ const normalizzaSaldo = async () => {
 };
 
 const main = async () => {
-    await connectDB();
     console.log(applica ? '== APPLICO LE CORREZIONI ==\n' : '== SOLA LETTURA (usa --fix per applicare) ==\n');
 
     await allineaStatoFatture();
@@ -80,10 +76,6 @@ const main = async () => {
     console.log('');
     await normalizzaSaldo();
 
-    await mongoose.disconnect();
 };
 
-main().catch((error) => {
-    console.error(error.message);
-    process.exit(1);
-});
+runScript(main);

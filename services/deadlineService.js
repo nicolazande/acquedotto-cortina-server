@@ -87,6 +87,16 @@ const syncInvoiceDeadlineTotal = async ({ fattura, session }) => {
     );
 };
 
+// Stato di una scadenza. Definito qui una volta sola: prima la stessa condizione
+// era riscritta in tre punti (viste delle liste, panoramica, ordinamento) con tre
+// espressioni diverse, che potevano divergere senza che nulla lo segnalasse.
+// Il campo puo mancare sui record piu vecchi: assente significa non saldata.
+const SALDATA = { saldo: true };
+const NON_SALDATA = { $or: [{ saldo: false }, { saldo: { $exists: false } }] };
+
+// La stessa condizione per le pipeline di aggregazione.
+const saldataExpression = () => ({ $eq: [{ $ifNull: ['$saldo', false] }, true] });
+
 // Stessa formula di calculateDelay, ma valutata da MongoDB: serve per ordinare
 // la lista scadenze sul ritardo reale invece che sul valore salvato, che invecchia
 // di un giorno al giorno.
@@ -105,10 +115,8 @@ const delayAggregation = () => ({
                                     $cond: [
                                         {
                                             $and: [
-                                                // saldo e salvato a volte come booleano e a volte come 1/0:
-                                                // $toBool allinea il confronto alla verita di JavaScript.
-                                                { $toBool: { $ifNull: ['$saldo', false] } },
-                                                { $toBool: { $ifNull: ['$pagamento', false] } },
+                                                saldataExpression(),
+                                                { $ne: [{ $ifNull: ['$pagamento', null] }, null] },
                                             ],
                                         },
                                         '$pagamento',
@@ -128,8 +136,11 @@ const delayAggregation = () => ({
 });
 
 module.exports = {
+    NON_SALDATA,
+    SALDATA,
     buildDeadlinePayload,
     delayAggregation,
+    saldataExpression,
     calculateDelay,
     createDeadlineForInvoice,
     ensureInvoiceDeadline,

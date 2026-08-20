@@ -2,10 +2,7 @@
 // fattura si ferma, perche l'aliquota IVA di ogni riga si ricava dall'articolo.
 // Su una installazione nuova questo script crea le voci mancanti senza toccare
 // quelle gia presenti.
-require('dotenv').config();
-
-const mongoose = require('mongoose');
-const connectDB = require('../config/db');
+const { runScript } = require('./utils/runScript');
 const Articolo = require('../models/Articolo');
 const {
     DEFAULT_CONDOMINIUM_ARTICLE_CODE,
@@ -24,7 +21,6 @@ const ARTICOLI_RICHIESTI = [
 ];
 
 const main = async () => {
-    await connectDB();
 
     let creati = 0;
     for (const articolo of ARTICOLI_RICHIESTI) {
@@ -41,10 +37,6 @@ const main = async () => {
     }
 
     console.log(creati ? `\nArticoli creati: ${creati}` : '\nTutti gli articoli richiesti erano gia presenti.');
-    await mongoose.disconnect();
 };
 
-main().catch((error) => {
-    console.error(error.message);
-    process.exit(1);
-});
+runScript(main);

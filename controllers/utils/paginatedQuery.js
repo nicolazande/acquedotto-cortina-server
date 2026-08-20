@@ -1,4 +1,5 @@
 const { escapeRegex, parsePositiveInteger: toPositiveInteger } = require('../../utils/values');
+const { badRequest } = require('../../utils/errors');
 
 const buildSearchQuery = (Model, search) => {
     if (!search) {
@@ -35,12 +36,20 @@ const buildSearchQuery = (Model, search) => {
 // lasciarle comporre al client, evita che l'interfaccia possa interrogare campi
 // arbitrari e rende le viste verificabili.
 const getViewFilter = (views, requestedView) => {
-    if (!views || !requestedView) {
+    if (!requestedView) {
         return null;
     }
 
-    const view = views[requestedView];
-    return typeof view === 'function' ? view() : view || null;
+    const view = views && views[requestedView];
+
+    // Una vista sconosciuta non va ignorata: il chiamante crede di vedere un
+    // elenco filtrato e riceverebbe invece tutti i record, senza alcun segnale.
+    // Meglio un errore esplicito, che rende evidente uno scarto fra client e server.
+    if (!view) {
+        throw badRequest(`Vista non riconosciuta: ${requestedView}`);
+    }
+
+    return typeof view === 'function' ? view() : view;
 };
 
 const combineFilters = (searchQuery, viewFilter) => {
@@ -121,8 +130,12 @@ const sendPaginated = async (Model, req, res, options = {}) => {
             currentPage: page,
         });
     } catch (error) {
+        if (error.status) {
+            return res.status(error.status).json({ error: error.message });
+        }
+
         console.error(errorMessage, error);
-        res.status(500).json({ error: errorMessage, details: error.message });
+        return res.status(500).json({ error: errorMessage, details: error.message });
     }
 };
 

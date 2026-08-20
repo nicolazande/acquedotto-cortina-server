@@ -3,18 +3,18 @@ const Contatore = require('../models/Contatore');
 const Fattura = require('../models/Fattura');
 const Lettura = require('../models/Lettura');
 const Scadenza = require('../models/Scadenza');
-const { delayAggregation } = require('./deadlineService');
+const { delayAggregation, saldataExpression } = require('./deadlineService');
 const { fromCents } = require('../utils/money');
 
 // Le letture non ancora fatturate: il flag puo mancare del tutto sui record importati.
 const LETTURE_DA_FATTURARE = { $or: [{ fatturata: false }, { fatturata: { $exists: false } }] };
 
-// `saldo` e salvato a volte come booleano e a volte come 1/0: $toBool uniforma
-// il confronto, mentre un $match diretto su false ne perderebbe la maggior parte.
+// Lo stato della scadenza e la formula del ritardo arrivano da deadlineService,
+// che e l'unico posto in cui sono definiti.
 const scadenzeAperte = (soloScadute) => [
     {
         $addFields: {
-            saldata: { $toBool: { $ifNull: ['$saldo', false] } },
+            saldata: saldataExpression(),
             ritardo: delayAggregation(),
         },
     },
