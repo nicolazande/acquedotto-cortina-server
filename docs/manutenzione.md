@@ -80,6 +80,37 @@ db.letture.find({fatturata:true}).toArray()
 | Registrazione | Limitata a `MAX_ADMIN_USERS` amministratori (default 2). Gli account del portale clienti si creano dalla scheda cliente. |
 | react-scripts 3 | Il client dipende da una versione del 2019 che richiede `--openssl-legacy-provider`. Funziona, ma e il debito tecnico piu rilevante del progetto. |
 
+## Deploy
+
+### Server (Render)
+
+La versione di Node e fissata in `package.json` (`engines`) e in `.node-version`.
+Non ci sono dipendenze di runtime nuove: `eslint` sta fra le devDependencies e
+non viene installato quando `NODE_ENV=production`.
+
+Variabili facoltative introdotte di recente:
+
+| Variabile | Default | Effetto |
+|-----------|---------|---------|
+| `JWT_EXPIRES_IN` | `8h` | durata della sessione |
+| `MAX_ADMIN_USERS` | `2` | quanti amministratori possono registrarsi liberamente |
+
+Al primo avvio dopo l'aggiornamento Mongoose crea gli indici mancanti sulle
+collection: su questi volumi e questione di millisecondi, ma succede all'avvio.
+
+Su un database nuovo va eseguito una volta `npm run seed:articoli`, altrimenti
+la fatturazione si ferma per mancanza degli articoli obbligatori.
+
+### Client (Netlify)
+
+`netlify.toml` fissa comando di build (`npm run build`), cartella pubblicata
+(`build`) e versione di Node. Quest'ultima e importante: Vite 6 supporta Node
+18, 20 e 22 ma **non** 19 e 21, quindi lasciare il valore predefinito della
+piattaforma esporrebbe la build a rompersi da sola.
+
+La variabile `REACT_APP_API_URL` continua a funzionare: la configurazione
+accetta sia il prefisso `REACT_APP_` sia `VITE_`.
+
 ## Sincronizzazione con il database remoto
 
 Lo script `documents/script/sync_databases.py` copia le collection fra remoto e
