@@ -2,6 +2,15 @@
 
 Backend Express/Mongoose per il gestionale Acquedotto Zuel.
 
+## Documentazione
+
+| Documento | Contenuto |
+|-----------|-----------|
+| [docs/architettura.md](docs/architettura.md) | livelli, moduli e percorso di una richiesta |
+| [docs/fatturazione.md](docs/fatturazione.md) | come si calcola una fattura, scaglione per scaglione |
+| [docs/api.md](docs/api.md) | tutti gli endpoint, i parametri e i codici di stato |
+| [docs/manutenzione.md](docs/manutenzione.md) | backup, controlli periodici, problemi noti |
+
 ## Avvio locale
 
 ```bash
@@ -115,13 +124,40 @@ Il PDF fattura e' generato lato server senza servizi esterni. I testi aziendali 
 
 ## Struttura utile
 
-- `server.js`: bootstrap Express, CORS e middleware globali
+- `server.js`: bootstrap Express, CORS, middleware globali e gestione errori
 - `config/db.js`: connessione MongoDB
 - `routes`: rotte HTTP divise per risorsa
-- `controllers`: logica delle API
+- `controllers`: traduzione fra HTTP e dominio
+- `controllers/utils/controllerActions.js`: fabbriche CRUD condivise
 - `controllers/utils/paginatedQuery.js`: paginazione, ricerca e ordinamento condivisi
-- `models`: schema Mongoose
+- `services`: le regole (fatturazione, PDF, scadenze, audit)
+- `utils`: funzioni pure condivise (numeri, date, errori, helper Mongo)
+- `models`: schemi Mongoose e indici
 - `middlewares/AuthMiddleware.js`: verifica JWT per le rotte protette
+
+Dettaglio in [docs/architettura.md](docs/architettura.md).
+
+## Sessione e utenti
+
+```bash
+JWT_EXPIRES_IN=8h
+MAX_ADMIN_USERS=2
+```
+
+`JWT_EXPIRES_IN` regola la durata del token (non esiste rinnovo automatico:
+alla scadenza serve un nuovo login). `MAX_ADMIN_USERS` limita la registrazione
+libera di amministratori; gli account del portale clienti non rientrano nel
+conteggio e si creano dalla scheda cliente.
+
+Tutti gli esiti di autenticazione fallita rispondono `401` con un campo `reason`
+(`missing_token`, `token_expired`, `invalid_token`, `user_not_found`), cosi il
+client puo riportare l'utente al login spiegando il motivo.
+
+## Cancellazione fatture
+
+`DELETE /api/fatture/:id` cancella la fattura **insieme a** le sue righe servizio
+e alla scadenza generata con lei, e riporta le letture collegate fra quelle
+fatturabili. Le fatture confermate restano non cancellabili.
 
 ## Endpoint salute
 
@@ -137,7 +173,44 @@ Risponde `200` con database connesso:
 
 Risponde `503` se Express e' raggiungibile ma MongoDB non e' connesso.
 
-## Test e smoke check
+## Test
+
+```bash
+npm test        # test unitari (node --test), non toccano il database
+npm run lint    # controllo statico
+```
+
+I test unitari coprono il calcolatore di fatturazione, l'aritmetica monetaria,
+le scadenze e le funzioni condivise. Sono la rete di sicurezza da eseguire
+prima di toccare il calcolo.
+
+Attenzione alla differenza fra i due gruppi di script:
+
+| Comando | Cosa fa |
+|---------|---------|
+| `npm test`, `npm run test:smoke` | **test veri**: falliscono con codice di uscita diverso da zero |
+| `npm run verify:*`, `test:billing*`, `test:invoices` | **rapporti** sui dati reali: stampano le anomalie ma escono sempre con 0 |
+
+## Installazione da zero
+
+Su un database vuoto vanno creati gli articoli obbligatori, altrimenti la
+generazione fattura si ferma perche non riesce a determinare l'aliquota IVA:
+
+```bash
+npm run seed:articoli
+```
+
+## Manutenzione dei dati
+
+```bash
+npm run maintenance:allinea-dati         # elenca cosa non e coerente
+npm run maintenance:allinea-dati -- --fix # applica le correzioni
+```
+
+Allinea `stato` e `confermata` sulle fatture e rimuove dalle scadenze il campo
+`ritardo`, che e un valore derivato e viene ricalcolato a ogni lettura.
+
+## Smoke check
 
 Per verificare API, MongoDB, liste paginate, fatturazione e allegati:
 
@@ -157,7 +230,11 @@ Render:
 SMOKE_API_URL=https://acquedotto-cortina-server.onrender.com npm run test:smoke
 ```
 
-Il test crea e cancella piccoli allegati temporanei su un cliente esistente. Per controlli read-only:
+Lo smoke test richiede le credenziali di un amministratore (`SMOKE_USERNAME` e
+`SMOKE_PASSWORD`) oppure un token gia pronto in `SMOKE_TOKEN`.
+
+Il test crea e cancella i propri record temporanei, comprese una bozza fattura e
+piccoli allegati su un cliente esistente. Per controlli read-only:
 
 ```bash
 SMOKE_SKIP_MUTATION=true npm run test:smoke
