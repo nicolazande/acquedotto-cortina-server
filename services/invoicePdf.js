@@ -15,7 +15,6 @@ const PAGE_WIDTH = 595;
 const PAGE_HEIGHT = 842;
 const BLUE = [0, 0.6, 0.9];
 const LIGHT_BLUE = [0.78, 0.96, 0.96];
-const GREEN = [0, 0.66, 0.32];
 const RED = [0.93, 0.25, 0.18];
 const BLACK = [0, 0, 0];
 const GRAY = [0.82, 0.82, 0.82];
@@ -37,7 +36,8 @@ const invoiceAssets = {
     numeroVerdeEmergenza: path.join(__dirname, '..', 'assets', 'invoice', 'numero-verde-emergenza.ppm'),
 };
 
-const isEmpty = (value) => value === undefined || value === null || value === '';
+const { isEmptyValue: isEmpty, numberOrZero } = require('../utils/values');
+const { customerLabel } = require('../utils/customer');
 
 const asciiText = (value) => String(value ?? '')
     .normalize('NFD')
@@ -45,11 +45,6 @@ const asciiText = (value) => String(value ?? '')
     .replace(/€/g, 'EUR')
     .replace(/[^\x20-\x7E]/g, '')
     .replace(/[\\()]/g, '\\$&');
-
-const numberOrZero = (value) => {
-    const parsed = Number(String(value ?? '').replace(',', '.'));
-    return Number.isFinite(parsed) ? parsed : 0;
-};
 
 const formatMoney = (value) => `Euro ${numberOrZero(value).toFixed(2).replace('.', ',')}`;
 const formatNumber = (value) => Number.isFinite(Number(value)) ? String(Number(value)).replace('.', ',') : '';
@@ -62,13 +57,7 @@ const formatDate = (value) => {
     return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('it-IT');
 };
 
-const customerName = (cliente, fattura) => (
-    cliente?.ragione_sociale
-    || [cliente?.cognome, cliente?.nome].filter(Boolean).join(' ').trim()
-    || fattura?.ragione_sociale
-    || fattura?.nome_cliente
-    || ''
-);
+const customerName = (cliente, fattura) => customerLabel(cliente, fattura);
 
 const joinAddress = (...parts) => parts.filter((part) => !isEmpty(part)).join(' ').trim();
 

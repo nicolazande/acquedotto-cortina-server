@@ -1,3 +1,15 @@
+const {
+    hasValue,
+    normalizeText,
+    numberOrZero,
+    roundMoney,
+    sumMoneyBy,
+} = require('../utils/values');
+const { applyRateToLines, fromCents, multiplyCents, sumCents, toCents } = require('../utils/money');
+const { toDate } = require('../utils/dates');
+const { recordId } = require('../utils/mongo');
+const { unprocessable } = require('../utils/errors');
+
 const DEFAULT_WATER_ARTICLE_CODE = 'ACQUA';
 const DEFAULT_FIXED_ARTICLE_CODE = 'ACQUAF';
 const DEFAULT_CONDOMINIUM_ARTICLE_CODE = 'COND';
@@ -6,26 +18,7 @@ const DEFAULT_DELAY_ARTICLE_CODE = 'GG_DELAY';
 const DEFAULT_FIXED_QUOTA = 'Q.Fissa';
 const MONEY_TOLERANCE = 0.01;
 
-const createCalculationError = (message) => Object.assign(new Error(message), { status: 422 });
-
-const numberOrZero = (value) => {
-    const number = Number(String(value ?? '').replace(',', '.'));
-    return Number.isFinite(number) ? number : 0;
-};
-
-const roundMoney = (value) => Math.round((numberOrZero(value) + Number.EPSILON) * 100) / 100;
-const sumMoneyBy = (records, getter) => roundMoney(
-    records.reduce((total, record) => total + numberOrZero(getter(record)), 0)
-);
-
-const normalizeText = (value) => String(value || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-const recordId = (record) => String(record?._id || record || '');
+const createCalculationError = (message) => unprocessable(message);
 
 const pickSnapshotFields = (record, fields) => {
     if (!record) {
@@ -42,22 +35,13 @@ const pickSnapshotFields = (record, fields) => {
     return snapshot;
 };
 
-const getDateValue = (value) => {
-    if (!value) {
-        return null;
-    }
-
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? null : date;
-};
-
 const isInValidity = (band, date) => {
     if (!date) {
         return true;
     }
 
-    const start = getDateValue(band.inizio);
-    const end = getDateValue(band.scadenza);
+    const start = toDate(band.inizio);
+    const end = toDate(band.scadenza);
 
     return (!start || date >= start) && (!end || date <= end);
 };
@@ -97,7 +81,7 @@ const sortBands = (bands) => [...bands].sort((a, b) => {
 const getApplicableBands = (bands, { date, listinoId } = {}) => sortBands(
     bands.filter((band) => {
         const sameListino = !listinoId || recordId(band.listino) === recordId(listinoId);
-        return sameListino && isInValidity(band, getDateValue(date));
+        return sameListino && isInValidity(band, toDate(date));
     })
 );
 
@@ -169,19 +153,23 @@ const getTaxRate = (articleOrTax) => {
 const getLineTaxRate = (line) => {
     const storedRate = line.iva_percentuale ?? line.aliquota_iva;
 
-    if (storedRate !== undefined && storedRate !== null && storedRate !== '') {
+    if (hasValue(storedRate)) {
         return numberOrZero(storedRate);
     }
 
     return getTaxRate(line.articolo_dettaglio || line.articolo);
 };
 
+// La quota fissa vale il prezzo della fascia a prescindere dalla quantita;
+// le righe a consumo moltiplicano i metri cubi per il prezzo unitario.
 const getLineTotal = ({ quantity, type, unitPrice }) => {
+    const prezzoCents = toCents(unitPrice);
+
     if (type === 'fixed') {
-        return roundMoney(unitPrice);
+        return fromCents(prezzoCents);
     }
 
-    return roundMoney(quantity * unitPrice);
+    return fromCents(multiplyCents(prezzoCents, quantity));
 };
 
 const createLine = ({
@@ -238,16 +226,20 @@ const createLine = ({
     };
 };
 
+// Imponibile e imposta si calcolano in centesimi interi. L'IVA mantiene il
+// criterio storico, cioe una sola approssimazione sul totale invece che una per
+// riga, ma la somma non porta piu con se l'errore della virgola mobile.
 const calculateTotals = (lines) => {
-    const imponibile = roundMoney(lines.reduce((total, line) => total + numberOrZero(line.valore_unitario), 0));
-    const iva = roundMoney(lines.reduce((total, line) => (
-        total + (numberOrZero(line.valore_unitario) * getLineTaxRate(line) / 100)
-    ), 0));
+    const imponibileCents = sumCents(lines, (line) => line.valore_unitario);
+    const ivaCents = applyRateToLines(lines.map((line) => ({
+        cents: toCents(line.valore_unitario),
+        rate: getLineTaxRate(line),
+    })));
 
     return {
-        imponibile,
-        iva,
-        totale_fattura: roundMoney(imponibile + iva),
+        imponibile: fromCents(imponibileCents),
+        iva: fromCents(ivaCents),
+        totale_fattura: fromCents(imponibileCents + ivaCents),
     };
 };
 

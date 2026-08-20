@@ -2,6 +2,7 @@ const Fattura = require('../models/Fattura');
 const { buildAnnualFixedLookupCache } = require('./annualFixedChargeService');
 const { isConfirmedInvoice } = require('./invoiceLockService');
 const { verifyInvoiceCalculation } = require('./invoiceGenerator');
+const { customerLabel } = require('../utils/customer');
 
 const MONEY_TOLERANCE = 0.01;
 const isNonZero = (value) => Math.abs(Number(value) || 0) > MONEY_TOLERANCE;
@@ -25,11 +26,7 @@ const createSummary = (year) => ({
     erroriCalcolo: 0,
 });
 
-const getCustomerLabel = (fattura) => (
-    fattura.cliente?.ragione_sociale
-    || fattura.ragione_sociale
-    || fattura.nome_cliente
-);
+const getCustomerLabel = (fattura) => customerLabel(fattura.cliente, fattura) || undefined;
 
 const createIssue = (fattura, type, severity, message, extra = {}) => ({
     _id: `${fattura._id}-${type}`,

@@ -1,14 +1,5 @@
-const parseOptionalBoolean = (value) => {
-    if (value === undefined || value === null || value === '') {
-        return undefined;
-    }
-
-    if (typeof value === 'boolean') {
-        return value;
-    }
-
-    return ['1', 'true', 'yes', 'si'].includes(String(value).toLowerCase());
-};
+// Mantenuto come punto di accesso storico dei controller: la logica vive in utils/values.
+const { parseOptionalBoolean } = require('../../utils/values');
 
 module.exports = {
     parseOptionalBoolean,
