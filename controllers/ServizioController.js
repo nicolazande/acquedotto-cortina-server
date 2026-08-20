@@ -49,7 +49,7 @@ const deleteServizio = async (req, res) => {
         const servizio = await assertServiceInvoiceEditable(req.params.id, 'cancellare righe servizio');
         await Servizio.deleteOne({ _id: req.params.id });
         await writeServiceAudit(req, servizio, 'fattura.servizio_cancellato', 'Cancellata riga servizio');
-        res.status(204).json({ message: 'Servizio deleted' });
+        res.status(204).send();
     } catch (error) {
         sendServiceError(res, error, 'Error deleting servizio', error.status || 400);
     }

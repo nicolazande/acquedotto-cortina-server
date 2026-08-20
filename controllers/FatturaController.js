@@ -30,6 +30,7 @@ const {
 } = require('../services/invoiceAuditService');
 const { withComputedDelay } = require('../services/deadlineService');
 const { getInvoiceControlDashboard } = require('../services/invoiceControlService');
+const { deleteInvoice } = require('../services/invoiceDeletionService');
 const { generateInvoicePdf } = require('../services/invoicePdf');
 
 const invoiceStatus = (confermata) => (parseOptionalBoolean(confermata) ? 'confermata' : 'bozza');
@@ -177,17 +178,18 @@ const updateFattura = async (req, res) => {
 
 const deleteFattura = async (req, res) => {
     try {
-        const fattura = await Fattura.findById(req.params.id).lean();
-        if (!fattura) {
-            return res.status(404).json({ error: 'Fattura not found' });
-        }
-        assertInvoiceEditable(fattura, 'cancellare la fattura');
+        const result = await deleteInvoice(req.params.id);
 
-        await Fattura.deleteOne({ _id: req.params.id });
-        await writeInvoiceAudit(req, fattura, 'fattura.cancellata', `Cancellata ${invoiceLabel(fattura)}`, {
-            metadata: { numero: fattura.numero, anno: fattura.anno },
+        await writeInvoiceAudit(req, result.fattura, 'fattura.cancellata', `Cancellata ${invoiceLabel(result.fattura)}`, {
+            metadata: {
+                numero: result.fattura.numero,
+                anno: result.fattura.anno,
+                serviziCancellati: result.serviziCancellati,
+                letturaSbloccate: result.letturaSbloccate,
+                scadenzaCancellata: result.scadenzaCancellata,
+            },
         });
-        return res.status(204).json({ message: 'Fattura deleted' });
+        return res.status(204).send();
     } catch (error) {
         return sendServiceError(res, error, 'Error deleting fattura', error.status || 400);
     }

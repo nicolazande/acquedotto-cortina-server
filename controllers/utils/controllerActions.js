@@ -44,7 +44,10 @@ const getRecord = (Model, { name, populate, transform = (record) => record }) =>
 const updateRecord = (Model, { name, mapBody = (body) => body, transform = (record) => record }) => (
     async (req, res) => {
         try {
-            const record = await Model.findByIdAndUpdate(req.params.id, mapBody(req.body), { new: true });
+            const record = await Model.findByIdAndUpdate(req.params.id, mapBody(req.body), {
+                new: true,
+                runValidators: true,
+            });
             if (!record) {
                 return res.status(404).json({ error: `${name} not found` });
             }
@@ -62,7 +65,8 @@ const deleteRecord = (Model, { name }) => (
             if (!record) {
                 return res.status(404).json({ error: `${name} not found` });
             }
-            return res.status(204).json({ message: `${name} deleted` });
+            // 204 non prevede corpo nella risposta.
+            return res.status(204).send();
         } catch (error) {
             return sendError(res, error, `Error deleting ${lowerFirst(name)}`);
         }
