@@ -4,8 +4,7 @@ const Fattura = require('../models/Fattura');
 const Lettura = require('../models/Lettura');
 const Scadenza = require('../models/Scadenza');
 const { delayAggregation } = require('./deadlineService');
-const { fromCents, toCents } = require('../utils/money');
-const { startOfDay } = require('../utils/dates');
+const { fromCents } = require('../utils/money');
 
 // Le letture non ancora fatturate: il flag puo mancare del tutto sui record importati.
 const LETTURE_DA_FATTURARE = { $or: [{ fatturata: false }, { fatturata: { $exists: false } }] };
