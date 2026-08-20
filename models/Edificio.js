@@ -27,4 +27,6 @@ const edificioSchema = new Schema(
     }
 );
 
+edificioSchema.index({ descrizione: 1 });
+
 module.exports = mongoose.model('Edificio', edificioSchema);

@@ -47,4 +47,8 @@ const clienteSchema = new Schema(
     }
 );
 
+// Ordinamenti predefiniti della lista clienti.
+clienteSchema.index({ cognome: 1, nome: 1 });
+clienteSchema.index({ ragione_sociale: 1 });
+
 module.exports = mongoose.model('Cliente', clienteSchema);
