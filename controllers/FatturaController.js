@@ -21,6 +21,7 @@ const {
 const {
     assertInvoiceEditable,
     assertInvoiceEditableById,
+    unlockOptions,
 } = require('../services/invoiceLockService');
 const { getAuditLogs } = require('../services/auditLogService');
 const {
@@ -49,7 +50,7 @@ const normalizeInvoicePayload = (body = {}) => {
 
 const withEditableInvoice = (handler, idParam, action) => async (req, res) => {
     try {
-        await assertInvoiceEditableById(req.params[idParam], action);
+        await assertInvoiceEditableById(req.params[idParam], action, unlockOptions(req));
         return handler(req, res);
     } catch (error) {
         return sendServiceError(res, error, 'Fattura confermata', error.status || 400);
@@ -134,9 +135,9 @@ const applyFixedCharge = async (req, res) => {
         if (!before) {
             return res.status(404).json({ error: 'Fattura not found' });
         }
-        assertInvoiceEditable(before, 'aggiungere la quota fissa');
+        assertInvoiceEditable(before, 'aggiungere la quota fissa', unlockOptions(req));
 
-        const result = await applyFixedChargeToInvoice(req.params.id);
+        const result = await applyFixedChargeToInvoice(req.params.id, unlockOptions(req));
         await writeInvoiceAudit(req, before, 'fattura.quota_fissa', 'Aggiunta quota fissa', {
             metadata: {
                 serviziCreati: result.servizi?.length || 0,
@@ -167,11 +168,18 @@ const updateFattura = async (req, res) => {
         if (!before) {
             return res.status(404).json({ error: 'Fattura not found' });
         }
-        assertInvoiceEditable(before, 'modificare la fattura');
+        // Modificare un documento gia emesso e possibile solo con conferma esplicita,
+        // e resta registrato come tale: e la differenza fra una correzione
+        // consapevole e una modifica silenziosa allo storico.
+        const suDocumentoEmesso = assertInvoiceEditable(before, 'modificare la fattura', unlockOptions(req));
 
         const payload = normalizeInvoicePayload(req.body);
+        delete payload.sbloccoConfermato;
         const after = await Fattura.findByIdAndUpdate(req.params.id, payload, { new: true }).lean();
-        await writeInvoiceUpdateAudit(req, before, after, payload.confermata ? 'fattura.confermata' : 'fattura.modificata');
+        const azione = suDocumentoEmesso
+            ? 'fattura.modificata_dopo_conferma'
+            : (payload.confermata ? 'fattura.confermata' : 'fattura.modificata');
+        await writeInvoiceUpdateAudit(req, before, after, azione);
         return res.status(200).json(after);
     } catch (error) {
         return sendServiceError(res, error, 'Error updating fattura', error.status || 400);
@@ -180,7 +188,7 @@ const updateFattura = async (req, res) => {
 
 const deleteFattura = async (req, res) => {
     try {
-        const result = await deleteInvoice(req.params.id);
+        const result = await deleteInvoice(req.params.id, unlockOptions(req));
 
         await writeInvoiceAudit(req, result.fattura, 'fattura.cancellata', `Cancellata ${invoiceLabel(result.fattura)}`, {
             metadata: {
@@ -189,6 +197,7 @@ const deleteFattura = async (req, res) => {
                 serviziCancellati: result.serviziCancellati,
                 letturaSbloccate: result.letturaSbloccate,
                 scadenzaCancellata: result.scadenzaCancellata,
+                documentoEmesso: result.eraConfermata || undefined,
             },
         });
         return res.status(204).send();

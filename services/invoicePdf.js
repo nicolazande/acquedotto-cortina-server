@@ -38,6 +38,7 @@ const invoiceAssets = {
 
 const { isEmptyValue: isEmpty, numberOrZero } = require('../utils/values');
 const { customerLabel } = require('../utils/customer');
+const { invoiceCode: documentCode } = require('../config/invoicing');
 
 const asciiText = (value) => String(value ?? '')
     .normalize('NFD')
@@ -75,10 +76,16 @@ const billingAddress = (cliente) => {
     };
 };
 
-const invoiceCode = (fattura) => [
-    fattura?.anno,
-    fattura?.numero !== undefined ? String(fattura.numero).padStart(4, '0') : '',
-].filter(Boolean).join('-');
+// I documenti emessi da questo gestionale hanno una serie: il codice mostrato e
+// anno/serie/numero. Quelli importati non ce l'hanno e mantengono la forma storica.
+const invoiceCode = (fattura) => (
+    fattura?.serie
+        ? documentCode({ anno: fattura.anno, numero: fattura.numero, serie: fattura.serie })
+        : [
+            fattura?.anno,
+            fattura?.numero !== undefined ? String(fattura.numero).padStart(4, '0') : '',
+        ].filter(Boolean).join('-')
+);
 
 const readPpmToken = (buffer, cursor) => {
     let index = cursor;

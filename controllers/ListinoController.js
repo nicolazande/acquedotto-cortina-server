@@ -11,15 +11,22 @@ const {
     updateRecord,
 } = require('./utils/controllerActions');
 
+// Le tariffe determinano quanto pagano i clienti: ogni modifica lascia traccia.
+const audit = {
+        entityType: 'Listino',
+        fields: ['categoria', 'descrizione'],
+        label: (record) => record.categoria,
+    };
+
 module.exports = {
-    createListino: createRecord(Listino, { name: 'Listino' }),
+    createListino: createRecord(Listino, { audit, name: 'Listino' }),
     getListini: (req, res) => sendPaginated(Listino, req, res, {
         defaultSort: 'categoria',
         errorMessage: 'Error fetching listini',
     }),
     getListino: getRecord(Listino, { name: 'Listino' }),
-    updateListino: updateRecord(Listino, { name: 'Listino' }),
-    deleteListino: deleteRecord(Listino, { name: 'Listino' }),
+    updateListino: updateRecord(Listino, { audit, name: 'Listino' }),
+    deleteListino: deleteRecord(Listino, { audit, name: 'Listino' }),
     associateFascia: associateRecords({
         field: 'listino',
         responseKey: 'fascia',

@@ -1,6 +1,12 @@
 const { escapeRegex, parsePositiveInteger: toPositiveInteger } = require('../../utils/values');
 const { badRequest } = require('../../utils/errors');
 
+// Tetto al numero di record per richiesta. Senza, una sola chiamata con
+// limit=100000 restituiva 10.177 righe servizio e 13 MB di risposta: abbastanza
+// per esaurire la memoria dell'istanza. Il valore e generoso per gli usi legittimi
+// (esportazioni, elenchi lunghi) e resta superabile per singola risorsa.
+const MAX_PAGE_SIZE = Number.parseInt(process.env.MAX_PAGE_SIZE || '500', 10);
+
 const buildSearchQuery = (Model, search) => {
     if (!search) {
         return {};
@@ -102,6 +108,7 @@ const sendPaginated = async (Model, req, res, options = {}) => {
         defaultLimit = 50,
         defaultSort = '_id',
         errorMessage = 'Error fetching records',
+        maxLimit = MAX_PAGE_SIZE,
         populate,
         transform,
         views,
@@ -109,7 +116,7 @@ const sendPaginated = async (Model, req, res, options = {}) => {
 
     try {
         const page = toPositiveInteger(req.query.page, 1);
-        const limit = toPositiveInteger(req.query.limit, defaultLimit);
+        const limit = Math.min(toPositiveInteger(req.query.limit, defaultLimit), maxLimit);
         const search = (req.query.search || '').trim();
         const sortField = getSortField(req.query.sortField, defaultSort);
         const sortOrder = req.query.sortOrder === 'desc' ? -1 : 1;
@@ -140,6 +147,7 @@ const sendPaginated = async (Model, req, res, options = {}) => {
 };
 
 module.exports = {
+    MAX_PAGE_SIZE,
     combineFilters,
     getViewFilter,
     sendPaginated,

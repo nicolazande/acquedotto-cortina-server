@@ -10,16 +10,23 @@ const {
     updateRecord,
 } = require('./utils/controllerActions');
 
+// Le tariffe determinano quanto pagano i clienti: ogni modifica lascia traccia.
+const audit = {
+        entityType: 'Fascia',
+        fields: ['tipo', 'min', 'max', 'prezzo', 'inizio', 'scadenza', 'listino'],
+        label: (record) => `${record.tipo} ${record.min}-${record.max} a ${record.prezzo}`,
+    };
+
 module.exports = {
-    createFascia: createRecord(Fascia, { name: 'Fascia' }),
+    createFascia: createRecord(Fascia, { audit, name: 'Fascia' }),
     getFasce: (req, res) => sendPaginated(Fascia, req, res, {
         defaultSort: 'tipo',
         errorMessage: 'Error fetching fasce',
         populate: 'listino',
     }),
     getFascia: getRecord(Fascia, { name: 'Fascia', populate: 'listino' }),
-    updateFascia: updateRecord(Fascia, { name: 'Fascia' }),
-    deleteFascia: deleteRecord(Fascia, { name: 'Fascia' }),
+    updateFascia: updateRecord(Fascia, { audit, name: 'Fascia' }),
+    deleteFascia: deleteRecord(Fascia, { audit, name: 'Fascia' }),
     associateListino: associateRecords({
         field: 'listino',
         responseKey: 'fascia',

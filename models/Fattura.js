@@ -10,6 +10,12 @@ const fatturaSchema = new Schema(
         numero: { type: Number, required: false },
         data_fattura: { type: Date, required: false },
         codice: { type: String, required: false },
+        // Serie di numerazione. Le fatture importate dal gestionale precedente
+        // non ne hanno una: il loro `numero` non e un progressivo di fattura ma
+        // un codice cliente (arriva a 6343 in ogni anno). I documenti emessi da
+        // questo gestionale usano una serie propria, con progressivo pulito che
+        // riparte da 1 ogni anno.
+        serie: { type: String, required: false },
         destinazione: { type: String, required: false },
         imponibile: { type: Number, required: false },
         iva: { type: Number, required: false },
@@ -70,6 +76,13 @@ fatturaSchema.pre(['findOneAndUpdate', 'updateOne', 'updateMany'], function norm
 });
 
 fatturaSchema.index({ anno: 1, numero: 1 });
+// Garanzia di unicita sui soli documenti emessi da questo gestionale: sullo
+// storico non e applicabile, perche 2.745 fatture condividono la coppia
+// (anno, numero) ereditata dall'import.
+fatturaSchema.index(
+    { anno: 1, serie: 1, numero: 1 },
+    { unique: true, partialFilterExpression: { serie: { $type: 'string' } } }
+);
 fatturaSchema.index({ cliente: 1, data_fattura: -1 });
 fatturaSchema.index({ scadenza: 1 });
 fatturaSchema.index({ data_fattura: -1 });

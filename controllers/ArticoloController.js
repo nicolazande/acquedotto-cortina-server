@@ -10,15 +10,22 @@ const {
     updateRecord,
 } = require('./utils/controllerActions');
 
+// Le tariffe determinano quanto pagano i clienti: ogni modifica lascia traccia.
+const audit = {
+        entityType: 'Articolo',
+        fields: ['codice', 'descrizione', 'iva'],
+        label: (record) => `${record.codice} (IVA ${record.iva})`,
+    };
+
 module.exports = {
-    createArticolo: createRecord(Articolo, { name: 'Articolo' }),
+    createArticolo: createRecord(Articolo, { audit, name: 'Articolo' }),
     getArticoli: (req, res) => sendPaginated(Articolo, req, res, {
         defaultSort: 'descrizione',
         errorMessage: 'Error fetching articoli',
     }),
     getArticolo: getRecord(Articolo, { name: 'Articolo' }),
-    updateArticolo: updateRecord(Articolo, { name: 'Articolo' }),
-    deleteArticolo: deleteRecord(Articolo, { name: 'Articolo' }),
+    updateArticolo: updateRecord(Articolo, { audit, name: 'Articolo' }),
+    deleteArticolo: deleteRecord(Articolo, { audit, name: 'Articolo' }),
     associateServizio: associateRecords({
         field: 'articolo',
         responseKey: 'servizio',

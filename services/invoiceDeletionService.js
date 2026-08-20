@@ -18,13 +18,13 @@ const collectReadingIds = (fattura, servizi) => uniqueById([
     ...servizi.map((servizio) => servizio.lettura).filter(Boolean),
 ]).map((lettura) => recordId(lettura));
 
-const deleteInvoiceInSession = async (fatturaId, session) => {
+const deleteInvoiceInSession = async (fatturaId, session, unlock) => {
     const fattura = await withSession(Fattura.findById(fatturaId), session).lean();
     if (!fattura) {
         throw notFound('Fattura not found');
     }
 
-    assertInvoiceEditable(fattura, 'cancellare la fattura');
+    const eraConfermata = assertInvoiceEditable(fattura, 'cancellare la fattura', unlock);
 
     const servizi = await withSession(Servizio.find({ fattura: fatturaId }), session)
         .select('_id lettura')
@@ -72,14 +72,15 @@ const deleteInvoiceInSession = async (fatturaId, session) => {
 
     return {
         fattura,
+        eraConfermata,
         serviziCancellati: servizi.length,
         letturaSbloccate,
         scadenzaCancellata,
     };
 };
 
-const deleteInvoice = (fatturaId) => runWithOptionalTransaction((session) => (
-    deleteInvoiceInSession(fatturaId, session)
+const deleteInvoice = (fatturaId, unlock) => runWithOptionalTransaction((session) => (
+    deleteInvoiceInSession(fatturaId, session, unlock)
 ));
 
 module.exports = {

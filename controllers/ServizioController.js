@@ -12,6 +12,7 @@ const {
 const {
     assertInvoiceEditableById,
     assertServiceInvoiceEditable,
+    unlockOptions,
 } = require('../services/invoiceLockService');
 const {
     writeServiceAudit,
@@ -22,8 +23,9 @@ const populate = 'lettura articolo fattura listino fascia';
 
 const createServizio = async (req, res) => {
     try {
-        await assertInvoiceEditableById(req.body.fattura, 'aggiungere righe servizio');
-        const servizio = await Servizio.create(req.body);
+        await assertInvoiceEditableById(req.body.fattura, 'aggiungere righe servizio', unlockOptions(req));
+        const { sbloccoConfermato, ...dati } = req.body;
+        const servizio = await Servizio.create(dati);
         await writeServiceAudit(req, servizio, 'fattura.servizio_creato', 'Creata riga servizio');
         res.status(201).json(servizio);
     } catch (error) {
@@ -33,9 +35,10 @@ const createServizio = async (req, res) => {
 
 const updateServizio = async (req, res) => {
     try {
-        const before = await assertServiceInvoiceEditable(req.params.id, 'modificare righe servizio');
-        await assertInvoiceEditableById(req.body.fattura, 'spostare righe servizio');
-        const after = await Servizio.findByIdAndUpdate(req.params.id, req.body, { new: true }).lean();
+        const before = await assertServiceInvoiceEditable(req.params.id, 'modificare righe servizio', unlockOptions(req));
+        await assertInvoiceEditableById(req.body.fattura, 'spostare righe servizio', unlockOptions(req));
+        const { sbloccoConfermato, ...dati } = req.body;
+        const after = await Servizio.findByIdAndUpdate(req.params.id, dati, { new: true }).lean();
 
         await writeServiceUpdateAudit(req, before, after);
         res.status(200).json(after);
@@ -46,7 +49,7 @@ const updateServizio = async (req, res) => {
 
 const deleteServizio = async (req, res) => {
     try {
-        const servizio = await assertServiceInvoiceEditable(req.params.id, 'cancellare righe servizio');
+        const servizio = await assertServiceInvoiceEditable(req.params.id, 'cancellare righe servizio', unlockOptions(req));
         await Servizio.deleteOne({ _id: req.params.id });
         await writeServiceAudit(req, servizio, 'fattura.servizio_cancellato', 'Cancellata riga servizio');
         res.status(204).send();
@@ -93,7 +96,7 @@ const associateFattura = associateRecords({
 
 const withEditableServiceInvoice = (handler, action) => async (req, res) => {
     try {
-        await assertServiceInvoiceEditable(req.params.servizioId, action);
+        await assertServiceInvoiceEditable(req.params.servizioId, action, unlockOptions(req));
         return handler(req, res);
     } catch (error) {
         return sendServiceError(res, error, 'Fattura confermata', error.status || 400);
@@ -102,8 +105,8 @@ const withEditableServiceInvoice = (handler, action) => async (req, res) => {
 
 const associateFatturaSafely = async (req, res) => {
     try {
-        await assertServiceInvoiceEditable(req.params.servizioId, 'spostare righe servizio');
-        await assertInvoiceEditableById(req.params.fatturaId, 'associare righe servizio');
+        await assertServiceInvoiceEditable(req.params.servizioId, 'spostare righe servizio', unlockOptions(req));
+        await assertInvoiceEditableById(req.params.fatturaId, 'associare righe servizio', unlockOptions(req));
         return associateFattura(req, res);
     } catch (error) {
         return sendServiceError(res, error, 'Fattura confermata', error.status || 400);

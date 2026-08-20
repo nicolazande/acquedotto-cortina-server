@@ -1,4 +1,28 @@
+const { diffFields, writeAuditLog } = require('../../services/auditLogService');
+
 const lowerFirst = (value) => value.charAt(0).toLowerCase() + value.slice(1);
+
+// Tracciamento delle modifiche per le risorse che lo richiedono. Fino a ora era
+// registrato solo cio che riguardava le fatture: chi cambiava il prezzo di una
+// fascia - cioe quanto pagano tutti - non lasciava alcuna traccia.
+const auditRecord = async ({ action, audit, after, before, record, req, summary }) => {
+    if (!audit) {
+        return;
+    }
+
+    await writeAuditLog({
+        action: `${audit.entityType.toLowerCase()}.${action}`,
+        changes: before && after ? diffFields(before, after, audit.fields || []) : [],
+        entityId: record?._id,
+        entityType: audit.entityType,
+        req,
+        summary: summary || `${audit.entityType} ${action}`,
+    });
+};
+
+const describe = (audit, record) => (
+    audit?.label ? audit.label(record) : String(record?._id || '')
+);
 
 const sendError = (res, error, fallbackMessage, fallbackStatus = 500) => {
     console.error(error);
@@ -16,10 +40,13 @@ const sendServiceError = (res, error, fallbackMessage, fallbackStatus = 500) => 
 
 const applyPopulate = (query, populate) => (populate ? query.populate(populate) : query);
 
-const createRecord = (Model, { name, mapBody = (body) => body, transform = (record) => record }) => (
+const createRecord = (Model, { audit, name, mapBody = (body) => body, transform = (record) => record }) => (
     async (req, res) => {
         try {
             const record = await Model.create(mapBody(req.body));
+            await auditRecord({
+                action: 'creato', audit, record, req, summary: `Creato ${lowerFirst(name)} ${describe(audit, record)}`,
+            });
             res.status(201).json(transform(record));
         } catch (error) {
             sendError(res, error, `Error creating ${lowerFirst(name)}`, 400);
@@ -41,9 +68,11 @@ const getRecord = (Model, { name, populate, transform = (record) => record }) =>
     }
 );
 
-const updateRecord = (Model, { name, mapBody = (body) => body, transform = (record) => record }) => (
+const updateRecord = (Model, { audit, name, mapBody = (body) => body, transform = (record) => record }) => (
     async (req, res) => {
         try {
+            // Il valore precedente serve per registrare cosa e cambiato davvero.
+            const before = audit ? await Model.findById(req.params.id).lean() : null;
             const record = await Model.findByIdAndUpdate(req.params.id, mapBody(req.body), {
                 new: true,
                 runValidators: true,
@@ -51,6 +80,15 @@ const updateRecord = (Model, { name, mapBody = (body) => body, transform = (reco
             if (!record) {
                 return res.status(404).json({ error: `${name} not found` });
             }
+            await auditRecord({
+                action: 'modificato',
+                audit,
+                after: record.toObject ? record.toObject() : record,
+                before,
+                record,
+                req,
+                summary: `Modificato ${lowerFirst(name)} ${describe(audit, record)}`,
+            });
             return res.status(200).json(transform(record));
         } catch (error) {
             return sendError(res, error, `Error updating ${lowerFirst(name)}`, 400);
@@ -58,13 +96,16 @@ const updateRecord = (Model, { name, mapBody = (body) => body, transform = (reco
     }
 );
 
-const deleteRecord = (Model, { name }) => (
+const deleteRecord = (Model, { audit, name }) => (
     async (req, res) => {
         try {
             const record = await Model.findByIdAndDelete(req.params.id);
             if (!record) {
                 return res.status(404).json({ error: `${name} not found` });
             }
+            await auditRecord({
+                action: 'cancellato', audit, record, req, summary: `Cancellato ${lowerFirst(name)} ${describe(audit, record)}`,
+            });
             // 204 non prevede corpo nella risposta.
             return res.status(204).send();
         } catch (error) {

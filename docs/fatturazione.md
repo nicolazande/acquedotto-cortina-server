@@ -141,10 +141,42 @@ non sulla sua approssimazione binaria.
 
 ## Numerazione
 
-Il numero progressivo per anno e gestito dalla collection `invoice_counters`.
-Prima di assegnare un numero il contatore viene allineato al massimo numero gia
-presente per quell'anno (`$max`), poi incrementato. I numeri non vengono mai
-riusati: una generazione fallita lascia un buco nella numerazione, ed e voluto.
+I documenti emessi da questo gestionale usano una **serie di numerazione
+dedicata** (`INVOICE_SERIES`, default `A`), separata dallo storico importato.
+
+Il motivo e nei dati: nelle fatture importate il campo `numero` **non e** un
+progressivo di fattura ma un codice cliente. Arriva a 6343 in ogni anno e la
+coppia (anno, numero) si ripete su 2.745 documenti su 3.469; il campo `codice`
+contiene a sua volta il codice del cliente, uguale su tutte le sue fatture.
+Agganciare la numerazione nuova a quei valori significava partire da numeri
+arbitrari e non poter garantire l'unicita.
+
+Con la serie dedicata:
+
+- il progressivo riparte da **1 a ogni anno** e non dipende dallo storico;
+- il codice del documento e `anno/serie/numero`, per esempio `2026/A/1`;
+- un indice unico parziale su `(anno, serie, numero)` impedisce i duplicati.
+  E parziale perche sullo storico, privo di serie, non sarebbe applicabile;
+- le fatture importate restano com'erano e non entrano in conflitto: hanno
+  numeri uguali ma serie assente, quindi sono distinguibili.
+
+> La lettera della serie va concordata con chi tiene la contabilita: e una scelta
+> fiscale, non tecnica. Si cambia con `INVOICE_SERIES` e vale dalla fattura
+> successiva; le fatture gia emesse mantengono la loro.
+
+I numeri non vengono mai riusati: una generazione fallita lascia un buco nella
+numerazione, ed e voluto.
+
+## Modifica di una fattura confermata
+
+Una fattura confermata e protetta: modifiche, cancellazione e righe servizio
+sono rifiutate con `409`. Il blocco puo pero essere superato dichiarandolo, con
+`sbloccoConfermato` nel corpo della richiesta o nella querystring.
+
+Non e una scorciatoia silenziosa: l'operazione viene registrata nel giornale con
+l'azione `fattura.modificata_dopo_conferma`, cosi resta distinguibile da una
+modifica ordinaria su una bozza. Nell'interfaccia il pulsante chiede conferma
+esplicita prima di procedere.
 
 ## Transazioni
 

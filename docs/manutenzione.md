@@ -77,7 +77,10 @@ db.letture.find({fatturata:true}).toArray()
 | Importi in centesimi | Tutta l'aritmetica monetaria e in centesimi interi con arrotondamento commerciale. Ricalcolando lo storico, 48 fatture su 3.469 risultano diverse di 1 centesimo dal gestionale precedente: rientra nella tolleranza dei controlli. |
 | Sessione | Il token dura `JWT_EXPIRES_IN` (default 8 ore) e non esiste un meccanismo di rinnovo: alla scadenza serve un nuovo login. |
 | Cancellazioni | Cancellare una fattura ripulisce righe, scadenza e blocchi delle letture. Cancellare un **cliente** o un **contatore** non ripulisce nulla: i record collegati restano con un riferimento a un documento inesistente. |
-| Registrazione | Limitata a `MAX_ADMIN_USERS` amministratori (default 2). Gli account del portale clienti si creano dalla scheda cliente. |
+| Registrazione | Limitata a `MAX_ADMIN_USERS` amministratori (default 2). Gli account del portale clienti si creano dalla scheda cliente. Non e imposto un requisito di robustezza sulla password degli amministratori. |
+| Elenchi | Una richiesta restituisce al massimo `MAX_PAGE_SIZE` record (default 500). Serve a evitare che una singola chiamata scarichi l'intero archivio. |
+| Accessi | Dopo `LOGIN_MAX_ATTEMPTS` tentativi falliti (default 10) lo stesso indirizzo e nome utente riceve `429` per `LOGIN_WINDOW_MS`. Il conteggio sta in memoria: con piu istanze andrebbe spostato su un archivio condiviso. |
+| Tracciamento | Sono registrate le modifiche a fatture, righe servizio, listini, fasce e articoli. Restano fuori clienti, contatori, edifici e letture. |
 | react-scripts 3 | Il client dipende da una versione del 2019 che richiede `--openssl-legacy-provider`. Funziona, ma e il debito tecnico piu rilevante del progetto. |
 
 ## Deploy

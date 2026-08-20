@@ -19,7 +19,13 @@ export default [
         },
         rules: {
             ...js.configs.recommended.rules,
-            'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^next$', varsIgnorePattern: '^_' }],
+            // ignoreRestSiblings copre il modo idiomatico di escludere una proprieta:
+            // const { daTogliere, ...resto } = oggetto;
+            'no-unused-vars': ['warn', {
+                argsIgnorePattern: '^_|^next$',
+                varsIgnorePattern: '^_',
+                ignoreRestSiblings: true,
+            }],
             // console.log e usato di proposito negli script di verifica e di avvio.
             'no-console': 'off',
             eqeqeq: ['warn', 'smart'],

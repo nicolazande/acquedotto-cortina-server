@@ -30,6 +30,7 @@ const {
     roundMoney,
 } = require('./billingCalculator');
 const { assertInvoiceEditable } = require('./invoiceLockService');
+const { INVOICE_SERIES, invoiceCode } = require('../config/invoicing');
 const { runWithOptionalTransaction } = require('./transaction');
 const { createError } = require('../utils/errors');
 const { hasValue, normalizeText, sumMoneyBy } = require('../utils/values');
@@ -70,22 +71,28 @@ const isCondominiumSplitCounter = (contatore) => {
     );
 };
 
-const reserveInvoiceNumber = async (year, session) => {
-    const highestFattura = await withSession(Fattura.findOne({ anno: year }), session)
+// Il progressivo si calcola sulla sola serie corrente: prima veniva preso il
+// massimo fra tutte le fatture dell'anno, storico compreso, e le fatture nuove
+// ereditavano un numero derivato da codici cliente (2761, 2835, ...).
+// Su un anno senza documenti il primo numero era inoltre 0, perche il contatore
+// parte da -1: ora la prima fattura di una serie e la numero 1.
+const reserveInvoiceNumber = async (year, session, serie = INVOICE_SERIES) => {
+    const scope = `fatture:${serie}`;
+    const highestFattura = await withSession(Fattura.findOne({ anno: year, serie }), session)
         .sort({ numero: -1 })
         .limit(1)
         .select('numero')
         .lean();
-    const highestNumber = highestFattura ? numberOrZero(highestFattura.numero) : -1;
+    const highestNumber = highestFattura ? numberOrZero(highestFattura.numero) : 0;
 
     await InvoiceCounter.updateOne(
-        { scope: 'fatture', year },
+        { scope, year },
         { $max: { value: highestNumber } },
         { upsert: true, session }
     );
 
     const counter = await InvoiceCounter.findOneAndUpdate(
-        { scope: 'fatture', year },
+        { scope, year },
         { $inc: { value: 1 } },
         {
             new: true,
@@ -504,7 +511,10 @@ const getInvoiceStatus = (confermata) => (toBoolean(confermata) ? 'confermata' :
 const createManualInvoiceInSession = async (input = {}, session) => {
     const invoiceDate = input.data_fattura ? new Date(input.data_fattura) : new Date();
     const year = input.anno || invoiceDate.getFullYear();
-    const numero = hasValue(input.numero) ? numberOrZero(input.numero) : await reserveInvoiceNumber(year, session);
+    const serie = input.serie || INVOICE_SERIES;
+    const numero = hasValue(input.numero)
+        ? numberOrZero(input.numero)
+        : await reserveInvoiceNumber(year, session, serie);
     const cliente = input.cliente
         ? await withSession(Cliente.findById(input.cliente), session).lean()
         : null;
@@ -519,7 +529,8 @@ const createManualInvoiceInSession = async (input = {}, session) => {
         origine: input.origine || 'manuale',
         anno: year,
         numero,
-        codice: input.codice || `${year}-${String(numero).padStart(4, '0')}`,
+        serie,
+        codice: input.codice || invoiceCode({ anno: year, numero, serie }),
         data_fattura: invoiceDate,
         nome_cliente: input.nome_cliente || customerLabel,
         cliente: cliente?._id || input.cliente,
@@ -604,7 +615,7 @@ const createInvoiceFromReadingsInSession = async ({
 
         const totals = calculateTotals(allLines);
         lockedReadingIds = await lockReadingsForBilling(letturaIds, session);
-        const numero = await reserveInvoiceNumber(year, session);
+        const numero = await reserveInvoiceNumber(year, session, INVOICE_SERIES);
 
         const [fattura] = await Fattura.create([{
             tipo_documento,
@@ -614,7 +625,8 @@ const createInvoiceFromReadingsInSession = async ({
             origine: 'letture',
             anno: year,
             numero,
-            codice: `${year}-${String(numero).padStart(4, '0')}`,
+            serie: INVOICE_SERIES,
+            codice: invoiceCode({ anno: year, numero, serie: INVOICE_SERIES }),
             data_fattura: invoiceDate,
             imponibile: totals.imponibile,
             iva: totals.iva,
@@ -828,12 +840,12 @@ const recalculateInvoiceTotals = async ({ fattura, lines, session }) => {
     return totals;
 };
 
-const applyFixedChargeToInvoiceInSession = async (fatturaId, session) => {
+const applyFixedChargeToInvoiceInSession = async (fatturaId, session, unlock) => {
     const fattura = await withSession(Fattura.findById(fatturaId).populate('cliente scadenza'), session);
     if (!fattura) {
         throw createError('Fattura not found', 404);
     }
-    assertInvoiceEditable(fattura, 'aggiungere la quota fissa');
+    assertInvoiceEditable(fattura, 'aggiungere la quota fissa', unlock);
 
     const servizi = await withSession(
         Servizio.find({ fattura: fatturaId }).populate('lettura articolo listino fascia'),
@@ -891,8 +903,8 @@ const applyFixedChargeToInvoiceInSession = async (fatturaId, session) => {
     };
 };
 
-const applyFixedChargeToInvoice = (fatturaId) => runWithOptionalTransaction((session) => (
-    applyFixedChargeToInvoiceInSession(fatturaId, session)
+const applyFixedChargeToInvoice = (fatturaId, unlock) => runWithOptionalTransaction((session) => (
+    applyFixedChargeToInvoiceInSession(fatturaId, session, unlock)
 ));
 
 const verifyInvoiceCalculation = async (fatturaId, options = {}) => {
