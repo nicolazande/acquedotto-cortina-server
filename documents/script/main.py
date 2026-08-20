@@ -342,13 +342,64 @@ def salva_cookie(valore: str):
     COOKIE_CACHE.chmod(0o600)
 
 
+def _e_snap(percorso: str) -> bool:
+    """Il browser e installato come pacchetto snap?"""
+    return "/snap/" in percorso
+
+
+def trova_browser() -> str | None:
+    esplicito = os.getenv("CHROME_BINARY")
+    if esplicito:
+        return esplicito
+
+    for candidato in ("/usr/bin/google-chrome", "/usr/bin/chromium-browser",
+                      "/usr/bin/chromium", "/snap/bin/chromium"):
+        if Path(candidato).exists():
+            return candidato
+    return None
+
+
+def trova_chromedriver(browser: str | None) -> str | None:
+    """Driver da usare per pilotare il browser.
+
+    Con Chromium installato come snap va usato il driver dello snap: gira nello
+    stesso confinamento del browser e ne condivide la versione. Un driver esterno
+    non vedrebbe il file DevToolsActivePort, perche gli snap hanno una /tmp
+    privata, e fallirebbe con "Chrome failed to start".
+    """
+    esplicito = os.getenv("CHROMEDRIVER")
+    if esplicito:
+        return esplicito
+
+    if browser and _e_snap(browser) and Path("/snap/bin/chromium.chromedriver").exists():
+        return "/snap/bin/chromium.chromedriver"
+
+    return None
+
+
+def cartella_profilo(browser: str | None) -> str:
+    """Cartella del profilo temporaneo del browser.
+
+    Per lo snap deve stare nella home: la /tmp che vede lo snap non e quella del
+    resto del sistema, e il profilo risulterebbe irraggiungibile."""
+    if browser and _e_snap(browser):
+        base = Path.home() / "snap" / "chromium" / "common" / "import-zuel"
+        base.mkdir(parents=True, exist_ok=True)
+        return str(base / datetime.now().strftime("profilo-%Y%m%d-%H%M%S"))
+
+    return tempfile.mkdtemp(prefix="zuel-chrome-")
+
+
 def get_session_cookie(email, password):
+    browser = trova_browser()
+    driver_path = trova_chromedriver(browser)
+
     options = webdriver.ChromeOptions()
-    chrome_binary = os.getenv("CHROME_BINARY")
-    if chrome_binary:
-        options.binary_location = chrome_binary
-    elif Path("/snap/bin/chromium").exists():
-        options.binary_location = "/snap/bin/chromium"
+    # Con il driver dello snap il binario NON va indicato: quel driver gira dentro
+    # il confinamento dello snap, dove /snap/bin/chromium non e eseguibile, e
+    # fallirebbe con "failed to execvp". Sa gia dove trovare il proprio browser.
+    if browser and not driver_path:
+        options.binary_location = browser
 
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-setuid-sandbox")
@@ -356,17 +407,24 @@ def get_session_cookie(email, password):
     options.add_argument("--disable-gpu")
     options.add_argument("--no-first-run")
     options.add_argument("--no-default-browser-check")
-    # Porta scelta dal sistema: una fissa va in conflitto con un browser gia
-    # aperto in debug e il login fallisce senza spiegazioni.
-    options.add_argument("--remote-debugging-port=0")
-    options.add_argument(f"--user-data-dir={tempfile.mkdtemp(prefix='zuel-chrome-')}")
+    # La porta di debug la sceglie chromedriver: indicarla a mano crea conflitti
+    # con un browser gia aperto in debug e impedisce l'avvio.
+    options.add_argument(f"--user-data-dir={cartella_profilo(browser)}")
     if env_flag("IMPORT_HEADLESS"):
         options.add_argument("--headless=new")
 
-    try:
-        driver = webdriver.Chrome(options=options)
-    except Exception:
-        driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
+    print(f"Browser: {browser or 'predefinito'}")
+    print(f"Driver:  {driver_path or 'scaricato automaticamente'}")
+
+    if driver_path:
+        driver = webdriver.Chrome(service=ChromeService(driver_path), options=options)
+    else:
+        try:
+            driver = webdriver.Chrome(options=options)
+        except Exception:
+            driver = webdriver.Chrome(
+                service=ChromeService(ChromeDriverManager().install()), options=options
+            )
 
     try:
         print("Opening login page...")

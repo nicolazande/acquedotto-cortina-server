@@ -249,6 +249,21 @@ npm run report:calcolo
 
 ## Import dati
 
+### Browser usato per il login
+
+Il login apre un browser vero. Lo script sceglie da solo cosa usare e con quale
+driver, ma i due devono essere coerenti:
+
+| Situazione | Cosa fa lo script |
+|------------|-------------------|
+| Chromium installato come **snap** | usa `/snap/bin/chromium.chromedriver`, della stessa versione, e **non** indica il percorso del binario: quel driver gira dentro il confinamento dello snap, dove `/snap/bin/chromium` non e eseguibile |
+| Chrome o Chromium di sistema | usa il binario trovato e scarica il driver corrispondente |
+| Percorsi non standard | si indicano con `CHROME_BINARY` e `CHROMEDRIVER` |
+
+Il profilo temporaneo del browser finisce sotto la home quando si usa lo snap:
+gli snap hanno una `/tmp` privata, e un profilo creato li dentro risulterebbe
+invisibile al driver, che fallirebbe con *DevToolsActivePort file doesn't exist*.
+
 ### Il login e separato dall'import
 
 Il login a Gesco richiede una persona: il CAPTCHA va risolto a mano. Per questo
