@@ -1,3 +1,6 @@
+// Verifica dove la quota fissa annuale e applicabile, gia applicata o mancante.
+//
+// E un rapporto, non un test: stampa cio che trova e non fa fallire nulla.
 const { runScript } = require('./utils/runScript');
 const Fattura = require('../models/Fattura');
 require('../models/Articolo');

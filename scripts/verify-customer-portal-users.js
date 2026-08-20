@@ -1,6 +1,8 @@
+// Stato degli account del portale clienti: quanti, attivi, senza email.
+//
+// E un rapporto, non un test: stampa cio che trova e non fa fallire nulla.
 const { runScript } = require('./utils/runScript');
 const assert = require('assert');
-const mongoose = require('mongoose');
 const Cliente = require('../models/Cliente');
 const User = require('../models/User');
 const ClienteController = require('../controllers/ClienteController');
@@ -98,7 +100,6 @@ const main = async () => {
     } finally {
         await User.deleteMany({ role: 'cliente', cliente: cliente._id });
         await Cliente.deleteOne({ _id: cliente._id });
-        await mongoose.disconnect();
     }
 };
 

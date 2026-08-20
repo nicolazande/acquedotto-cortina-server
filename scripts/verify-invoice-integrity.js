@@ -1,5 +1,8 @@
+// Controlli di integrita: fatture senza righe, righe orfane, totali che non
+// corrispondono alla somma delle righe, scadenze scollegate.
+//
+// E un rapporto, non un test: stampa cio che trova e non fa fallire nulla.
 const { runScript } = require('./utils/runScript');
-const mongoose = require('mongoose');
 const Articolo = require('../models/Articolo');
 const Fattura = require('../models/Fattura');
 const Scadenza = require('../models/Scadenza');
@@ -185,15 +188,13 @@ const main = async () => {
         console.log(sample(delayMismatches).join('\n'));
     }
 
-    await mongoose.disconnect();
-
     if (strict && (
         fattureSenzaScadenza
         || serviziFatturaMancante.length
         || serviziArticoloMancante.length
         || totalMismatches.length
     )) {
-        process.exit(1);
+        return false;
     }
 };
 

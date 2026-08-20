@@ -1,6 +1,9 @@
+// Prova le operazioni sulle fatture (blocco, modifica, cancellazione) sui dati
+// reali, senza modificarli.
+//
+// E un rapporto, non un test: stampa cio che trova e non fa fallire nulla.
 const { runScript } = require('./utils/runScript');
 const assert = require('assert');
-const mongoose = require('mongoose');
 const AuditLog = require('../models/AuditLog');
 const Cliente = require('../models/Cliente');
 const Fattura = require('../models/Fattura');
@@ -110,7 +113,6 @@ const main = async () => {
         await Servizio.deleteMany({ _id: servizio._id });
         await Fattura.deleteMany({ _id: { $in: [draft._id, confirmed._id] } });
         await Cliente.deleteOne({ _id: cliente._id });
-        await mongoose.disconnect();
     }
 };
 

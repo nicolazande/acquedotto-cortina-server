@@ -1,3 +1,6 @@
+// Anteprima delle fatture generabili dalle letture non ancora fatturate.
+//
+// E un rapporto, non un test: stampa cio che trova e non fa fallire nulla.
 const { runScript } = require('./utils/runScript');
 const { previewBillingBatch } = require('../services/invoiceGenerator');
 

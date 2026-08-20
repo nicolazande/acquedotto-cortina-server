@@ -1,3 +1,7 @@
+// Controlla che ogni riga fattura rispetti la formula prezzo x quantita e che
+// l'IVA corrisponda all'articolo.
+//
+// E un rapporto, non un test: stampa cio che trova e non fa fallire nulla.
 const { runScript } = require('./utils/runScript');
 const Servizio = require('../models/Servizio');
 require('../models/Articolo');

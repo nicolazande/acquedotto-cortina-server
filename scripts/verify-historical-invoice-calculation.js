@@ -1,5 +1,8 @@
+// Ricalcola le fatture storiche con listini e quota fissa attuali, per capire
+// quanto il calcolo di oggi si discosta da quello di allora.
+//
+// E un rapporto, non un test: stampa cio che trova e non fa fallire nulla.
 const { runScript } = require('./utils/runScript');
-const mongoose = require('mongoose');
 const Fattura = require('../models/Fattura');
 require('../models/Articolo');
 require('../models/Cliente');
@@ -186,10 +189,8 @@ const main = async () => {
         console.log(JSON.stringify(stats.errors.slice(0, args.verbose ? 50 : 10), null, 2));
     }
 
-    await mongoose.disconnect();
-
     if (args.strict && (stats.mismatches.length > 0 || stats.errors.length > 0)) {
-        process.exit(1);
+        return false;
     }
 };
 

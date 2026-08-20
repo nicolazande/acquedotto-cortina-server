@@ -1,3 +1,7 @@
+// Confronta il calcolatore con i dati storici: rifattura ogni lettura gia
+// fatturata e segnala gli scostamenti.
+//
+// E un rapporto, non un test: stampa cio che trova e non fa fallire nulla.
 const { runScript } = require('./utils/runScript');
 const Articolo = require('../models/Articolo');
 const Fascia = require('../models/Fascia');

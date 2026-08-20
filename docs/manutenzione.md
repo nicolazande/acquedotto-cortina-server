@@ -5,8 +5,8 @@
 ```bash
 export SMOKE_TOKEN=<token admin>
 npm run test:smoke          # percorso completo: API, fatturazione, allegati
-npm run test:billing-audit  # formule, integrita, anteprime, quota fissa, storico
-npm run test:invoices       # integrita referenziale e totali
+npm run report:tutti  # formule, integrita, anteprime, quota fissa, storico
+npm run report:integrita       # integrita referenziale e totali
 ```
 
 Gli script `verify-*` sono **rapporti, non test**: stampano le anomalie trovate ed

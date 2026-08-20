@@ -189,7 +189,8 @@ Attenzione alla differenza fra i due gruppi di script:
 | Comando | Cosa fa |
 |---------|---------|
 | `npm test`, `npm run test:smoke` | **test veri**: falliscono con codice di uscita diverso da zero |
-| `npm run verify:*`, `test:billing*`, `test:invoices` | **rapporti** sui dati reali: stampano le anomalie ma escono sempre con 0 |
+| `npm run report:*` | **rapporti** sui dati reali: stampano cosa trovano. `report:tutti` li esegue in fila |
+| `npm run verify:*`, `report:calcolo*`, `report:integrita` | **rapporti** sui dati reali: stampano le anomalie ma escono sempre con 0 |
 
 ## Installazione da zero
 
@@ -243,7 +244,7 @@ SMOKE_SKIP_MUTATION=true npm run test:smoke
 Per confrontare il calcolo attuale con le righe storiche importate:
 
 ```bash
-npm run test:billing
+npm run report:calcolo
 ```
 
 ## Import dati
