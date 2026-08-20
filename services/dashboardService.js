@@ -3,6 +3,7 @@ const Contatore = require('../models/Contatore');
 const Fattura = require('../models/Fattura');
 const Lettura = require('../models/Lettura');
 const Scadenza = require('../models/Scadenza');
+const AuditLog = require('../models/AuditLog');
 const { delayAggregation, saldataExpression } = require('./deadlineService');
 const { fromCents } = require('../utils/money');
 
@@ -40,6 +41,40 @@ const riepilogoImporti = [
 
 const primaRiga = (righe) => righe[0] || { quante: 0, centesimi: 0, ritardoMassimo: 0 };
 
+// Fasce di anzianita del credito. L'ordine porta significato: piu si scende,
+// piu il recupero e difficile. Serve a capire dove sta il rischio, non solo
+// quanto si deve incassare.
+const FASCE_SCADUTO = [
+    { id: 'entro-30', etichetta: 'Fino a 30 giorni', da: 1, a: 30 },
+    { id: 'entro-90', etichetta: 'Da 31 a 90 giorni', da: 31, a: 90 },
+    { id: 'entro-365', etichetta: 'Da 91 giorni a 1 anno', da: 91, a: 365 },
+    { id: 'oltre-365', etichetta: 'Oltre un anno', da: 366, a: null },
+];
+
+const fasciaDiRitardo = {
+    $switch: {
+        branches: FASCE_SCADUTO.slice(0, -1).map((fascia) => ({
+            case: { $lte: ['$ritardo', fascia.a] },
+            then: fascia.id,
+        })),
+        default: FASCE_SCADUTO[FASCE_SCADUTO.length - 1].id,
+    },
+};
+
+const perFascia = (righe) => {
+    const indice = new Map(righe.map((riga) => [riga._id, riga]));
+
+    return FASCE_SCADUTO.map(({ id, etichetta }) => {
+        const riga = indice.get(id);
+        return {
+            id,
+            etichetta,
+            quante: riga?.quante || 0,
+            totale: fromCents(riga?.centesimi || 0),
+        };
+    });
+};
+
 const importi = (riga) => ({
     quante: riga.quante,
     totale: fromCents(riga.centesimi),
@@ -53,6 +88,9 @@ const getDashboard = async () => {
         scadute,
         clienti,
         contatoriAttivi,
+        fasce,
+        daSollecitare,
+        attivita,
     ] = await Promise.all([
         Lettura.countDocuments(LETTURE_DA_FATTURARE),
         Fattura.countDocuments({ stato: 'bozza' }),
@@ -60,6 +98,56 @@ const getDashboard = async () => {
         Scadenza.aggregate([...scadenzeAperte(true), ...riepilogoImporti]),
         Cliente.estimatedDocumentCount(),
         Contatore.countDocuments({ inattivo: { $ne: true } }),
+        Scadenza.aggregate([
+            ...scadenzeAperte(true),
+            { $addFields: { fascia: fasciaDiRitardo } },
+            {
+                $group: {
+                    _id: '$fascia',
+                    quante: { $sum: 1 },
+                    centesimi: { $sum: { $round: [{ $multiply: [{ $ifNull: ['$totale', 0] }, 100] }, 0] } },
+                },
+            },
+        ]),
+        // I crediti piu grossi fra quelli scaduti: sono le telefonate da fare per prime.
+        Scadenza.aggregate([
+            ...scadenzeAperte(true),
+            { $sort: { totale: -1 } },
+            { $limit: 5 },
+            {
+                $lookup: {
+                    from: Fattura.collection.collectionName,
+                    localField: '_id',
+                    foreignField: 'scadenza',
+                    as: 'fattura',
+                },
+            },
+            { $unwind: { path: '$fattura', preserveNullAndEmptyArrays: true } },
+            {
+                $project: {
+                    ritardo: 1,
+                    totale: 1,
+                    scadenza: 1,
+                    cliente: '$fattura.cliente',
+                    nome: {
+                        $trim: {
+                            input: {
+                                $concat: [{ $ifNull: ['$cognome', ''] }, ' ', { $ifNull: ['$nome', ''] }],
+                            },
+                        },
+                    },
+                    fattura: '$fattura._id',
+                    anno: '$fattura.anno',
+                    numero: '$fattura.numero',
+                },
+            },
+        ]),
+        // Le ultime modifiche registrate: rende visibile chi ha toccato cosa.
+        AuditLog.find({})
+            .sort({ createdAt: -1 })
+            .limit(6)
+            .select('action summary actorUsername createdAt entityType entityId')
+            .lean(),
     ]);
 
     const rigaAperte = primaRiga(aperte);
@@ -77,10 +165,14 @@ const getDashboard = async () => {
             },
         },
         anagrafiche: { clienti, contatoriAttivi },
+        scaduto: { fasce: perFascia(fasce) },
+        daSollecitare,
+        attivita,
     };
 };
 
 module.exports = {
+    FASCE_SCADUTO,
     getDashboard,
     // esportati per i test
     LETTURE_DA_FATTURARE,
