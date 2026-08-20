@@ -84,7 +84,10 @@ db.letture.find({fatturata:true}).toArray()
 
 ### Server (Render)
 
-La versione di Node e fissata in `package.json` (`engines`) e in `.node-version`.
+La versione di Node e fissata in `package.json` (`engines`), in `.node-version`
+e nella CI: **Node 24 "Krypton"**, in supporto a lungo termine fino al
+30 aprile 2028. Node 20 e uscito dal supporto il 30 aprile 2026 e non riceve
+piu correzioni di sicurezza, quindi non va piu usato.
 Non ci sono dipendenze di runtime nuove: `eslint` sta fra le devDependencies e
 non viene installato quando `NODE_ENV=production`.
 
@@ -110,6 +113,28 @@ piattaforma esporrebbe la build a rompersi da sola.
 
 La variabile `REACT_APP_API_URL` continua a funzionare: la configurazione
 accetta sia il prefisso `REACT_APP_` sia `VITE_`.
+
+### Quando aggiornare Node
+
+Node esce dal supporto ad aprile dell'anno pari successivo alla sua uscita:
+
+| Versione | Fine supporto |
+|----------|---------------|
+| 20 | 30 aprile 2026 (gia scaduta) |
+| 22 | 30 aprile 2027 |
+| **24 (in uso)** | **30 aprile 2028** |
+| 26 | 30 aprile 2029 |
+
+Il momento naturale per il salto successivo e l'autunno 2027, quando la 26 sara
+in supporto da un anno. L'aggiornamento consiste nel cambiare `engines`,
+`.node-version`, `NODE_VERSION` in `netlify.toml` e `node-version` nelle CI, piu
+il Node in `.tools/` usato dagli script locali.
+
+Nota su npm 11 (incluso da Node 24): gli script di installazione dei pacchetti
+sono bloccati per impostazione predefinita. Nel progetto non e un problema,
+perche `bcrypt` e `esbuild` distribuiscono binari gia compilati, ma se in futuro
+entrasse una dipendenza che deve compilarsi in fase di installazione andra
+autorizzata esplicitamente.
 
 ## Sincronizzazione con il database remoto
 

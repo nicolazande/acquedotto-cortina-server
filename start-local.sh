@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-LOCAL_NODE="$ROOT_DIR/.tools/node-v20.18.1-linux-x64/bin"
+LOCAL_NODE="$ROOT_DIR/.tools/node-v24.19.0-linux-x64/bin"
 MONGO_CONTAINER="${MONGO_CONTAINER:-acquedotto-cortina-mongo}"
 MONGO_IMAGE="${MONGO_IMAGE:-mongo:7}"
 MONGO_VOLUME="${MONGO_VOLUME:-acquedotto-mongo-data}"
