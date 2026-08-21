@@ -1,19 +1,41 @@
 const Scadenza = require('../models/Scadenza');
 const { numberOrZero } = require('../utils/values');
-const { addDays, daysBetween, startOfDay } = require('../utils/dates');
+const { addDays, daysBetween, startOfDay, toDate } = require('../utils/dates');
 const { customerLabel } = require('../utils/customer');
 
 const DEFAULT_DUE_DAYS = Number.parseInt(process.env.INVOICE_DUE_DAYS || '30', 10);
 
-const calculateDelay = (deadline, now = new Date()) => {
+// Il momento di riferimento del calcolo. Accetta solo una data vera: passando
+// queste funzioni direttamente a .map() il secondo argomento sarebbe l'indice
+// dell'array, che verrebbe letto come una data del 1970 e azzererebbe ogni
+// ritardo. Meglio ignorare un valore che non e una data che restituire un
+// risultato sbagliato senza dirlo.
+const momentoDiRiferimento = (valore) => {
+    if (valore === undefined || valore === null) {
+        return new Date();
+    }
+
+    // Un numero non e mai una data di riferimento legittima: e l'indice passato
+    // da .map(). Accettarlo significherebbe leggere l'indice 1 come il 1 gennaio
+    // 1970 e azzerare il ritardo, che e esattamente il difetto da cui nasce
+    // questo controllo.
+    if (typeof valore === 'number') {
+        return new Date();
+    }
+
+    return toDate(valore) || new Date();
+};
+
+const calculateDelay = (deadline, now) => {
     const dueDate = startOfDay(deadline?.scadenza);
     if (!dueDate) {
         return 0;
     }
 
+    const adesso = momentoDiRiferimento(now);
     const referenceDate = deadline?.saldo && deadline?.pagamento
         ? startOfDay(deadline.pagamento)
-        : startOfDay(now);
+        : startOfDay(adesso);
 
     return Math.max(0, daysBetween(dueDate, referenceDate));
 };
@@ -22,7 +44,7 @@ const toPlainObject = (record) => (
     record && typeof record.toObject === 'function' ? record.toObject() : { ...(record || {}) }
 );
 
-const withComputedDelay = (deadline, now = new Date()) => {
+const withComputedDelay = (deadline, now) => {
     const plain = toPlainObject(deadline);
     return {
         ...plain,

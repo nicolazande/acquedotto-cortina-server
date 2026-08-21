@@ -48,6 +48,23 @@ test('withComputedDelay: sovrascrive il valore salvato, che invecchia', () => {
     assert.equal(calcolata.scadenza, '2026-06-01', 'gli altri campi restano invariati');
 });
 
+test('withComputedDelay resta corretta se passata a map', () => {
+    // .map invoca il trasformatore con (elemento, indice, array): il secondo
+    // argomento finiva nel parametro `now`, l'indice veniva letto come una data
+    // del 1970 e il ritardo risultava sempre zero nelle liste.
+    const scadenze = [
+        { scadenza: '2026-06-01', saldo: false },
+        { scadenza: '2026-05-01', saldo: false },
+        { scadenza: '2026-04-01', saldo: false },
+    ];
+
+    const conMap = scadenze.map(withComputedDelay);
+    const uno = scadenze.map((voce) => withComputedDelay(voce));
+
+    assert.deepEqual(conMap.map((v) => v.ritardo), uno.map((v) => v.ritardo));
+    assert.ok(conMap.every((v) => v.ritardo > 0), 'scadenze passate devono avere ritardo positivo');
+});
+
 test('getDueDate: predefinito a 30 giorni dalla data fattura', () => {
     assert.equal(getDueDate('2026-06-15').toISOString(), '2026-07-15T00:00:00.000Z');
 });

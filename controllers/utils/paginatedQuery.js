@@ -128,7 +128,12 @@ const sendPaginated = async (Model, req, res, options = {}) => {
         const records = await (addFields
             ? findWithComputedFields({ Model, addFields, limit, populate, query, skip, sort })
             : findRecords({ Model, limit, populate, query, skip, sort }));
-        const data = transform ? records.map(transform) : records;
+        // Il trasformatore va invocato con il solo record: passandolo direttamente a
+        // .map() riceverebbe anche indice e array, e una funzione con parametri
+        // opzionali li scambierebbe per argomenti veri. E successo con il ritardo
+        // delle scadenze, che risultava sempre zero perche l'indice finiva al posto
+        // della data di riferimento.
+        const data = transform ? records.map((record) => transform(record)) : records;
 
         res.status(200).json({
             data,
