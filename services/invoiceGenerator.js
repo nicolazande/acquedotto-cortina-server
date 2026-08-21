@@ -573,7 +573,7 @@ const createInvoiceFromReadingsInSession = async ({
 
         const readings = await Promise.all(letturaIds.map((id) => loadReading(id, session)));
         if (readings.some((lettura) => !lettura)) {
-            throw createError('Una o piu letture non esistono', 404);
+            throw createError('Una o più letture non esistono', 404);
         }
 
         if (readings.some((lettura) => lettura.fatturata)) {
