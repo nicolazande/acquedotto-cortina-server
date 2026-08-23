@@ -1,0 +1,130 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const { buildInvoiceXml, progressivoInvio } = require('../services/invoiceXml');
+const { siglaProvincia } = require('../utils/province');
+const { naturaPerIva } = require('../config/invoicing');
+
+const cliente = {
+    ragione_sociale: 'Termoidraulica Rossi',
+    partita_iva: '00839940251',
+    codice_fiscale: 'RSSMRA65L31G642I',
+    codice_destinatario: 'TULURSB',
+    indirizzo_residenza: 'Via Roma',
+    numero_residenza: '12',
+    cap_residenza: '32043',
+    localita_residenza: 'Cortina',
+    provincia_residenza: 'Belluno',
+};
+
+const fattura = {
+    anno: 2026, numero: 7, serie: 'A',
+    data_fattura: new Date('2026-06-15T00:00:00.000Z'),
+    totale_fattura: 65.34,
+};
+
+const servizi = [
+    { riga: 1, descrizione: 'Consumo acqua', metri_cubi: 10, prezzo: 0.74, valore_unitario: 7.4, articolo: { codice: 'ACQUA', iva: 'IVA 10%' } },
+    { riga: 2, descrizione: 'Quota fissa', metri_cubi: 1, prezzo: 52, valore_unitario: 52, articolo: { codice: 'ACQUAF', iva: 'IVA 10%' } },
+];
+
+const genera = (override = {}) => buildInvoiceXml({ cliente, fattura, servizi, ...override });
+
+test('produce un documento con la radice del tracciato FatturaPA', () => {
+    const { xml } = genera();
+
+    assert.match(xml, /^<\?xml version="1\.0" encoding="UTF-8"\?>/);
+    assert.match(xml, /<p:FatturaElettronica versione="FPR12"/);
+    assert.match(xml, /xmlns:p="http:\/\/ivaservizi\.agenziaentrate\.gov\.it\/docs\/xsd\/fatture\/v1\.2"/);
+});
+
+test('il nome del file segue la convenzione IT<partitaIVA>_<progressivo>', () => {
+    const { filename } = genera();
+
+    assert.match(filename, /^IT\d{11}_\d+\.xml$/);
+});
+
+test('la provincia viene convertita in sigla', () => {
+    // Il tracciato accetta solo due lettere; l'anagrafica importata ha il nome esteso.
+    const { xml } = genera();
+
+    assert.match(xml, /<Provincia>BL<\/Provincia>/);
+    assert.doesNotMatch(xml, /<Provincia>Belluno<\/Provincia>/);
+});
+
+test('il codice destinatario del cliente finisce nella trasmissione', () => {
+    assert.match(genera().xml, /<CodiceDestinatario>TULURSB<\/CodiceDestinatario>/);
+});
+
+test('senza codice destinatario si usa quello generico', () => {
+    const { xml } = genera({ cliente: { ...cliente, codice_destinatario: '' } });
+
+    assert.match(xml, /<CodiceDestinatario>0000000<\/CodiceDestinatario>/);
+});
+
+test('il riepilogo raggruppa per aliquota e i conti tornano', () => {
+    const { xml } = genera();
+
+    assert.match(xml, /<ImponibileImporto>59\.40<\/ImponibileImporto>/);
+    assert.match(xml, /<Imposta>5\.94<\/Imposta>/);
+    assert.match(xml, /<ImportoTotaleDocumento>65\.34<\/ImportoTotaleDocumento>/);
+});
+
+test('ogni riga porta numero, quantita, prezzo e aliquota', () => {
+    const { xml } = genera();
+
+    assert.match(xml, /<NumeroLinea>1<\/NumeroLinea>/);
+    assert.match(xml, /<Quantita>10\.00<\/Quantita>/);
+    assert.match(xml, /<PrezzoUnitario>0\.74<\/PrezzoUnitario>/);
+    assert.match(xml, /<AliquotaIVA>10\.00<\/AliquotaIVA>/);
+});
+
+test('una riga senza imposta dichiara la natura', () => {
+    const conEsente = [...servizi, {
+        riga: 3, descrizione: 'Mora', metri_cubi: 1, prezzo: 6, valore_unitario: 6,
+        articolo: { codice: 'GG_DELAY', iva: 'Esente art.15' },
+    }];
+    const { xml } = genera({ servizi: conEsente });
+
+    assert.match(xml, /<Natura>N1<\/Natura>/);
+    assert.match(xml, /<RiferimentoNormativo>/);
+});
+
+test('una riga a zero senza natura nota blocca l emissione', () => {
+    // Meglio non emettere che emettere un documento che il Sistema di
+    // Interscambio scarterebbe, o peggio accetterebbe con la natura sbagliata.
+    const ignota = [{ riga: 1, descrizione: 'Voce', valore_unitario: 10, articolo: { codice: 'X', iva: 'Regime speciale' } }];
+
+    assert.throws(() => genera({ servizi: ignota }), /nessuna natura corrispondente/);
+});
+
+test('un cliente senza partita IVA ne codice fiscale blocca l emissione', () => {
+    const anonimo = { ragione_sociale: 'Senza dati' };
+
+    assert.throws(() => genera({ cliente: anonimo }), /partita IVA ne codice fiscale/);
+});
+
+test('una fattura senza righe blocca l emissione', () => {
+    assert.throws(() => genera({ servizi: [] }), /non ha righe/);
+});
+
+test('il progressivo di invio e stabile per la stessa fattura', () => {
+    assert.equal(progressivoInvio(fattura), progressivoInvio(fattura));
+    assert.notEqual(progressivoInvio(fattura), progressivoInvio({ ...fattura, numero: 8 }));
+});
+
+test('le nature note sono quelle configurate', () => {
+    assert.equal(naturaPerIva('Esente art.15'), 'N1');
+    assert.equal(naturaPerIva('Codice iva Art.26 DPR 633/72 Comma 3'), 'N2.2');
+    assert.equal(naturaPerIva('NI90'), 'N3.5');
+    assert.equal(naturaPerIva('IVA 10%'), null);
+});
+
+test('siglaProvincia riconosce nomi, sigle e valori non applicabili', () => {
+    assert.equal(siglaProvincia('Belluno'), 'BL');
+    assert.equal(siglaProvincia('Monza e della Brianza'), 'MB');
+    assert.equal(siglaProvincia('VE'), 'VE');
+    assert.equal(siglaProvincia('- Nessuna -'), null);
+    assert.equal(siglaProvincia('Stato Estero'), null);
+    assert.equal(siglaProvincia(''), null);
+});

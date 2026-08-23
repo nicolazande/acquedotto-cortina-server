@@ -33,6 +33,7 @@ const { withComputedDelay } = require('../services/deadlineService');
 const { getInvoiceControlDashboard } = require('../services/invoiceControlService');
 const { deleteInvoice } = require('../services/invoiceDeletionService');
 const { generateInvoicePdf } = require('../services/invoicePdf');
+const { buildInvoiceXml } = require('../services/invoiceXml');
 const { fatturaViews } = require('../config/listViews');
 
 const invoiceStatus = (confermata) => (parseOptionalBoolean(confermata) ? 'confermata' : 'bozza');
@@ -150,6 +151,30 @@ const applyFixedCharge = async (req, res) => {
     }
 };
 
+// Fattura elettronica in formato XML. La trasmissione allo SdI resta fuori: il
+// file e identico in ogni scenario di invio, cambia solo chi lo inoltra.
+const downloadXml = async (req, res) => {
+    try {
+        const fattura = await Fattura.findById(req.params.id).populate('cliente').lean();
+        if (!fattura) {
+            return res.status(404).json({ error: 'Fattura not found' });
+        }
+
+        const servizi = await Servizio.find({ fattura: fattura._id })
+            .populate('articolo')
+            .sort({ riga: 1 })
+            .lean();
+
+        const { filename, xml } = buildInvoiceXml({ cliente: fattura.cliente, fattura, servizi });
+
+        res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        return res.status(200).send(xml);
+    } catch (error) {
+        return sendServiceError(res, error, 'Error generating fattura XML');
+    }
+};
+
 const downloadPdf = async (req, res) => {
     try {
         const { buffer, filename } = await generateInvoicePdf(req.params.id);
@@ -262,6 +287,7 @@ module.exports = {
     getFattura: getRecord(Fattura, { name: 'Fattura', populate: 'cliente scadenza' }),
     verifyCalcolo,
     downloadPdf,
+    downloadXml,
     updateFattura,
     deleteFattura,
     getAuditLog,

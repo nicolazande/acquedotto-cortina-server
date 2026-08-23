@@ -167,6 +167,44 @@ Con la serie dedicata:
 I numeri non vengono mai riusati: una generazione fallita lascia un buco nella
 numerazione, ed e voluto.
 
+## Fattura elettronica (XML)
+
+`GET /api/fatture/:id/xml` produce il file nel tracciato **FatturaPA 1.2**
+(`services/invoiceXml.js`), scaricabile anche dal pulsante **XML** nella scheda
+della fattura.
+
+> **Il gestionale non trasmette nulla.** Genera soltanto il file. L'invio al
+> Sistema di Interscambio - portale dell'Agenzia, commercialista o intermediario
+> accreditato - resta un passaggio separato, perche il file e identico in tutti e
+> tre gli scenari.
+
+Sui dati attuali **3.351 fatture su 3.472 (97%)** sono emettibili. Le 121 che non
+lo sono coincidono esattamente con quelle prive di cliente collegato: non e un
+problema di dati fiscali.
+
+### Scelte che vanno confermate da chi tiene la contabilita
+
+Il tracciato obbliga a dichiarare alcune cose che il gestionale non puo dedurre.
+Sono raccolte in `config/invoicing.js`, non sparse nel codice, e vanno riviste:
+
+| Voce | Valore attuale | Nota |
+|------|----------------|------|
+| `RegimeFiscale` | `RF01` (ordinario) | `INVOICE_TAX_REGIME` |
+| Natura per *Esente art.15* | `N1` | righe della mora |
+| Natura per *Art.26 DPR 633/72* | `N2.2` | rimborsi |
+| Natura per *NI90* | `N3.5` | |
+
+Una riga senza imposta e senza natura corrispondente **blocca l'emissione**: e
+voluto. Un documento formalmente valido ma con la natura sbagliata e peggio di
+uno non emesso, perche viene accettato e resta errato.
+
+### Conversioni applicate
+
+- La **provincia** passa dal nome esteso alla sigla di due lettere
+  (`utils/province.js`): l'anagrafica importata contiene "Belluno", il tracciato
+  vuole "BL".
+- Gli **accenti** vengono rimossi dai campi liberi, come richiede il tracciato.
+
 ## Modifica di una fattura confermata
 
 Una fattura confermata e protetta: modifiche, cancellazione e righe servizio

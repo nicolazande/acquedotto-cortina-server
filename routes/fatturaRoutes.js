@@ -11,6 +11,7 @@ router.get('/:id/verifica-calcolo', FatturaController.verifyCalcolo);
 router.get('/:id/audit', FatturaController.getAuditLog);
 router.post('/:id/quota-fissa', FatturaController.applyFixedCharge);
 router.get('/:id/pdf', FatturaController.downloadPdf);
+router.get('/:id/xml', FatturaController.downloadXml);
 router.get('/:id', FatturaController.getFattura);
 router.put('/:id', FatturaController.updateFattura);
 router.delete('/:id', FatturaController.deleteFattura);
