@@ -55,12 +55,17 @@ va aggiunta qui, non ricopiata.
 | `deadlineService.js`        | scadenze, calcolo del ritardo in JavaScript e in aggregazione MongoDB |
 | `invoiceControlService.js`  | cruscotto anomalie su piu fatture                                 |
 | `invoicePdf.js`             | generatore PDF scritto a mano, senza dipendenze esterne           |
+| `invoiceXml.js`             | fattura elettronica nel tracciato FatturaPA 1.2                   |
+| `deliveryPlan.js`           | **puro, senza database**: dove deve andare una fattura e cosa lo blocca |
+| `deliveryService.js`        | la coda delle consegne: pianifica, elabora, registra l'esito      |
+| `mailer.js`                 | l'unico punto in cui un messaggio esce davvero                    |
+| `dashboardService.js`       | i numeri della panoramica                                         |
 | `invoiceAuditService.js` / `auditLogService.js` | tracciamento delle modifiche      |
 | `transaction.js`            | transazione quando il database la supporta, fallback quando no    |
-| `invoiceDeletionService.js` | cancellazione completa: righe, scadenza e sblocco delle letture   |
 
-`billingCalculator.js` non conosce Mongoose: si testa passando oggetti semplici.
-Tutto cio che tocca il database sta in `invoiceGenerator.js`.
+`billingCalculator.js` e `deliveryPlan.js` non conoscono Mongoose: si testano
+passando oggetti semplici. Tutto cio che tocca il database sta rispettivamente in
+`invoiceGenerator.js` e `deliveryService.js`.
 
 ### `controllers/utils/` — i CRUD non si scrivono a mano
 
@@ -86,13 +91,16 @@ Gli indici sono dichiarati nello schema e creati all'avvio. Quelli che contano:
   `{ fatturata, data_lettura }` per le anteprime;
 - `Servizio`: `{ fattura, riga }` e `{ lettura, fattura }`;
 - `Fattura`: `{ anno, numero }`, `{ cliente, data_fattura }`, `{ scadenza }`;
-- `Contatore`: `cliente`, `edificio`, `listino`.
+- `Contatore`: `cliente`, `edificio`, `listino`;
+- `Consegna`: `{ fattura, tipo }` unico, perche una fattura ha al massimo una
+  consegna per tipo, e `{ stato, automatica }` per la coda.
 
 ## Test
 
 I test unitari stanno in `tests/` e usano il runner integrato di Node
 (`node --test`), senza dipendenze aggiuntive. Coprono il calcolatore di
-fatturazione, l'aritmetica in centesimi, le scadenze e le funzioni condivise.
+fatturazione, l'aritmetica in centesimi, le scadenze, le regole di consegna e le
+funzioni condivise.
 
 `scripts/smoke-api.js` e invece un test end-to-end contro un server avviato:
 crea i propri dati, verifica il percorso completo e ripulisce tutto. Funziona

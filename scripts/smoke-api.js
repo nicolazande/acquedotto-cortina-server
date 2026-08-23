@@ -543,6 +543,90 @@ const testInvoiceDeletionCascade = async () => {
     }
 };
 
+// La catena della consegna, dal recapito scritto in anagrafica alla riga in
+// coda. Il messaggio non parte davvero: senza server di posta configurato la
+// consegna viene registrata come simulata, ed e proprio quello che si verifica.
+const testInvoiceDelivery = async () => {
+    if (skipMutation) {
+        console.log('skipped');
+        return;
+    }
+
+    const createdRecords = [];
+
+    try {
+        const cliente = await createTrackedRecord(createdRecords, 'clienti', {
+            nome: 'Smoke',
+            cognome: 'Consegna',
+            ragione_sociale: 'Smoke Consegna',
+            stampa_cortesia: 'email',
+            email: 'smoke@esempio.it',
+        });
+        assert(cliente.stampa_cortesia === 'email', 'delivery mode should be stored normalised');
+
+        const fattura = await createRecord('fatture', {
+            cliente: cliente._id,
+            data_fattura: OGGI,
+            tipo_documento: 'Fattura',
+            imponibile: 10,
+            iva: 1,
+            totale_fattura: 11,
+        });
+        createdRecords.push({ resource: 'scadenze', id: fattura.scadenza });
+
+        const bozza = await request(`/fatture/${fattura._id}/consegne`);
+        assert(bozza.body.pronta === false, 'a draft invoice should not be deliverable');
+
+        await request(`/fatture/${fattura._id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confermata: true }),
+        });
+
+        const piano = await request(`/fatture/${fattura._id}/consegne`);
+        const cortesia = piano.body.consegne.find((consegna) => consegna.tipo === 'cortesia');
+        assert(cortesia?.canale === 'email', 'courtesy copy should follow the customer delivery mode');
+        assert(cortesia.destinatario === 'smoke@esempio.it', 'courtesy copy should use the customer email');
+        assert(cortesia.automatico === true, 'an email delivery should be automatic');
+
+        const pianificate = await request('/consegne/pianifica', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fatture: [fattura._id] }),
+        });
+        assert(pianificate.body.create === 1, 'planning should queue exactly one delivery');
+
+        const elaborate = await request('/consegne/elabora', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fatture: [fattura._id] }),
+        });
+        assert(elaborate.body.elaborate === 1, 'the queued delivery was not processed');
+        assert(elaborate.body.errori === 0, `delivery failed: ${elaborate.body.esiti[0]?.motivo}`);
+
+        const dopo = await request(`/fatture/${fattura._id}/consegne`);
+        const registrata = dopo.body.registrate.find((consegna) => consegna.tipo === 'cortesia');
+        assert(registrata.stato === 'inviata', 'the delivery should be marked as sent');
+        assert(registrata.allegati.some((nome) => nome.endsWith('.pdf')), 'the invoice PDF should be attached');
+
+        // Una consegna simulata non e uscita: scrivere la data di invio sulla
+        // fattura direbbe il falso.
+        const documento = await request(`/fatture/${fattura._id}`);
+        if (registrata.simulata) {
+            assert(!documento.body.data_invio_fattura, 'a simulated delivery must not date the invoice');
+        }
+
+        const cancellata = await request(`/fatture/${fattura._id}?sbloccoConfermato=true`, { method: 'DELETE' });
+        assert(cancellata.response.status === 204, 'the confirmed invoice was not deleted');
+
+        const orfane = await request('/consegne?page=1&limit=200&vista=inviate');
+        const rimaste = orfane.body.data.filter((consegna) => consegna.fattura === fattura._id);
+        assert(rimaste.length === 0, 'deleting an invoice must remove its deliveries');
+    } finally {
+        await deleteCreatedRecords(createdRecords);
+    }
+};
+
 const main = async () => {
     console.log(`Smoke API target: ${apiUrl}`);
     await step('health endpoint', testHealth);
@@ -551,6 +635,7 @@ const main = async () => {
     await step('relation references create/read/delete', testRelationReferences);
     await step('billing preview/generation/verification', testBillingGeneration);
     await step('invoice deletion cascade', testInvoiceDeletionCascade);
+    await step('invoice delivery queue', testInvoiceDelivery);
     await step('note attachments create/list/file/delete', testAttachments);
     console.log('Smoke API completed successfully.');
 };

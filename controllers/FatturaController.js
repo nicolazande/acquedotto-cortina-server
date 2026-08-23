@@ -222,6 +222,7 @@ const deleteFattura = async (req, res) => {
                 serviziCancellati: result.serviziCancellati,
                 letturaSbloccate: result.letturaSbloccate,
                 scadenzaCancellata: result.scadenzaCancellata,
+                consegneCancellate: result.consegneCancellate || undefined,
                 documentoEmesso: result.eraConfermata || undefined,
             },
         });

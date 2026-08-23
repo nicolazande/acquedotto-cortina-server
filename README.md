@@ -8,6 +8,7 @@ Backend Express/Mongoose per il gestionale Acquedotto Zuel.
 |-----------|-----------|
 | [docs/architettura.md](docs/architettura.md) | livelli, moduli e percorso di una richiesta |
 | [docs/fatturazione.md](docs/fatturazione.md) | come si calcola una fattura, scaglione per scaglione |
+| [docs/consegne.md](docs/consegne.md) | dove va a finire una fattura: copia di cortesia e fattura elettronica |
 | [docs/api.md](docs/api.md) | tutti gli endpoint, i parametri e i codici di stato |
 | [docs/manutenzione.md](docs/manutenzione.md) | backup, controlli periodici, problemi noti |
 

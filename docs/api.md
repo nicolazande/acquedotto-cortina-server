@@ -82,6 +82,18 @@ GET    /api/clienti/:id/contatori                           getContatoriAssociat
 GET    /api/clienti/:id/fatture                             getFattureAssociate
 ```
 
+### /api/consegne
+```text
+GET    /api/consegne                                        getConsegne
+GET    /api/consegne/riepilogo                              getRiepilogo
+POST   /api/consegne/pianifica                              pianifica
+POST   /api/consegne/elabora                                elabora
+POST   /api/consegne/prova-trasporto                        provaTrasporto
+POST   /api/consegne/:id/evasa                              segnaConsegnata
+POST   /api/consegne/:id/coda                               rimettiInCoda
+POST   /api/consegne/:id/annulla                            annulla
+```
+
 ### /api/contatori
 ```text
 POST   /api/contatori                                       createContatore
@@ -138,6 +150,8 @@ GET    /api/fatture/:id/verifica-calcolo                    verifyCalcolo
 GET    /api/fatture/:id/audit                               getAuditLog
 POST   /api/fatture/:id/quota-fissa                         applyFixedCharge
 GET    /api/fatture/:id/pdf                                 downloadPdf
+GET    /api/fatture/:id/xml                                 downloadXml
+GET    /api/fatture/:id/consegne                            getAnteprima
 GET    /api/fatture/:id                                     getFattura
 PUT    /api/fatture/:id                                     updateFattura
 DELETE /api/fatture/:id                                     deleteFattura
@@ -220,6 +234,29 @@ clienti non consumano questo limite e si creano da `/api/clienti/:id/portal-user
 - `POST /:id/quota-fissa` — aggiunge la quota fissa se applicabile.
 - `DELETE /:id` — cancella la fattura **con le sue righe servizio e la scadenza**,
   e rimette le letture collegate fra quelle fatturabili. Bloccato sulle fatture confermate.
+
+### `/api/consegne`
+
+Le consegne dicono dove deve andare una fattura e cosa e gia partito. Una fattura
+ne ha al massimo due: la **copia di cortesia** (il canale scelto sul cliente) e la
+**fattura elettronica** (il canale dedotto da codice destinatario e PEC).
+
+```text
+POST /api/consegne/pianifica   { fatture: [id], anno, limite }
+POST /api/consegne/elabora     { fatture: [id], tipo, limite }
+```
+
+`pianifica` mette in coda le fatture confermate che non hanno ancora una consegna
+e non recapita nulla. `elabora` percorre la coda e recapita le consegne
+**automatiche** (email e PEC); i canali manuali restano in elenco finche qualcuno
+non li chiude con `POST /api/consegne/:id/evasa`.
+
+Senza un server di posta configurato l'elaborazione non fallisce: registra le
+consegne come **simulate**, senza spedire nulla e senza datare la fattura.
+`GET /api/consegne/riepilogo` riporta lo stato del trasporto in `trasporto`.
+
+Viste disponibili con `?vista=`: `in-coda`, `da-stampare`, `automatiche`,
+`errori`, `inviate`, `elettroniche`.
 
 ### `/api/portale-cliente`
 Richiede ruolo `cliente`. Restituisce solo i dati dell'anagrafica collegata

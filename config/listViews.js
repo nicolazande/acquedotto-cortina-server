@@ -4,6 +4,8 @@
 // interrogazioni arbitrarie, e perche restino verificabili con i test.
 
 const { NON_SALDATA, SALDATA } = require('../services/deadlineService');
+const { ALIAS_MODALITA, MODALITA_CONSEGNA, MODALITA_PREDEFINITA } = require('./delivery');
+const { escapeRegex } = require('../utils/values');
 
 // Il flag puo mancare del tutto sui record importati dal gestionale precedente.
 const nonImpostato = (campo) => ({ $or: [{ [campo]: false }, { [campo]: { $exists: false } }] });
@@ -32,14 +34,47 @@ const contatoreViews = {
     condominiali: () => ({ tipo_contatore: /condominiale/i }),
 };
 
+// La modalita di consegna era un campo di testo libero: i dati importati dicono
+// "Cartacea Postale", non "postale". La vista accetta quindi tutte le scritture
+// riconosciute per quella modalita, cosi funziona anche sulle anagrafiche non
+// ancora normalizzate.
+const scrittureDi = (modalita) => [
+    modalita,
+    ...Object.entries(ALIAS_MODALITA).filter(([, valore]) => valore === modalita).map(([alias]) => alias),
+];
+
+const filtroModalita = (modalita) => {
+    const alternative = { stampa_cortesia: { $regex: `^(${scrittureDi(modalita).map(escapeRegex).join('|')})$`, $options: 'i' } };
+
+    // La modalita predefinita vale anche per chi non ha mai avuto il campo compilato.
+    return modalita === MODALITA_PREDEFINITA
+        ? { $or: [alternative, { stampa_cortesia: { $in: [null, ''] } }, { stampa_cortesia: { $exists: false } }] }
+        : alternative;
+};
+
 const clienteViews = {
     soci: () => ({ socio: true }),
     'con-email': () => ({ email: { $nin: [null, ''] } }),
     'fatturazione-elettronica': () => ({ fattura_elettronica: true }),
+    ...Object.fromEntries(MODALITA_CONSEGNA.map(({ value }) => [
+        `consegna-${value}`,
+        () => filtroModalita(value),
+    ])),
+};
+
+const consegnaViews = {
+    'in-coda': () => ({ stato: 'in_coda' }),
+    // Il lavoro d'ufficio: le fatture da stampare e imbustare o tenere pronte.
+    'da-stampare': () => ({ stato: 'in_coda', canale: { $in: ['postale', 'sportello'] } }),
+    automatiche: () => ({ stato: 'in_coda', automatica: true }),
+    errori: () => ({ stato: 'errore' }),
+    inviate: () => ({ stato: 'inviata' }),
+    elettroniche: () => ({ tipo: 'elettronica' }),
 };
 
 module.exports = {
     clienteViews,
+    consegnaViews,
     contatoreViews,
     fatturaViews,
     letturaViews,

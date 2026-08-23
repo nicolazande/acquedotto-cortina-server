@@ -24,6 +24,9 @@ DEFAULT_COLLECTIONS = [
     "scadenze",
     "servizi",
     "note_attachments",
+    # Le consegne riferiscono le fatture per _id: vanno allineate insieme a
+    # loro, altrimenti la coda di una delle due basi punta a documenti assenti.
+    "consegne",
 ]
 
 

@@ -173,10 +173,11 @@ numerazione, ed e voluto.
 (`services/invoiceXml.js`), scaricabile anche dal pulsante **XML** nella scheda
 della fattura.
 
-> **Il gestionale non trasmette nulla.** Genera soltanto il file. L'invio al
-> Sistema di Interscambio - portale dell'Agenzia, commercialista o intermediario
-> accreditato - resta un passaggio separato, perche il file e identico in tutti e
-> tre gli scenari.
+> **Oggi il gestionale non trasmette nulla.** Genera il file e lo mette in coda
+> fra le consegne. L'inoltro al Sistema di Interscambio passa da un intermediario
+> - commercialista o portale dell'Agenzia - perche il file e identico in ogni
+> scenario. La catena per trasmettere da soli esiste gia ed e configurabile:
+> vedi [Come esce una fattura](consegne.md).
 
 Sui dati attuali **3.351 fatture su 3.472 (97%)** sono emettibili. Le 121 che non
 lo sono coincidono esattamente con quelle prive di cliente collegato: non e un
@@ -249,3 +250,10 @@ GET  /api/fatture/generazione/anteprima  clienti e letture pronti per la fattura
 `verifica-calcolo` e il punto di partenza quando un totale non torna: mostra
 `deltaLetture` (righe salvate contro ricalcolo), `deltaFattura` (testata contro
 somma righe) e le righe che il listino attuale genererebbe ma che non sono presenti.
+
+## Consegna al cliente
+
+Confermare una fattura non la fa uscire. Dove va a finire, chi la riceve e cosa e
+gia partito sono descritti in [Come esce una fattura](consegne.md): la copia di
+cortesia segue la modalita scelta sul cliente, la fattura elettronica il canale
+dedotto da codice destinatario e PEC.

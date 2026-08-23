@@ -1,4 +1,5 @@
 const Cliente = require('../models/Cliente');
+const Consegna = require('../models/Consegna');
 const Contatore = require('../models/Contatore');
 const Fattura = require('../models/Fattura');
 const Lettura = require('../models/Lettura');
@@ -90,6 +91,7 @@ const getDashboard = async () => {
         contatoriAttivi,
         fasce,
         daSollecitare,
+        consegne,
         attivita,
     ] = await Promise.all([
         Lettura.countDocuments(LETTURE_DA_FATTURARE),
@@ -142,6 +144,12 @@ const getDashboard = async () => {
                 },
             },
         ]),
+        // Le fatture ancora da recapitare, divise fra quelle che partono da sole
+        // e quelle che aspettano una persona (stampa, sportello).
+        Consegna.aggregate([
+            { $match: { stato: { $in: ['in_coda', 'errore'] } } },
+            { $group: { _id: { stato: '$stato', automatica: '$automatica' }, quante: { $sum: 1 } } },
+        ]),
         // Le ultime modifiche registrate: rende visibile chi ha toccato cosa.
         AuditLog.find({})
             .sort({ createdAt: -1 })
@@ -149,6 +157,10 @@ const getDashboard = async () => {
             .select('action summary actorUsername createdAt entityType entityId')
             .lean(),
     ]);
+
+    const consegneCon = (filtro) => consegne
+        .filter(filtro)
+        .reduce((totale, riga) => totale + riga.quante, 0);
 
     const rigaAperte = primaRiga(aperte);
     const rigaScadute = primaRiga(scadute);
@@ -167,6 +179,11 @@ const getDashboard = async () => {
         anagrafiche: { clienti, contatoriAttivi },
         scaduto: { fasce: perFascia(fasce) },
         daSollecitare,
+        consegne: {
+            automatiche: consegneCon((riga) => riga._id.stato === 'in_coda' && riga._id.automatica === true),
+            daStampare: consegneCon((riga) => riga._id.stato === 'in_coda' && riga._id.automatica !== true),
+            errori: consegneCon((riga) => riga._id.stato === 'errore'),
+        },
         attivita,
     };
 };

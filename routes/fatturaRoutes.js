@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const FatturaController = require('../controllers/FatturaController');
+const ConsegnaController = require('../controllers/ConsegnaController');
 
 router.post('/', FatturaController.createFattura);
 router.post('/genera-da-letture', FatturaController.generateFromReadings);
@@ -12,6 +13,7 @@ router.get('/:id/audit', FatturaController.getAuditLog);
 router.post('/:id/quota-fissa', FatturaController.applyFixedCharge);
 router.get('/:id/pdf', FatturaController.downloadPdf);
 router.get('/:id/xml', FatturaController.downloadXml);
+router.get('/:id/consegne', ConsegnaController.getAnteprima);
 router.get('/:id', FatturaController.getFattura);
 router.put('/:id', FatturaController.updateFattura);
 router.delete('/:id', FatturaController.deleteFattura);

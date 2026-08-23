@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
     clienteViews,
+    consegnaViews,
     contatoreViews,
     fatturaViews,
     letturaViews,
@@ -11,7 +12,14 @@ const {
 const { combineFilters, getViewFilter } = require('../controllers/utils/paginatedQuery');
 
 test('le viste sono funzioni che producono un filtro', () => {
-    const tutte = { ...clienteViews, ...contatoreViews, ...fatturaViews, ...letturaViews, ...scadenzaViews };
+    const tutte = {
+        ...clienteViews,
+        ...consegnaViews,
+        ...contatoreViews,
+        ...fatturaViews,
+        ...letturaViews,
+        ...scadenzaViews,
+    };
 
     Object.entries(tutte).forEach(([nome, vista]) => {
         assert.equal(typeof vista, 'function', `${nome} deve essere una funzione`);
@@ -89,4 +97,35 @@ test('combineFilters: ricerca e vista restano condizioni separate', () => {
     const combinato = combineFilters(ricerca, vista);
 
     assert.deepEqual(combinato, { $and: [ricerca, vista] });
+});
+
+test('clienti: la vista per modalita riconosce anche la scrittura importata', () => {
+    // In anagrafica c'e scritto "Cartacea Postale", non "postale": la vista
+    // deve funzionare anche prima che i dati siano normalizzati.
+    const filtro = clienteViews['consegna-postale']();
+    const espressione = filtro.$or[0].stampa_cortesia.$regex;
+
+    assert.ok(new RegExp(espressione, 'i').test('Cartacea Postale'));
+    assert.ok(new RegExp(espressione, 'i').test('postale'));
+    // La modalita predefinita vale anche per chi non ha mai avuto il campo.
+    assert.deepEqual(filtro.$or[2], { stampa_cortesia: { $exists: false } });
+});
+
+test('clienti: le modalita diverse da quella predefinita non catturano i campi vuoti', () => {
+    const filtro = clienteViews['consegna-email']();
+
+    assert.equal(filtro.$or, undefined);
+    assert.ok(new RegExp(filtro.stampa_cortesia.$regex, 'i').test('E-Mail'));
+    assert.equal(new RegExp(filtro.stampa_cortesia.$regex, 'i').test(''), false);
+});
+
+test('consegne: da stampare e il lavoro che resta a una persona', () => {
+    assert.deepEqual(consegnaViews['da-stampare'](), {
+        stato: 'in_coda',
+        canale: { $in: ['postale', 'sportello'] },
+    });
+});
+
+test('consegne: le automatiche sono solo quelle ancora in coda', () => {
+    assert.deepEqual(consegnaViews.automatiche(), { stato: 'in_coda', automatica: true });
 });

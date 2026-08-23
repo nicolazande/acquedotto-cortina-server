@@ -1,3 +1,4 @@
+const Consegna = require('../models/Consegna');
 const Fattura = require('../models/Fattura');
 const Lettura = require('../models/Lettura');
 const Scadenza = require('../models/Scadenza');
@@ -11,7 +12,9 @@ const { recordId, uniqueById, withSession } = require('../utils/mongo');
 // - righe servizio orfane, che puntavano a una fattura inesistente e che
 //   l'API non riusciva piu a cancellare (il controllo del blocco andava in 404);
 // - letture marcate "fatturata" per sempre, quindi non piu rifatturabili;
-// - la scadenza generata insieme alla fattura, rimasta senza documento.
+// - la scadenza generata insieme alla fattura, rimasta senza documento;
+// - le consegne in coda per un documento che non esiste piu, che avrebbero
+//   continuato a comparire fra le fatture da recapitare.
 // Qui la cancellazione diventa un'operazione unica e completa.
 const collectReadingIds = (fattura, servizi) => uniqueById([
     ...(fattura.letture || []),
@@ -68,6 +71,9 @@ const deleteInvoiceInSession = async (fatturaId, session, unlock) => {
         }
     }
 
+    // Le consegne appartengono al documento: senza di lui non hanno significato.
+    const consegne = await withSession(Consegna.deleteMany({ fattura: fatturaId }), session);
+
     await withSession(Fattura.deleteOne({ _id: fatturaId }), session);
 
     return {
@@ -76,6 +82,7 @@ const deleteInvoiceInSession = async (fatturaId, session, unlock) => {
         serviziCancellati: servizi.length,
         letturaSbloccate,
         scadenzaCancellata,
+        consegneCancellate: consegne.deletedCount || 0,
     };
 };
 

@@ -1,5 +1,14 @@
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
+const { MODALITA_PREDEFINITA, normalizzaModalita } = require('../config/delivery');
+
+// La modalita di consegna era un campo libero: nei dati importati vale
+// "Cartacea Postale" su tutti i clienti. Normalizzarla in scrittura fa si che
+// da qui in avanti esistano solo i valori dichiarati in config/delivery.js,
+// senza dover ripulire lo storico prima di poterla usare.
+const normalizzaCortesia = (valore) => (
+    valore === undefined || valore === null ? valore : normalizzaModalita(valore)
+);
 
 const clienteSchema = new Schema(
     {
@@ -28,7 +37,7 @@ const clienteSchema = new Schema(
         nazione_fatturazione: String,
         codice_fiscale: String,
         partita_iva: String,
-        stampa_cortesia: String,
+        stampa_cortesia: { type: String, set: normalizzaCortesia, default: MODALITA_PREDEFINITA },
         telefono: String,
         cellulare: String,
         cellulare2: String,
