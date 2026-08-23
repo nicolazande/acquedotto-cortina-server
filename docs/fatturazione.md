@@ -83,12 +83,34 @@ il consumo; se nessuna corrisponde si usa la prima.
 ## Contatori condominiali
 
 Un contatore e considerato "a riparto condominiale" quando il tipo contiene
-"condominiale" insieme a "utenze private", "virtuale" o "ripartit", oppure quando
-la quota `consumo` del contatore e diversa da 100.
+"condominiale" **e** almeno una fra: "utenze private", "virtuale", "ripartit", o
+una quota `consumo` maggiore di zero e diversa da 100. Vale anche quando
+l'attivita e "utenza condominiale" e il tipo contiene "ripartit".
+
+La quota da sola non basta, ed e voluto: 140 contatori hanno `consumo: 0` e 915
+non ce l'hanno affatto: interpretarli come ripartiti bloccherebbe la
+fatturazione di quasi tutto l'acquedotto. Sui dati attuali la regola seleziona
+**6 contatori**.
 
 Queste letture **non** vengono fatturate automaticamente: la generazione si ferma
 con un errore 422, perche il riparto va calcolato sul contatore condominiale.
 I contatori ripartiti usano gli articoli `COND` e `CONDF` invece di `ACQUA` e `ACQUAF`.
+
+### Come lo faceva il gestionale precedente
+
+Il contatore condominiale legge il totale, e il consumo viene attribuito in
+percentuale ai contatori privati collegati. Ogni lettura del condominiale
+produce, per ciascuna utenza, una riga di consumo e una di quota fissa,
+entrambe ridotte alla sua percentuale:
+
+```text
+Spesa Acqua cont. condominiale. Su Seriale:07496473 Perc. 33   mc 14,3319   4,729527
+Spesa Acqua cont. condominiale. Su Seriale:07496473 Perc. 33   mc  0,3333  11,665500
+```
+
+Nei dati c'e un solo condominio reale, tre utenze al 33,33 / 33,34 / 33,33 su un
+contatore ripartito, piu un contatore "virtuale" senza letture. Oggi il riparto
+si fa a mano.
 
 ## Mora per ritardato pagamento
 
