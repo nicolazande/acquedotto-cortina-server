@@ -24,6 +24,17 @@ const describe = (audit, record) => (
     audit?.label ? audit.label(record) : String(record?._id || '')
 );
 
+// Due modi di rispondere a un errore, e la differenza conta.
+//
+// `sendError` e per i CRUD generati: il messaggio dell'errore non viene mai
+// mostrato al client a meno che l'errore non porti con se uno status, cioe a
+// meno che non sia un errore scritto da noi (utils/errors.js). Cosi un errore
+// del driver o di Mongoose non finisce nell'interfaccia con dentro nomi di
+// campi, indici o frammenti di query.
+//
+// `sendServiceError` e per i gestori scritti a mano attorno ai servizi, dove il
+// messaggio e in italiano ed e esattamente cio che l'utente deve leggere
+// ("Il listino X copre 120 mc su 135 mc").
 const sendError = (res, error, fallbackMessage, fallbackStatus = 500) => {
     console.error(error);
     res.status(error.status || fallbackStatus).json({

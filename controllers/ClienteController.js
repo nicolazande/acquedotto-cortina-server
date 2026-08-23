@@ -12,7 +12,7 @@ const {
     sendServiceError,
     updateRecord,
 } = require('./utils/controllerActions');
-const { parseOptionalBoolean } = require('./utils/requestOptions');
+const { invoiceGenerationOptions, parseOptionalBoolean } = require('./utils/requestOptions');
 const {
     createInvoiceFromReadings,
     previewClienteBilling,
@@ -74,14 +74,7 @@ const generateFattura = async (req, res) => {
                 .filter((item) => !item.error && item.lines?.length)
                 .map((item) => item.lettura._id);
 
-        const result = await createInvoiceFromReadings({
-            letture,
-            data_fattura: req.body.data_fattura,
-            data_scadenza: req.body.data_scadenza,
-            includeFixedCharge: parseOptionalBoolean(req.body.includeFixedCharge),
-            tipo_documento: req.body.tipo_documento,
-            confermata: req.body.confermata,
-        });
+        const result = await createInvoiceFromReadings({ letture, ...invoiceGenerationOptions(req.body) });
 
         await writeAuditLog({
             action: 'fattura.generata',

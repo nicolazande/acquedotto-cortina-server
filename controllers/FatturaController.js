@@ -10,7 +10,7 @@ const {
     getRecord,
     sendServiceError,
 } = require('./utils/controllerActions');
-const { parseOptionalBoolean } = require('./utils/requestOptions');
+const { invoiceGenerationOptions, parseOptionalBoolean } = require('./utils/requestOptions');
 const {
     applyFixedChargeToInvoice,
     createManualInvoice,
@@ -79,11 +79,7 @@ const generateFromReadings = async (req, res) => {
     try {
         const result = await createInvoiceFromReadings({
             letture: req.body.letture || req.body.letturaIds,
-            data_fattura: req.body.data_fattura,
-            data_scadenza: req.body.data_scadenza,
-            includeFixedCharge: parseOptionalBoolean(req.body.includeFixedCharge),
-            tipo_documento: req.body.tipo_documento,
-            confermata: req.body.confermata,
+            ...invoiceGenerationOptions(req.body),
         });
 
         await writeInvoiceAudit(req, result.fattura, 'fattura.generata', `Generata ${invoiceLabel(result.fattura)}`, {

@@ -3,6 +3,7 @@
 //
 // E un rapporto, non un test: stampa cio che trova e non fa fallire nulla.
 const { runScript } = require('./utils/runScript');
+const { callController, withSilencedErrors } = require('./utils/callController');
 const assert = require('assert');
 const AuditLog = require('../models/AuditLog');
 const Cliente = require('../models/Cliente');
@@ -10,32 +11,6 @@ const Fattura = require('../models/Fattura');
 const Servizio = require('../models/Servizio');
 const FatturaController = require('../controllers/FatturaController');
 const ServizioController = require('../controllers/ServizioController');
-
-const callController = (handler, { body = {}, params = {}, query = {} } = {}) => new Promise((resolve) => {
-    const res = {
-        statusCode: 200,
-        status(code) {
-            this.statusCode = code;
-            return this;
-        },
-        json(payload) {
-            resolve({ body: payload, status: this.statusCode });
-        },
-    };
-
-    handler({ body, params, query, user: { username: 'verify-script', role: 'admin' } }, res);
-});
-
-const withSilencedErrors = async (action) => {
-    const originalError = console.error;
-    console.error = () => {};
-
-    try {
-        return await action();
-    } finally {
-        console.error = originalError;
-    }
-};
 
 const main = async () => {
 

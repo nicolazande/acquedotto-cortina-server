@@ -2,36 +2,11 @@
 //
 // E un rapporto, non un test: stampa cio che trova e non fa fallire nulla.
 const { runScript } = require('./utils/runScript');
+const { callController, withSilencedErrors } = require('./utils/callController');
 const assert = require('assert');
 const Cliente = require('../models/Cliente');
 const User = require('../models/User');
 const ClienteController = require('../controllers/ClienteController');
-
-const callController = (handler, { body = {}, params = {} } = {}) => new Promise((resolve) => {
-    const res = {
-        statusCode: 200,
-        status(code) {
-            this.statusCode = code;
-            return this;
-        },
-        json(payload) {
-            resolve({ body: payload, status: this.statusCode });
-        },
-    };
-
-    handler({ body, params }, res);
-});
-
-const withSilencedErrors = async (action) => {
-    const originalError = console.error;
-    console.error = () => {};
-
-    try {
-        return await action();
-    } finally {
-        console.error = originalError;
-    }
-};
 
 const main = async () => {
 
