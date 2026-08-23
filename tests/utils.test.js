@@ -12,7 +12,7 @@ const {
     roundMoney,
     sumMoneyBy,
 } = require('../utils/values');
-const { addDays, daysBetween, getDate, startOfDay, toDate } = require('../utils/dates');
+const { addDays, daysBetween, formatItalianDate, getDate, startOfDay, toDate } = require('../utils/dates');
 const { customerLabel } = require('../utils/customer');
 const { conflict, createError, notFound, unprocessable } = require('../utils/errors');
 const { recordId, uniqueById } = require('../utils/mongo');
@@ -145,4 +145,13 @@ test('uniqueById: rimuove i duplicati mantenendo l ordine', () => {
     const risultato = uniqueById([{ _id: 'a' }, { _id: 'b' }, { _id: 'a' }]);
 
     assert.deepEqual(risultato.map((r) => r._id), ['a', 'b']);
+});
+
+test('formatItalianDate: giorno/mese/anno, e stringa vuota se non e una data', () => {
+    // Nei PDF e nei messaggi ai clienti non deve mai comparire "Invalid Date".
+    assert.equal(formatItalianDate(new Date('2026-12-31T00:00:00.000Z')), '31/12/2026');
+    assert.equal(formatItalianDate('2026-01-05'), '05/01/2026');
+    assert.equal(formatItalianDate(''), '');
+    assert.equal(formatItalianDate(null), '');
+    assert.equal(formatItalianDate('non una data'), '');
 });

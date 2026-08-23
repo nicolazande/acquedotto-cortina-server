@@ -20,6 +20,7 @@ const { generateInvoicePdf } = require('./invoicePdf');
 const { buildInvoiceXml } = require('./invoiceXml');
 const { inviaEmail, statoTrasporto } = require('./mailer');
 const { badRequest, notFound, unprocessable } = require('../utils/errors');
+const { formatItalianDate } = require('../utils/dates');
 const { parsePositiveInteger } = require('../utils/values');
 
 // Tetto alle fatture toccate da una sola richiesta: la pianificazione legge
@@ -36,12 +37,6 @@ const mittente = () => ({
     nome: process.env.INVOICE_COMPANY_NAME || 'Cooperativa di Gestione Acquedotto Zuel di Sopra',
     recapito: process.env.INVOICE_COMPANY_EMAIL || '',
 });
-
-const dataItaliana = (valore) => {
-    if (!valore) return '';
-    const data = new Date(valore);
-    return Number.isNaN(data.getTime()) ? '' : data.toLocaleDateString('it-IT');
-};
 
 const chiave = (fatturaId, tipo) => `${fatturaId}:${tipo}`;
 
@@ -199,7 +194,7 @@ const consegnaCortesiaEmail = async ({ consegna, fattura }) => {
     const { oggetto, testo } = testoEmailCortesia({
         cliente: consegna.intestatario || 'cliente',
         documento: consegna.documento,
-        scadenza: dataItaliana(fattura.scadenza?.scadenza),
+        scadenza: formatItalianDate(fattura.scadenza?.scadenza),
         mittente: mittente(),
     });
 
@@ -452,8 +447,6 @@ const riepilogo = async () => {
 };
 
 module.exports = {
-    MAX_CONSEGNE_PER_ELABORAZIONE,
-    MAX_FATTURE_PER_LOTTO,
     annullaConsegna,
     anteprimaFattura,
     elaboraCoda,

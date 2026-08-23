@@ -49,7 +49,9 @@ quelli della tabella:
 - in scrittura, da un setter sul modello `Cliente`: da qui in avanti nel database
   finiscono solo i valori dichiarati;
 - sui dati esistenti, con `npm run maintenance:allinea-dati -- --fix`, che riporta
-  `"Cartacea Postale"` a `postale` senza cambiarne il significato;
+  `"Cartacea Postale"` a `postale` senza cambiarne il significato. Sul database
+  locale e gia stato eseguito; sul database di produzione va lanciato quando si
+  vuole, perche le viste funzionano comunque;
 - nelle viste della lista clienti, che accettano comunque entrambe le scritture,
   cosi il filtro funziona anche prima della normalizzazione.
 
@@ -160,10 +162,10 @@ Quando la decisione sara presa ci sono due strade:
 
 | Dato                                    | Valore    |
 |-----------------------------------------|-----------|
-| Clienti con modalita "Cartacea Postale" | 900 (100%) |
+| Clienti con consegna `postale`          | 900 (100%) |
 | Clienti con un indirizzo email          | 213 (24%)  |
 | Clienti con una PEC                     | 35 (4%)    |
-| Clienti con un codice destinatario reale | 146 (16%) |
+| Clienti con un codice destinatario reale | 145 (16%) |
 | Clienti con `fattura_elettronica` attivo | 0         |
 
 La conseguenza pratica: **la consegna per email oggi coprirebbe un quarto dei

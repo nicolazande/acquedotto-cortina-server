@@ -30,11 +30,20 @@ const addDays = (value, days) => {
     return date;
 };
 
+// Data leggibile da una persona (31/12/2026). Una data assente o non valida
+// diventa stringa vuota: nei documenti e nei messaggi non deve mai comparire
+// "Invalid Date".
+const formatItalianDate = (value) => {
+    const date = toDate(value);
+    return date ? date.toLocaleDateString('it-IT') : '';
+};
+
 const daysBetween = (from, to) => Math.floor((startOfDay(to) - startOfDay(from)) / MS_PER_DAY);
 
 module.exports = {
     addDays,
     daysBetween,
+    formatItalianDate,
     getDate,
     startOfDay,
     toDate,

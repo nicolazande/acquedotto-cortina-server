@@ -8,7 +8,6 @@ const Fattura = require('../models/Fattura');
 const Scadenza = require('../models/Scadenza');
 const Servizio = require('../models/Servizio');
 require('../models/Cliente');
-const { calculateDelay } = require('../services/deadlineService');
 const { getTaxRate } = require('../services/billingCalculator');
 
 const money = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
@@ -89,18 +88,12 @@ const getInvoiceTotalMismatches = async () => {
         ));
 };
 
-const getDelayMismatches = async () => {
-    const scadenze = await Scadenza.find({ scadenza: { $ne: null } }).lean();
-    return scadenze
-        .map((scadenza) => ({
-            _id: scadenza._id,
-            anno: scadenza.anno,
-            numero: scadenza.numero,
-            stored: Number(scadenza.ritardo || 0),
-            computed: calculateDelay(scadenza),
-        }))
-        .filter((row) => row.stored !== row.computed);
-};
+// Il ritardo di una scadenza e un valore derivato: dipende da che giorno e
+// oggi, non da cio che e salvato. Il controllo non confronta piu il salvato con
+// il calcolato - il salvato sarebbe sbagliato il giorno dopo, e segnalava 1.261
+// falsi problemi - ma verifica che nessuno lo stia di nuovo scrivendo nel
+// database. Si ripulisce con `npm run maintenance:allinea-dati -- --fix`.
+const getStoredDelays = () => Scadenza.collection.countDocuments({ ritardo: { $exists: true } });
 
 const main = async () => {
 
@@ -117,7 +110,7 @@ const main = async () => {
         serviziArticoloMancante,
         scadenzeNonCollegate,
         totalMismatches,
-        delayMismatches,
+        ritardiSalvati,
         articoli,
     ] = await Promise.all([
         Fattura.countDocuments(),
@@ -154,7 +147,7 @@ const main = async () => {
             { $count: 'count' },
         ]),
         getInvoiceTotalMismatches(),
-        getDelayMismatches(),
+        getStoredDelays(),
         Articolo.find({}).select('codice descrizione iva').lean(),
     ]);
 
@@ -176,16 +169,11 @@ const main = async () => {
     console.log(`Servizi con articolo inesistente: ${serviziArticoloMancante.length}`);
     console.log(`Scadenze non collegate a fatture: ${unlinkedDeadlinesCount}`);
     console.log(`Fatture con totali diversi dalla somma servizi: ${totalMismatches.length}`);
-    console.log(`Scadenze con ritardo non aggiornato: ${delayMismatches.length}`);
+    console.log(`Scadenze con il ritardo salvato (valore derivato): ${ritardiSalvati}`);
 
     if (totalMismatches.length) {
         console.log('\nEsempi delta totali:');
         console.log(sample(totalMismatches).join('\n'));
-    }
-
-    if (delayMismatches.length) {
-        console.log('\nEsempi ritardi da aggiornare:');
-        console.log(sample(delayMismatches).join('\n'));
     }
 
     if (strict && (
@@ -193,6 +181,7 @@ const main = async () => {
         || serviziFatturaMancante.length
         || serviziArticoloMancante.length
         || totalMismatches.length
+        || ritardiSalvati
     )) {
         return false;
     }

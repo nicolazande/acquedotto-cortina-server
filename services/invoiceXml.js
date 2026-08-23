@@ -10,6 +10,7 @@
 // che non viene generata.
 
 const { CEDENTE, invoiceCode, naturaPerIva } = require('../config/invoicing');
+const { CODICE_DESTINATARIO_ASSENTE, codiceDestinatarioValido } = require('../config/delivery');
 const { customerLabel } = require('../utils/customer');
 const { getTaxRate } = require('./billingCalculator');
 const { fromCents, toCents } = require('../utils/money');
@@ -17,7 +18,6 @@ const { unprocessable } = require('../utils/errors');
 const { siglaProvincia } = require('../utils/province');
 
 const FORMATO_PRIVATI = 'FPR12';
-const CODICE_DESTINATARIO_PREDEFINITO = '0000000';
 
 // Il tracciato accetta solo alcuni caratteri: niente accenti nei campi liberi.
 const testoXml = (valore) => String(valore ?? '')
@@ -153,7 +153,10 @@ const buildInvoiceXml = ({ cliente, fattura, servizi }) => {
 
     const anagrafica = anagraficaCliente(cliente, fattura);
     const sede = indirizzoCliente(cliente);
-    const destinatario = cliente?.codice_destinatario || CODICE_DESTINATARIO_PREDEFINITO;
+    // Lo stesso criterio con cui si sceglie il canale della consegna: un codice
+    // malformato non va scritto nel tracciato, vale come codice assente.
+    const destinatario = codiceDestinatarioValido(cliente?.codice_destinatario)
+        || CODICE_DESTINATARIO_ASSENTE;
     const numero = invoiceCode(fattura) || `${fattura.anno}/${fattura.numero}`;
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -230,6 +233,5 @@ ${righeRiepilogo(servizi).join('\n')}
 
 module.exports = {
     buildInvoiceXml,
-    nomeFile,
     progressivoInvio,
 };

@@ -62,6 +62,21 @@ test('senza codice destinatario si usa quello generico', () => {
     assert.match(xml, /<CodiceDestinatario>0000000<\/CodiceDestinatario>/);
 });
 
+test('un codice destinatario malformato vale come assente', () => {
+    // Lo stesso giudizio che decide il canale della consegna: se il codice non e
+    // valido la fattura va nel cassetto fiscale, e il tracciato deve dire
+    // altrettanto invece di trasportare un valore che lo SdI rifiuterebbe.
+    const { xml } = genera({ cliente: { ...cliente, codice_destinatario: 'ABC' } });
+
+    assert.match(xml, /<CodiceDestinatario>0000000<\/CodiceDestinatario>/);
+});
+
+test('il codice destinatario viaggia in maiuscolo', () => {
+    const { xml } = genera({ cliente: { ...cliente, codice_destinatario: 'tulursb' } });
+
+    assert.match(xml, /<CodiceDestinatario>TULURSB<\/CodiceDestinatario>/);
+});
+
 test('il riepilogo raggruppa per aliquota e i conti tornano', () => {
     const { xml } = genera();
 

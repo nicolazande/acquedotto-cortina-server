@@ -150,8 +150,6 @@ const pianoConsegne = ({ cliente, fattura }) => {
 };
 
 module.exports = {
-    consegnaCortesia,
-    consegnaElettronica,
     indirizzoPostale,
     pianoConsegne,
 };

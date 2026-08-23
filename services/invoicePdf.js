@@ -37,6 +37,7 @@ const invoiceAssets = {
 };
 
 const { isEmptyValue: isEmpty, numberOrZero } = require('../utils/values');
+const { formatItalianDate } = require('../utils/dates');
 const { customerLabel } = require('../utils/customer');
 const { invoiceCode: documentCode } = require('../config/invoicing');
 
@@ -49,14 +50,6 @@ const asciiText = (value) => String(value ?? '')
 
 const formatMoney = (value) => `Euro ${numberOrZero(value).toFixed(2).replace('.', ',')}`;
 const formatNumber = (value) => Number.isFinite(Number(value)) ? String(Number(value)).replace('.', ',') : '';
-const formatDate = (value) => {
-    if (!value) {
-        return '';
-    }
-
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('it-IT');
-};
 
 const customerName = (cliente, fattura) => customerLabel(cliente, fattura);
 
@@ -496,7 +489,7 @@ const drawDocumentBox = (pdf, fattura) => {
     pdf.cellText('BOLLETTA PER LA FORNITURA DI ACQUA', 321, 296, 250, 17, { align: 'center', font: 'bold', size: 10 });
     pdf.cellText(fattura.tipo_documento || 'FATTURA', 321, 312, 250, 17, { align: 'center', font: 'bold', size: 10 });
     pdf.cellText('Data', 321, 329, 63, 19, { align: 'center', font: 'bold', size: 8 });
-    pdf.cellText(formatDate(fattura.data_fattura), 384, 329, 187, 19, { align: 'center', font: 'bold', size: 8 });
+    pdf.cellText(formatItalianDate(fattura.data_fattura), 384, 329, 187, 19, { align: 'center', font: 'bold', size: 8 });
     pdf.cellText('Anno', 321, 348, 63, 19, { align: 'center', font: 'bold', size: 8 });
     pdf.cellText(fattura.anno || '', 384, 348, 62, 19, { align: 'center', font: 'bold', size: 8 });
     pdf.cellText('Doc. Numero', 446, 348, 79, 19, { align: 'center', font: 'bold', size: 8 });
@@ -511,7 +504,7 @@ const drawPayment = (pdf, fattura, scadenza) => {
     pdf.rect(20, 360, 109, 20, { fill: LIGHT_GRAY, stroke: BLACK });
     pdf.rect(134, 360, 149, 20, { fill: GRAY, stroke: BLACK });
     pdf.cellText('Data Scadenza:', 20, 360, 109, 20, { align: 'center', font: 'bold', size: 8 });
-    pdf.cellText(formatDate(scadenza?.scadenza || fattura.data_fattura), 134, 360, 149, 20, { align: 'center', font: 'bold', size: 8 });
+    pdf.cellText(formatItalianDate(scadenza?.scadenza || fattura.data_fattura), 134, 360, 149, 20, { align: 'center', font: 'bold', size: 8 });
     pdf.text('Bonifico presso:', 21, 400, { font: 'bold', size: 8 });
     pdf.text(`${companyConfig.bankName}    IBAN:   ${companyConfig.iban}`, 21, 424, { font: 'bold', size: 8 });
 };
@@ -593,7 +586,7 @@ const drawDetailTable = (pdf, servizi) => {
             formatNumber(service.metri_cubi),
             formatMoney(service.prezzo),
             formatMoney(service.valore_unitario),
-            formatDate(service.data_lettura),
+            formatItalianDate(service.data_lettura),
         ];
 
         pdf.rect(tableX, y, tableWidth, rowHeight, { fill: rowFill, stroke: BORDER_GRAY, lineWidth: 0.3 });

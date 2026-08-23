@@ -49,7 +49,6 @@ const naturaPerIva = (testoIva) => {
 module.exports = {
     CEDENTE,
     INVOICE_SERIES,
-    NATURE_IVA,
     invoiceCode,
     naturaPerIva,
 };

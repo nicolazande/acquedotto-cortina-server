@@ -205,6 +205,10 @@ uno non emesso, perche viene accettato e resta errato.
   (`utils/province.js`): l'anagrafica importata contiene "Belluno", il tracciato
   vuole "BL".
 - Gli **accenti** vengono rimossi dai campi liberi, come richiede il tracciato.
+- Il **codice destinatario** deve essere di 6 o 7 caratteri alfanumerici: un valore
+  malformato vale come codice assente e diventa `0000000`. E lo stesso giudizio con
+  cui si sceglie il canale della consegna (`config/delivery.js`), cosi il tracciato
+  e la coda di consegna non possono dire due cose diverse sullo stesso cliente.
 
 ## Modifica di una fattura confermata
 

@@ -34,7 +34,7 @@ richiesta HTTP
 | File          | Contenuto                                                        |
 |---------------|------------------------------------------------------------------|
 | `values.js`   | numeri e denaro (`numberOrZero`, `roundMoney`, `sumMoneyBy`), booleani da querystring, normalizzazione testo, escape regex |
-| `dates.js`    | conversioni data, `startOfDay` in UTC, differenze in giorni       |
+| `dates.js`    | conversioni data, `startOfDay` in UTC, differenze in giorni, data all'italiana |
 | `errors.js`   | errori con status HTTP (`notFound`, `conflict`, `unprocessable`, ...) |
 | `mongo.js`    | `withSession`, `recordId`, `toObjectId`, `uniqueById`             |
 | `customer.js` | etichetta del cliente (ragione sociale oppure cognome + nome)     |
