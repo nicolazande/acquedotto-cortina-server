@@ -8,11 +8,13 @@
 //   - scadenze: rimuove `ritardo`, che e un valore derivato e invecchia da solo
 //   - scadenze: converte `saldo` in booleano dove e salvato come 1/0
 //   - clienti: riporta `stampa_cortesia` ai valori dichiarati in config/delivery
+//   - scadenze: cancella la data di pagamento sentinella 31/12/2099
 const { runScript } = require('./utils/runScript');
 const Cliente = require('../models/Cliente');
 const Fattura = require('../models/Fattura');
 const Scadenza = require('../models/Scadenza');
 const { MODALITA_CONSEGNA, normalizzaModalita } = require('../config/delivery');
+const { DATA_IMPLAUSIBILE } = require('../services/deadlineService');
 
 const applica = process.argv.includes('--fix');
 
@@ -105,6 +107,31 @@ const normalizzaModalitaConsegna = async () => {
     console.log(`  normalizzati: ${aggiornati}`);
 };
 
+// Il gestionale precedente scriveva 31/12/2099 al posto di lasciare vuota la
+// data di pagamento. Il codice la tratta gia come assente, ma finche resta nel
+// database chiunque la legga fuori dal gestionale - un'esportazione, una query -
+// la prende per una data vera.
+const rimuoviDataPagamentoSentinella = async () => {
+    const sentinella = { pagamento: { $gte: DATA_IMPLAUSIBILE } };
+    const quante = await Scadenza.collection.countDocuments(sentinella);
+    const saldate = await Scadenza.collection.countDocuments({ ...sentinella, saldo: true });
+
+    console.log('Scadenze con la data di pagamento sentinella (31/12/2099):');
+    console.log(`  da svuotare: ${quante}`);
+    if (saldate) {
+        // Sono pagate ma non si sa quando: il dato manca all'origine, e va
+        // saputo invece che nascosto sotto una data inventata.
+        console.log(`  di cui saldate, quindi pagate senza data nota: ${saldate}`);
+    }
+
+    if (!applica || quante === 0) {
+        return;
+    }
+
+    const risultato = await Scadenza.collection.updateMany(sentinella, { $unset: { pagamento: '' } });
+    console.log(`  svuotate: ${risultato.modifiedCount}`);
+};
+
 const main = async () => {
     console.log(applica ? '== APPLICO LE CORREZIONI ==\n' : '== SOLA LETTURA (usa --fix per applicare) ==\n');
 
@@ -115,6 +142,8 @@ const main = async () => {
     await normalizzaSaldo();
     console.log('');
     await normalizzaModalitaConsegna();
+    console.log('');
+    await rimuoviDataPagamentoSentinella();
 };
 
 runScript(main);

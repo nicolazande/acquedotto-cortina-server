@@ -9,7 +9,7 @@
 // qui: una fattura formalmente valida ma fiscalmente sbagliata e peggio di una
 // che non viene generata.
 
-const { CEDENTE, invoiceCode, naturaPerIva } = require('../config/invoicing');
+const { CEDENTE, invoiceCode, naturaPerIva, tipoDocumentoXml } = require('../config/invoicing');
 const { CODICE_DESTINATARIO_ASSENTE, codiceDestinatarioValido } = require('../config/delivery');
 const { customerLabel } = require('../utils/customer');
 const { getTaxRate } = require('./billingCalculator');
@@ -159,6 +159,14 @@ const buildInvoiceXml = ({ cliente, fattura, servizi }) => {
         || CODICE_DESTINATARIO_ASSENTE;
     const numero = invoiceCode(fattura) || `${fattura.anno}/${fattura.numero}`;
 
+    const tipoDocumento = tipoDocumentoXml(fattura.tipo_documento);
+    if (!tipoDocumento) {
+        throw unprocessable(
+            `Tipo documento non riconosciuto: "${fattura.tipo_documento}". `
+            + 'Il tracciato richiede di dichiararlo (fattura, nota di credito, nota di debito).'
+        );
+    }
+
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <p:FatturaElettronica versione="${FORMATO_PRIVATI}" xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2">
   <FatturaElettronicaHeader>
@@ -212,7 +220,7 @@ const buildInvoiceXml = ({ cliente, fattura, servizi }) => {
   <FatturaElettronicaBody>
     <DatiGenerali>
       <DatiGeneraliDocumento>
-        <TipoDocumento>TD01</TipoDocumento>
+        <TipoDocumento>${tipoDocumento}</TipoDocumento>
         <Divisa>EUR</Divisa>
         <Data>${data}</Data>
         <Numero>${testoXml(numero)}</Numero>

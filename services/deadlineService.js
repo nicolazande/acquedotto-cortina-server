@@ -26,18 +26,36 @@ const momentoDiRiferimento = (valore) => {
     return toDate(valore) || new Date();
 };
 
+// Il gestionale precedente non lasciava vuota la data di pagamento: ci scriveva
+// 31/12/2099, che era il suo modo di dire "non ancora pagata". Nel nuovo modello
+// quel significato lo porta gia `saldo`, quindi la sentinella non e una data ma
+// un buco, e va letta come tale: comparirebbe a schermo come "Pagamento:
+// 31/12/2099" e, sulle scadenze saldate, produrrebbe un ritardo di ventimila
+// giorni. Il controllo e su una soglia e non sul valore esatto perche un nuovo
+// import puo riportarla con un'ora diversa.
+const DATA_IMPLAUSIBILE = new Date('2090-01-01T00:00:00.000Z');
+
+const dataPagamento = (valore) => {
+    const data = toDate(valore);
+    return data && data < DATA_IMPLAUSIBILE ? data : null;
+};
+
 const calculateDelay = (deadline, now) => {
     const dueDate = startOfDay(deadline?.scadenza);
     if (!dueDate) {
         return 0;
     }
 
-    const adesso = momentoDiRiferimento(now);
-    const referenceDate = deadline?.saldo && deadline?.pagamento
-        ? startOfDay(deadline.pagamento)
-        : startOfDay(adesso);
+    // Una scadenza saldata ha smesso di accumulare ritardo: si misura fino al
+    // giorno del pagamento. Se quel giorno non e noto il ritardo non e
+    // calcolabile e vale zero - contarlo fino a oggi lo farebbe crescere per
+    // sempre su una posizione ormai chiusa.
+    if (deadline?.saldo) {
+        const pagata = dataPagamento(deadline?.pagamento);
+        return pagata ? Math.max(0, daysBetween(dueDate, startOfDay(pagata))) : 0;
+    }
 
-    return Math.max(0, daysBetween(dueDate, referenceDate));
+    return Math.max(0, daysBetween(dueDate, startOfDay(momentoDiRiferimento(now))));
 };
 
 const toPlainObject = (record) => (
@@ -48,6 +66,9 @@ const withComputedDelay = (deadline, now) => {
     const plain = toPlainObject(deadline);
     return {
         ...plain,
+        // La data sentinella non esce mai da qui: e l'unico punto attraverso cui
+        // le scadenze passano prima di essere lette o salvate.
+        ...(plain.pagamento === undefined ? {} : { pagamento: dataPagamento(plain.pagamento) }),
         ritardo: calculateDelay(plain, now),
     };
 };
@@ -119,9 +140,21 @@ const NON_SALDATA = { $or: [{ saldo: false }, { saldo: { $exists: false } }] };
 // La stessa condizione per le pipeline di aggregazione.
 const saldataExpression = () => ({ $eq: [{ $ifNull: ['$saldo', false] }, true] });
 
+// Una scadenza saldata con una data di pagamento vera, cioe non la sentinella
+// del gestionale precedente.
+const pagataConData = () => ({
+    $and: [
+        saldataExpression(),
+        { $ne: [{ $ifNull: ['$pagamento', null] }, null] },
+        { $lt: ['$pagamento', DATA_IMPLAUSIBILE] },
+    ],
+});
+
 // Stessa formula di calculateDelay, ma valutata da MongoDB: serve per ordinare
 // la lista scadenze sul ritardo reale invece che sul valore salvato, che invecchia
-// di un giorno al giorno.
+// di un giorno al giorno. Una scadenza saldata senza data di pagamento nota si
+// misura contro la propria scadenza, cosi il ritardo resta zero invece di
+// crescere ogni giorno.
 const delayAggregation = () => ({
     $cond: [
         { $ifNull: ['$scadenza', false] },
@@ -135,14 +168,9 @@ const delayAggregation = () => ({
                             $dateTrunc: {
                                 date: {
                                     $cond: [
-                                        {
-                                            $and: [
-                                                saldataExpression(),
-                                                { $ne: [{ $ifNull: ['$pagamento', null] }, null] },
-                                            ],
-                                        },
+                                        pagataConData(),
                                         '$pagamento',
-                                        '$$NOW',
+                                        { $cond: [saldataExpression(), '$scadenza', '$$NOW'] },
                                     ],
                                 },
                                 unit: 'day',
@@ -158,8 +186,10 @@ const delayAggregation = () => ({
 });
 
 module.exports = {
+    DATA_IMPLAUSIBILE,
     NON_SALDATA,
     SALDATA,
+    dataPagamento,
     buildDeadlinePayload,
     delayAggregation,
     saldataExpression,

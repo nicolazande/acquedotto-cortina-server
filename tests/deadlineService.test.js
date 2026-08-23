@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
     buildDeadlinePayload,
     calculateDelay,
+    dataPagamento,
     getDueDate,
     withComputedDelay,
 } = require('../services/deadlineService');
@@ -36,8 +37,41 @@ test('ritardo: senza data di scadenza vale zero', () => {
     assert.equal(calculateDelay(null, OGGI), 0);
 });
 
-test('ritardo: saldo marcato ma senza data di pagamento usa oggi', () => {
-    assert.equal(calculateDelay({ scadenza: '2026-06-01', saldo: true }, OGGI), 14);
+test('ritardo: una scadenza saldata senza data di pagamento non accumula ritardo', () => {
+    // Non si sa di quanto sia stata pagata in ritardo, ma si sa che e chiusa:
+    // contare fino a oggi la farebbe crescere per sempre su una posizione
+    // ormai sistemata.
+    assert.equal(calculateDelay({ scadenza: '2026-06-01', saldo: true }, OGGI), 0);
+});
+
+test('la data sentinella del vecchio gestionale non e una data', () => {
+    // Il programma precedente scriveva 31/12/2099 al posto di lasciare vuoto.
+    assert.equal(dataPagamento('2099-12-31'), null);
+    assert.equal(dataPagamento(new Date('2099-12-31T23:00:00.000Z')), null);
+    assert.equal(dataPagamento(''), null);
+    assert.equal(dataPagamento(null), null);
+    assert.deepEqual(dataPagamento('2026-06-05'), new Date('2026-06-05'));
+});
+
+test('ritardo: la sentinella non produce un ritardo di ventimila giorni', () => {
+    const scadenza = { scadenza: '2026-06-01', saldo: true, pagamento: '2099-12-31' };
+
+    assert.equal(calculateDelay(scadenza, OGGI), 0);
+});
+
+test('la sentinella non esce dalle scadenze lette dall interfaccia', () => {
+    // Comparirebbe a schermo come "Pagamento: 31/12/2099".
+    const letta = withComputedDelay({ scadenza: '2026-06-01', saldo: true, pagamento: '2099-12-31' }, OGGI);
+
+    assert.equal(letta.pagamento, null);
+    assert.equal(letta.ritardo, 0);
+});
+
+test('una data di pagamento vera resta intatta', () => {
+    const letta = withComputedDelay({ scadenza: '2026-06-01', saldo: true, pagamento: '2026-06-05' }, OGGI);
+
+    assert.deepEqual(letta.pagamento, new Date('2026-06-05'));
+    assert.equal(letta.ritardo, 4);
 });
 
 test('withComputedDelay: sovrascrive il valore salvato, che invecchia', () => {

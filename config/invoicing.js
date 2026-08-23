@@ -6,6 +6,8 @@
 // significherebbe partire da numeri arbitrari e non poter garantire l'unicita.
 // Con una serie dedicata il progressivo riparte da 1 ogni anno, resta univoco e
 // non entra mai in conflitto con lo storico.
+const { normalizeText } = require('../utils/values');
+
 const INVOICE_SERIES = (process.env.INVOICE_SERIES || 'A').trim().toUpperCase();
 
 // Identificativo del documento mostrato al cliente e usato nel PDF.
@@ -30,6 +32,36 @@ const CEDENTE = {
     nazione: 'IT',
 };
 
+// Tipo di documento nel tracciato. Il campo `tipo_documento` e testo libero
+// nell'anagrafica importata, ma assume solo due valori: "Fattura" su 3.467
+// documenti e "Nota di Credito" su 5. Emettere una nota di credito come TD01
+// significa dichiarare una fattura: il documento viene accettato dallo SdI e
+// resta sbagliato, che e il caso peggiore.
+const TIPI_DOCUMENTO = {
+    fattura: 'TD01',
+    'nota di credito': 'TD04',
+    'nota credito': 'TD04',
+    'nota di accredito': 'TD04',
+    'nota di debito': 'TD05',
+    'nota debito': 'TD05',
+};
+
+// Restituisce il codice del tracciato, oppure null se il testo non corrisponde
+// a nulla di conosciuto. Un tipo non riconosciuto non viene ricondotto alla
+// fattura per comodita: meglio non emettere che emettere un documento che
+// dichiara di essere cio che non e.
+const tipoDocumentoXml = (testo) => {
+    const voce = normalizeText(testo);
+
+    if (!voce) {
+        // Nessun documento importato ha il campo vuoto; se un giorno capitasse,
+        // il documento e una fattura: e cio che crea il gestionale per difetto.
+        return 'TD01';
+    }
+
+    return TIPI_DOCUMENTO[voce] || null;
+};
+
 // Corrispondenza fra il testo IVA scritto sull'articolo e la "natura" richiesta
 // dal tracciato per le righe senza imposta. Il tracciato non accetta una riga a
 // zero senza natura, e indicarne una sbagliata rende la fattura non conforme:
@@ -51,4 +83,5 @@ module.exports = {
     INVOICE_SERIES,
     invoiceCode,
     naturaPerIva,
+    tipoDocumentoXml,
 };

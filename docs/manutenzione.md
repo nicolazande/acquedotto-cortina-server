@@ -37,12 +37,28 @@ ognuna con un `manifest.json` che spiega cosa e stato cambiato e come tornare in
 
 ### Il ritardo delle scadenze e un valore derivato
 
-`Scadenza.ritardo` esiste come campo salvato, ma **non va letto**: viene ricalcolato
-a ogni lettura (`withComputedDelay`) perche cresce di un giorno al giorno per le
-scadenze non pagate. Anche l'ordinamento della lista lo ricalcola in MongoDB
-(`delayAggregation`). Il valore salvato resta disallineato ed e normale: al momento
-della scrittura di questo documento 2.344 scadenze su 2.701 hanno un valore
-memorizzato diverso da quello reale, senza alcun effetto su cio che viene mostrato.
+Il ritardo **non e un campo salvato**: cresce di un giorno al giorno per le scadenze
+non pagate, quindi qualunque valore memorizzato sarebbe gia vecchio l'indomani.
+Viene ricalcolato a ogni lettura (`withComputedDelay`) e, per l'ordinamento della
+lista, direttamente da MongoDB (`delayAggregation`).
+
+Il campo e stato rimosso dai record e l'import non lo riporta piu. Se ricompare,
+`npm run report:integrita` lo segnala e `npm run maintenance:allinea-dati -- --fix`
+lo ripulisce.
+
+### La data di pagamento 31/12/2099
+
+Il gestionale precedente non lasciava vuota la data di pagamento: ci scriveva
+`31/12/2099` per dire "non ancora pagata". Nel nuovo modello quel significato lo
+porta gia `saldo`, quindi la sentinella e stata svuotata su **740 scadenze** e
+l'import non la riporta piu.
+
+Il codice la tratta comunque come assente (`dataPagamento` in `deadlineService`),
+perche un database ripristinato da un backup vecchio la conterrebbe ancora.
+
+Restano **13 scadenze saldate senza data di pagamento**: sono pagate, ma il giorno
+non e noto perche mancava all'origine. Il loro ritardo vale zero - una posizione
+chiusa non accumula ritardo, e inventare una data sarebbe peggio.
 
 ### Il campo `saldo` non e sempre un booleano
 

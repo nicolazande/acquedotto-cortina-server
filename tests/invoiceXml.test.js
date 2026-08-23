@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 const { buildInvoiceXml, progressivoInvio } = require('../services/invoiceXml');
 const { siglaProvincia } = require('../utils/province');
-const { naturaPerIva } = require('../config/invoicing');
+const { naturaPerIva, tipoDocumentoXml } = require('../config/invoicing');
 
 const cliente = {
     ragione_sociale: 'Termoidraulica Rossi',
@@ -19,6 +19,7 @@ const cliente = {
 
 const fattura = {
     anno: 2026, numero: 7, serie: 'A',
+    tipo_documento: 'Fattura',
     data_fattura: new Date('2026-06-15T00:00:00.000Z'),
     totale_fattura: 65.34,
 };
@@ -60,6 +61,36 @@ test('senza codice destinatario si usa quello generico', () => {
     const { xml } = genera({ cliente: { ...cliente, codice_destinatario: '' } });
 
     assert.match(xml, /<CodiceDestinatario>0000000<\/CodiceDestinatario>/);
+});
+
+test('una fattura si dichiara TD01', () => {
+    assert.match(genera().xml, /<TipoDocumento>TD01<\/TipoDocumento>/);
+});
+
+test('una nota di credito si dichiara TD04, non TD01', () => {
+    // Emetterla come fattura significa dichiarare il contrario di quello che e:
+    // lo SdI la accetta e il documento resta sbagliato.
+    const { xml } = genera({ fattura: { ...fattura, tipo_documento: 'Nota di Credito' } });
+
+    assert.match(xml, /<TipoDocumento>TD04<\/TipoDocumento>/);
+});
+
+test('un tipo documento sconosciuto blocca l emissione', () => {
+    assert.throws(
+        () => genera({ fattura: { ...fattura, tipo_documento: 'Preventivo' } }),
+        /Tipo documento non riconosciuto/
+    );
+});
+
+test('tipoDocumentoXml riconosce le scritture ricorrenti', () => {
+    assert.equal(tipoDocumentoXml('Fattura'), 'TD01');
+    assert.equal(tipoDocumentoXml('FATTURA'), 'TD01');
+    // Nessun documento importato ha il campo vuoto, ma se capitasse e una fattura.
+    assert.equal(tipoDocumentoXml(''), 'TD01');
+    assert.equal(tipoDocumentoXml('Nota di Credito'), 'TD04');
+    assert.equal(tipoDocumentoXml('nota credito'), 'TD04');
+    assert.equal(tipoDocumentoXml('Nota di Debito'), 'TD05');
+    assert.equal(tipoDocumentoXml('Autofattura'), null);
 });
 
 test('un codice destinatario malformato vale come assente', () => {

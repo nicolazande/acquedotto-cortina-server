@@ -199,6 +199,20 @@ Una riga senza imposta e senza natura corrispondente **blocca l'emissione**: e
 voluto. Un documento formalmente valido ma con la natura sbagliata e peggio di
 uno non emesso, perche viene accettato e resta errato.
 
+### Tipo di documento
+
+Il tracciato vuole dichiarare che documento e: `TD01` per la fattura, `TD04` per
+la nota di credito, `TD05` per la nota di debito. Il valore si ricava dal campo
+`tipo_documento`, che nei dati importati vale "Fattura" su 3.467 documenti e
+"Nota di Credito" su 5.
+
+Un tipo non riconosciuto **blocca l'emissione** invece di ricadere sulla fattura:
+un documento accettato dallo SdI che dichiara di essere cio che non e sarebbe
+peggio di uno non emesso. La corrispondenza sta in `config/invoicing.js`.
+
+> Le note di credito importate hanno importi **positivi**: nel tracciato il segno
+> lo porta il tipo di documento, non gli importi. Nessuna conversione e applicata.
+
 ### Conversioni applicate
 
 - La **provincia** passa dal nome esteso alla sigla di due lettere

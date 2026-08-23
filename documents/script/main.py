@@ -297,6 +297,18 @@ def run_threaded(items, worker, max_workers: int):
     if errors:
         raise RuntimeError(f"{len(errors)} worker(s) failed during import.")
 
+# Il gestionale precedente non lascia vuota la data di pagamento: ci scrive
+# 31/12/2099 per dire "non ancora pagata". Nel nuovo modello quel significato lo
+# porta gia il campo `saldo`, quindi la sentinella va importata come assente,
+# altrimenti ricompare a schermo come "Pagamento: 31/12/2099" a ogni import.
+DATA_IMPLAUSIBILE = datetime(2090, 1, 1)
+
+
+def parse_data_pagamento(value: str) -> datetime | None:
+    data = parse_date(value)
+    return data if data and data < DATA_IMPLAUSIBILE else None
+
+
 def parse_date(value: str) -> datetime | None:
     """Parses a date string in the format '01/gen/1900' into a datetime object."""
     if not value:
@@ -1037,8 +1049,10 @@ def parse_scadenze_table(html):
         scadenze.append({
             "scadenza": parse_date(scadenza_details.get("Scadenza")),
             "saldo": parse_number(scadenza_details.get("Saldo")),
-            "pagamento": parse_date(scadenza_details.get("Pagamento")),
-            "ritardo": parse_number(scadenza_details.get("Ritardo")),
+            "pagamento": parse_data_pagamento(scadenza_details.get("Pagamento")),
+            # Il ritardo non viene importato: dipende da che giorno e oggi, quindi
+            # salvarlo significa salvare un valore gia vecchio domani. Il nuovo
+            # gestionale lo calcola a ogni lettura.
             "anno": parse_number(scadenza_details.get("Anno")),
             "numero": parse_number(scadenza_details.get("N.")),
             "cognome": scadenza_details.get("Cognome"),
