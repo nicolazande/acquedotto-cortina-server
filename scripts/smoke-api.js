@@ -130,15 +130,41 @@ const createRecord = async (resource, payload) => {
 // La pulizia tollera i record gia rimossi: cancellare una fattura elimina a cascata
 // anche le sue righe servizio e la scadenza, quindi le cancellazioni successive
 // trovano legittimamente un 404.
+// La pulizia procede a ondate finche qualcosa se ne va.
+//
+// L'ordine inverso di creazione non e l'ordine delle dipendenze: una scadenza
+// creata dopo la sua fattura verrebbe cancellata per prima, e ora il guardiano
+// dei legami la rifiuta con un 409. Ripetendo il giro, cio che era bloccato si
+// sblocca appena sparisce chi lo teneva. Se un giro intero non cancella nulla,
+// resta davvero qualcosa che non si puo togliere, e va detto.
 const deleteCreatedRecords = async (records) => {
-    for (const { resource, id } of [...records].reverse()) {
-        try {
-            await request(`/${resource}/${id}`, { method: 'DELETE' });
-        } catch (error) {
-            if (!/failed with 404/.test(error.message)) {
-                throw error;
+    let rimanenti = [...records].reverse();
+
+    while (rimanenti.length > 0) {
+        const bloccati = [];
+        let cancellatoQualcosa = false;
+
+        for (const voce of rimanenti) {
+            try {
+                await request(`/${voce.resource}/${voce.id}`, { method: 'DELETE' });
+                cancellatoQualcosa = true;
+            } catch (error) {
+                if (/failed with 404/.test(error.message)) {
+                    // Gia sparito, per esempio insieme al documento che lo conteneva.
+                    cancellatoQualcosa = true;
+                } else if (/failed with 409/.test(error.message)) {
+                    bloccati.push(voce);
+                } else {
+                    throw error;
+                }
             }
         }
+
+        if (!cancellatoQualcosa) {
+            throw new Error(`Smoke cleanup stuck on: ${bloccati.map((v) => `${v.resource}/${v.id}`).join(', ')}`);
+        }
+
+        rimanenti = bloccati;
     }
 };
 
@@ -772,6 +798,83 @@ const testPaymentRegistration = async () => {
     }
 };
 
+// I legami fra documenti. MongoDB non impedisce di cancellare un cliente che ha
+// fatture: le fatture resterebbero a puntare al nulla. Qui si verifica che il
+// guardiano dichiarato in config/relations.js sia davvero in mezzo.
+const testReferentialIntegrity = async () => {
+    if (skipMutation) {
+        console.log('skipped');
+        return;
+    }
+
+    const createdRecords = [];
+
+    try {
+        const cliente = await createTrackedRecord(createdRecords, 'clienti', {
+            cognome: 'Smoke', nome: 'Legami', ragione_sociale: 'Smoke Legami',
+        });
+        const fattura = await createRecord('fatture', {
+            cliente: cliente._id, data_fattura: OGGI, tipo_documento: 'Fattura',
+            imponibile: 10, iva: 1, totale_fattura: 11,
+        });
+        createdRecords.push({ resource: 'fatture', id: fattura._id });
+        createdRecords.push({ resource: 'scadenze', id: fattura.scadenza });
+
+        let clienteProtetto = false;
+        try {
+            await request(`/clienti/${cliente._id}`, { method: 'DELETE' });
+        } catch (error) {
+            clienteProtetto = error.message.includes('409') && error.message.includes('fatture');
+        }
+        assert(clienteProtetto, 'a customer with invoices must not be deletable');
+
+        let scadenzaProtetta = false;
+        try {
+            await request(`/scadenze/${fattura.scadenza}`, { method: 'DELETE' });
+        } catch (error) {
+            scadenzaProtetta = error.message.includes('409');
+        }
+        assert(scadenzaProtetta, 'a deadline still attached to an invoice must not be deletable');
+
+        // Un listino senza contatori se ne va con le sue fasce: senza il listino
+        // una fascia non significa niente.
+        const listino = await createRecord('listini', {
+            categoria: `SMOKE LEGAMI ${Date.now()}`, descrizione: 'Listino temporaneo smoke test',
+        });
+        const fascia = await createRecord('fasce', {
+            tipo: 'Tariffa Base', min: 1, max: 100, prezzo: 1,
+            inizio: INIZIO_ANNO, scadenza: FINE_ANNO, listino: listino._id,
+        });
+        await request(`/listini/${listino._id}`, { method: 'DELETE' });
+
+        let fasciaSparita = false;
+        try {
+            await request(`/fasce/${fascia._id}`);
+        } catch (error) {
+            fasciaSparita = error.message.includes('404');
+        }
+        assert(fasciaSparita, 'deleting a price list should take its bands with it');
+
+        // Un contatore con letture resta: le letture sono storia.
+        const contatore = await createTrackedRecord(createdRecords, 'contatori', {
+            codice: 'SMOKE-LEGAMI', seriale: 'SMOKE-LEGAMI', cliente: cliente._id,
+        });
+        const lettura = await createTrackedRecord(createdRecords, 'letture', {
+            data_lettura: OGGI, consumo: 5, unita_misura: 'm3', contatore: contatore._id,
+        });
+        let contatoreProtetto = false;
+        try {
+            await request(`/contatori/${contatore._id}`, { method: 'DELETE' });
+        } catch (error) {
+            contatoreProtetto = error.message.includes('409') && error.message.includes('letture');
+        }
+        assert(contatoreProtetto, 'a meter with readings must not be deletable');
+        void lettura;
+    } finally {
+        await deleteCreatedRecords(createdRecords);
+    }
+};
+
 const main = async () => {
     console.log(`Smoke API target: ${apiUrl}`);
     await step('health endpoint', testHealth);
@@ -783,6 +886,7 @@ const main = async () => {
     await step('invoice delivery queue', testInvoiceDelivery);
     await step('tariff renewal', testTariffRenewal);
     await step('payment registration', testPaymentRegistration);
+    await step('referential integrity', testReferentialIntegrity);
     await step('note attachments create/list/file/delete', testAttachments);
     console.log('Smoke API completed successfully.');
 };

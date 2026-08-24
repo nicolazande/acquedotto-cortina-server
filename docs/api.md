@@ -21,6 +21,11 @@ Risposta:
 { "data": [], "totalItems": 0, "totalPages": 0, "currentPage": 1 }
 ```
 
+**Cancellazioni** — `DELETE /api/<risorsa>/:id` rifiuta con `409` quando il
+documento e ancora collegato ad altri, e il messaggio dice a cosa ("ha ancora 12
+fatture, 3 contatori"). I legami e le loro politiche sono dichiarati in
+`config/relations.js`; vedi [architettura.md](architettura.md).
+
 **Codici di stato**
 
 | Codice | Quando                                                                 |
@@ -29,7 +34,7 @@ Risposta:
 | 401    | autenticazione fallita: token assente, scaduto o non valido. La risposta contiene `reason` (`missing_token`, `token_expired`, `invalid_token`, `user_not_found`) |
 | 403    | identita valida ma permessi insufficienti, oppure account disabilitato  |
 | 404    | risorsa inesistente                                                    |
-| 409    | conflitto: fattura confermata, lettura gia fatturata, account gia esistente |
+| 409    | conflitto: fattura confermata, lettura gia fatturata, account gia esistente, documento ancora collegato ad altri |
 | 422    | il calcolo non e eseguibile in sicurezza (fasce mancanti, riparto condominiale) |
 | 503    | database non raggiungibile (solo `/api/auth/health`)                   |
 

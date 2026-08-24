@@ -13,6 +13,17 @@ Gli script `verify-*` sono **rapporti, non test**: stampano le anomalie trovate 
 escono sempre con codice 0. Vanno letti. Solo `test:smoke` fallisce davvero quando
 qualcosa non funziona, ed e quindi l'unico adatto a una pipeline automatica.
 
+### Un accesso al portale punta a un cliente che non esiste
+
+`npm run report:integrita` segnala i riferimenti rotti. Sul database locale ne
+risulta uno: l'utente `utente` (ruolo cliente) punta a un cliente cancellato -
+quasi certamente un residuo dell'import completo, che ha rigenerato tutti gli
+identificativi. L'account funziona ma non ha nulla dietro.
+
+Si toglie dal gestionale, nella scheda del cliente, oppure si disattiva. Da oggi
+non puo piu succedere: cancellare un cliente con un accesso collegato viene
+rifiutato.
+
 ## Password dimenticata
 
 Le password sono cifrate con bcrypt: non si leggono e non si recuperano, si

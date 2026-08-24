@@ -13,6 +13,7 @@ const Servizio = require('../models/Servizio');
 require('../models/Cliente');
 const { getTaxRate } = require('../services/billingCalculator');
 const { MESI_DI_PREAVVISO, analizzaCopertura, tariffeInScadenza } = require('../services/tariffService');
+const { riferimentiRotti } = require('../services/referentialIntegrity');
 
 // Le tariffe scadono, e quando scadono la fatturazione si ferma. La regola e in
 // services/tariffService, la stessa che usano la panoramica e il rinnovo: qui si
@@ -43,23 +44,6 @@ const strict = ['1', 'true', 'yes'].includes(String(process.env.INVOICE_VERIFY_S
 
 const sample = (items, limit = 8) => items.slice(0, limit).map((item) => JSON.stringify(item));
 
-const countMissingReferences = async ({ from, localField, target, targetField = '_id', where = {} }) => {
-    const rows = await from.aggregate([
-        { $match: { [localField]: { $ne: null }, ...where } },
-        {
-            $lookup: {
-                from: target.collection.collectionName,
-                localField,
-                foreignField: targetField,
-                as: 'target',
-            },
-        },
-        { $match: { target: { $size: 0 } } },
-        { $project: { _id: 1, [localField]: 1 } },
-    ]);
-
-    return rows;
-};
 
 const getInvoiceTotalMismatches = async () => {
     const rows = await Servizio.find({ fattura: { $ne: null } })
@@ -133,13 +117,12 @@ const main = async () => {
         fattureSenzaServizi,
         serviziSenzaFattura,
         serviziSenzaArticolo,
-        serviziFatturaMancante,
-        serviziArticoloMancante,
         scadenzeNonCollegate,
         totalMismatches,
         ritardiSalvati,
         inScadenza,
         problemiCopertura,
+        rottiPerLegame,
         articoli,
     ] = await Promise.all([
         Fattura.countDocuments(),
@@ -161,8 +144,6 @@ const main = async () => {
         ]),
         Servizio.countDocuments({ fattura: { $in: [null, undefined] } }),
         Servizio.countDocuments({ fattura: { $ne: null }, articolo: { $in: [null, undefined] } }),
-        countMissingReferences({ from: Servizio, localField: 'fattura', target: Fattura }),
-        countMissingReferences({ from: Servizio, localField: 'articolo', target: Articolo, where: { fattura: { $ne: null } } }),
         Scadenza.aggregate([
             {
                 $lookup: {
@@ -179,6 +160,7 @@ const main = async () => {
         getStoredDelays(),
         tariffeInScadenza(),
         getCoverageProblems(),
+        riferimentiRotti(),
         Articolo.find({}).select('codice descrizione iva').lean(),
     ]);
 
@@ -196,8 +178,12 @@ const main = async () => {
     console.log(`Fatture senza servizi: ${invoiceWithoutServicesCount}`);
     console.log(`Servizi senza fattura: ${serviziSenzaFattura}`);
     console.log(`Servizi fatturati senza articolo: ${serviziSenzaArticolo}`);
-    console.log(`Servizi con fattura inesistente: ${serviziFatturaMancante.length}`);
-    console.log(`Servizi con articolo inesistente: ${serviziArticoloMancante.length}`);
+    // Tutti i legami dichiarati in config/relations.js, non solo quelli dei servizi.
+    const quantiRotti = rottiPerLegame.reduce((totale, arco) => totale + arco.quanti, 0);
+    console.log(`Riferimenti che puntano a documenti inesistenti: ${quantiRotti}`);
+    rottiPerLegame.forEach((arco) => console.log(
+        `  ${arco.quanti} ${arco.modello}.${arco.campo} -> ${arco.bersaglio} mancante`
+    ));
     console.log(`Scadenze non collegate a fatture: ${unlinkedDeadlinesCount}`);
     console.log(`Fatture con totali diversi dalla somma servizi: ${totalMismatches.length}`);
     console.log(`Scadenze con il ritardo salvato (valore derivato): ${ritardiSalvati}`);
@@ -225,8 +211,7 @@ const main = async () => {
 
     if (strict && (
         fattureSenzaScadenza
-        || serviziFatturaMancante.length
-        || serviziArticoloMancante.length
+        || rottiPerLegame.length
         || totalMismatches.length
         || ritardiSalvati
         || inScadenza.length

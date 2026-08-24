@@ -1,11 +1,12 @@
 const { diffFields, writeAuditLog } = require('../../services/auditLogService');
+const { assertCancellabile, cancellaACascata } = require('../../services/referentialIntegrity');
 
 const lowerFirst = (value) => value.charAt(0).toLowerCase() + value.slice(1);
 
 // Tracciamento delle modifiche per le risorse che lo richiedono. Fino a ora era
 // registrato solo cio che riguardava le fatture: chi cambiava il prezzo di una
 // fascia - cioe quanto pagano tutti - non lasciava alcuna traccia.
-const auditRecord = async ({ action, audit, after, before, record, req, summary }) => {
+const auditRecord = async ({ action, audit, after, before, metadata, record, req, summary }) => {
     if (!audit) {
         return;
     }
@@ -15,6 +16,7 @@ const auditRecord = async ({ action, audit, after, before, record, req, summary 
         changes: before && after ? diffFields(before, after, audit.fields || []) : [],
         entityId: record?._id,
         entityType: audit.entityType,
+        metadata,
         req,
         summary: summary || `${audit.entityType} ${action}`,
     });
@@ -107,15 +109,24 @@ const updateRecord = (Model, { audit, name, mapBody = (body) => body, transform 
     }
 );
 
-const deleteRecord = (Model, { audit, name }) => (
+// Ogni cancellazione passa di qui, quindi il controllo dei legami vale per
+// tutte le risorse senza che nessun controller debba ricordarselo. Le fatture
+// fanno storia a se: la loro cancellazione ha una cascata piu ampia e vive in
+// invoiceDeletionService.
+const deleteRecord = (Model, { audit, cascata = false, name }) => (
     async (req, res) => {
         try {
-            const record = await Model.findByIdAndDelete(req.params.id);
+            const record = await Model.findById(req.params.id);
             if (!record) {
                 return res.status(404).json({ error: `${name} not found` });
             }
+
+            await assertCancellabile(Model.modelName, record._id, `${name} ${describe(audit, record)}`.trim());
+            const aCascata = cascata ? await cancellaACascata(Model.modelName, record._id) : {};
+            await Model.deleteOne({ _id: record._id });
             await auditRecord({
                 action: 'cancellato', audit, record, req, summary: `Cancellato ${lowerFirst(name)} ${describe(audit, record)}`,
+                metadata: Object.keys(aCascata).length ? { cancellatiACascata: aCascata } : undefined,
             });
             // 204 non prevede corpo nella risposta.
             return res.status(204).send();

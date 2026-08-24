@@ -60,6 +60,7 @@ va aggiunta qui, non ricopiata.
 | `deliveryService.js`        | la coda delle consegne: pianifica, elabora, registra l'esito      |
 | `tariffService.js`          | scadenza e rinnovo delle tariffe, copertura delle fasce           |
 | `paymentService.js`         | registrazione degli incassi su piu scadenze insieme               |
+| `referentialIntegrity.js`   | applica i legami dichiarati in `config/relations.js` |
 | `mailer.js`                 | l'unico punto in cui un messaggio esce davvero                    |
 | `dashboardService.js`       | i numeri della panoramica                                         |
 | `invoiceAuditService.js` / `auditLogService.js` | tracciamento delle modifiche      |
@@ -96,6 +97,35 @@ Gli indici sono dichiarati nello schema e creati all'avvio. Quelli che contano:
 - `Contatore`: `cliente`, `edificio`, `listino`;
 - `Consegna`: `{ fattura, tipo }` unico, perche una fattura ha al massimo una
   consegna per tipo, e `{ stato, automatica }` per la coda.
+
+## I legami fra documenti
+
+MongoDB non ha vincoli di integrita referenziale: cancellando un cliente, le sue
+fatture resterebbero a puntare a un documento inesistente e nessuno lo
+segnalerebbe. Il controllo lo fa l'applicazione, e la mappa dei legami sta in un
+posto solo, `config/relations.js`.
+
+Due politiche, con il vocabolario che usano tutti (Prisma, Doctrine, SQL):
+
+| Politica  | Significato | Dove |
+|-----------|-------------|------|
+| `blocca`  | la cancellazione e rifiutata con un 409 che dice cosa e collegato | anagrafiche: cliente con fatture, contatore con letture, articolo usato nelle righe |
+| `cascata` | i collegati se ne vanno insieme al padre | righe e consegne di una fattura, fasce di un listino |
+
+Il caso normale e **bloccare**. In un archivio contabile una cancellazione che
+si propaga in silenzio e peggio di un messaggio che dice "questo cliente ha 12
+fatture": il secondo si legge e si decide, la prima si scopre mesi dopo. E anche
+cio che fa il gestionale precedente, che su clienti, listini, articoli ed edifici
+non offre proprio il pulsante di eliminazione.
+
+Il controllo e dentro `deleteRecord`, la fabbrica da cui passano tutte le
+cancellazioni: nessun controller deve ricordarsene. Fa eccezione la fattura, che
+ha una cascata piu ampia (sblocca anche le letture) e vive in
+`invoiceDeletionService`.
+
+La stessa dichiarazione serve al rapporto di integrita, che percorre i legami
+uno per uno invece di riscriverli: aggiungere un riferimento a uno schema senza
+dichiararlo fa fallire un test.
 
 ## Test
 

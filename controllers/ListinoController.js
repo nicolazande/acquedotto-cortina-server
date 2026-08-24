@@ -70,7 +70,9 @@ module.exports = {
     }),
     getListino: getRecord(Listino, { name: 'Listino' }),
     updateListino: updateRecord(Listino, { audit, name: 'Listino' }),
-    deleteListino: deleteRecord(Listino, { audit, name: 'Listino' }),
+    // Le fasce appartengono al listino: senza di lui non hanno significato, e
+    // se ne vanno con lui. I contatori invece lo bloccano.
+    deleteListino: deleteRecord(Listino, { audit, cascata: true, name: 'Listino' }),
     associateFascia: associateRecords({
         field: 'listino',
         responseKey: 'fascia',
