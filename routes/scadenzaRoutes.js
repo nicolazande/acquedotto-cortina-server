@@ -4,6 +4,8 @@ const ScadenzaController = require('../controllers/ScadenzaController');
 
 router.post('/', ScadenzaController.createScadenza);
 router.get('/', ScadenzaController.getScadenze);
+router.post('/incassi', ScadenzaController.registraIncassi);
+router.post('/incassi/annulla', ScadenzaController.annullaIncassi);
 router.get('/:id', ScadenzaController.getScadenza);
 router.put('/:id', ScadenzaController.updateScadenza);
 router.delete('/:id', ScadenzaController.deleteScadenza);

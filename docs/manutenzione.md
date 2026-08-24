@@ -78,6 +78,26 @@ riquadro **Prepara l'anno prossimo** nella scheda del listino, da cui si
 rinnovano in un colpo con l'eventuale aumento. Vale la pena guardarlo in
 autunno, non a gennaio.
 
+### Gli incassi del 2025 non risultano registrati
+
+Le scadenze saldate sono il 100% nel 2022, il 99% nel 2023 e nel 2024, e il **2% nel
+2025**: 694 scadenze aperte per 141.212 EUR, di cui 670 con scadenza 31/12/2025.
+
+Non e un problema di emissione: quelle fatture sono confermate, trasmesse allo SdI il
+5/12/2025 e inviate ai clienti il 22/01/2026. Nel gestionale precedente l'incasso si
+registrava aprendo una maschera per ogni scadenza, su una griglia senza filtri ne
+ricerca; nel 2025 quel lavoro non e piu stato fatto.
+
+Finche non sono allineati:
+
+- il totale **da incassare** in panoramica non e attendibile;
+- **la mora scatterebbe su 712 clienti su 782** alla prossima fatturazione, 4.272 EUR,
+  perche viene applicata quando la scadenza precedente del cliente risulta superata;
+- qualunque sollecito colpirebbe anche chi ha gia pagato.
+
+La pagina **Incassi** serve a questo: si spuntano molte scadenze insieme confrontandole
+con l'estratto conto.
+
 ### Il campo `saldo` non e sempre un booleano
 
 Alcuni record importati hanno `saldo: 1` invece di `saldo: true`. Mongoose converte

@@ -43,7 +43,9 @@ const writeAuditLog = async ({
     req,
     summary,
 }) => {
-    if (!entityId || !entityType || !action) {
+    // Un'operazione su un lotto non ha un record a cui appartenere: bastano il
+    // tipo e l'azione. Senza questa distinzione le voci di lotto sparivano.
+    if (!entityType || !action) {
         return null;
     }
 

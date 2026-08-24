@@ -697,6 +697,81 @@ const testTariffRenewal = async () => {
     }
 };
 
+// Registrare gli incassi in blocco. Nel gestionale precedente si faceva una
+// scadenza alla volta, e infatti a un certo punto nessuno l'ha piu fatto.
+const testPaymentRegistration = async () => {
+    if (skipMutation) {
+        console.log('skipped');
+        return;
+    }
+
+    const createdRecords = [];
+
+    try {
+        const scaduta = await createTrackedRecord(createdRecords, 'scadenze', {
+            scadenza: giorniDopo(-40),
+            saldo: false,
+            totale: 120.5,
+            cognome: 'Smoke',
+            nome: 'Incassi',
+        });
+        assert(scaduta.ritardo === 40, `an unpaid deadline should accrue delay, got ${scaduta.ritardo}`);
+
+        const pagataIl = giorniDopo(-10);
+        const incasso = await request('/scadenze/incassi', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scadenze: [scaduta._id], pagamento: pagataIl }),
+        });
+        assert(incasso.body.registrate === 1, 'the payment should be registered');
+        assert(incasso.body.totale === 120.5, 'the batch should report the amount collected');
+
+        const dopo = await request(`/scadenze/${scaduta._id}`);
+        assert(dopo.body.saldo === true, 'the deadline should be settled');
+        assert(dopo.body.pagamento.startsWith(pagataIl), 'the payment date should be the one given');
+        // Il ritardo si ferma al giorno del pagamento invece di crescere.
+        assert(dopo.body.ritardo === 30, `delay should stop at the payment date, got ${dopo.body.ritardo}`);
+
+        // Rifare la stessa operazione non deve sovrascrivere la data gia registrata.
+        const ripetuto = await request('/scadenze/incassi', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scadenze: [scaduta._id], pagamento: giorniDopo(0) }),
+        });
+        assert(ripetuto.body.registrate === 0, 'an already settled deadline must not be touched again');
+        assert(ripetuto.body.gia_saldate === 1, 'and it should be reported as already settled');
+
+        const invariata = await request(`/scadenze/${scaduta._id}`);
+        assert(invariata.body.pagamento.startsWith(pagataIl), 'the original payment date must survive');
+
+        let futuroBloccato = false;
+        try {
+            await request('/scadenze/incassi', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ scadenze: [scaduta._id], pagamento: giorniDopo(1) }),
+            });
+        } catch (error) {
+            futuroBloccato = error.message.includes('400');
+        }
+        assert(futuroBloccato, 'a payment dated tomorrow should be refused');
+
+        const annullato = await request('/scadenze/incassi/annulla', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scadenze: [scaduta._id] }),
+        });
+        assert(annullato.body.annullate === 1, 'the payment should be reversible');
+
+        const riaperta = await request(`/scadenze/${scaduta._id}`);
+        assert(riaperta.body.saldo === false, 'the deadline should be open again');
+        assert(!riaperta.body.pagamento, 'and carry no payment date');
+        assert(riaperta.body.ritardo === 40, 'the delay should start growing again');
+    } finally {
+        await deleteCreatedRecords(createdRecords);
+    }
+};
+
 const main = async () => {
     console.log(`Smoke API target: ${apiUrl}`);
     await step('health endpoint', testHealth);
@@ -707,6 +782,7 @@ const main = async () => {
     await step('invoice deletion cascade', testInvoiceDeletionCascade);
     await step('invoice delivery queue', testInvoiceDelivery);
     await step('tariff renewal', testTariffRenewal);
+    await step('payment registration', testPaymentRegistration);
     await step('note attachments create/list/file/delete', testAttachments);
     console.log('Smoke API completed successfully.');
 };

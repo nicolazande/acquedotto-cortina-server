@@ -203,6 +203,12 @@ POST   /api/scadenze/:scadenzaId/fattura/:fatturaId         associateFattura
 GET    /api/scadenze/:id/fattura                            getFatturaAssociata
 ```
 
+### /api/scadenze/incassi
+```text
+POST   /api/scadenze/incassi                                registraIncassi
+POST   /api/scadenze/incassi/annulla                        annullaIncassi
+```
+
 ### /api/servizi
 ```text
 POST   /api/servizi                                         createServizio
@@ -278,6 +284,25 @@ gia coperto o se il rinnovo lascerebbe buchi o sovrapposizioni.
 
 Le fasce esistenti non vengono mai modificate: sono la tariffa con cui sono
 state emesse le fatture di allora.
+
+### `/api/scadenze`
+
+Registrare un incasso su molte scadenze in una volta.
+
+```text
+POST /api/scadenze/incassi          { scadenze: [id], pagamento: "2026-08-24" }
+POST /api/scadenze/incassi/annulla  { scadenze: [id] }
+```
+
+`incassi` tocca **solo le scadenze ancora aperte**: rieseguirlo non sovrascrive una
+data di pagamento gia registrata, e riporta quante ne ha saltate in `gia_saldate`.
+La data e obbligatoria e non puo essere nel futuro. Massimo 500 scadenze per
+richiesta.
+
+`incassi/annulla` riapre scadenze segnate pagate per errore e toglie la data.
+
+Ogni scadenza toccata riceve una voce nel giornale, piu una voce per
+l'operazione nel suo insieme.
 
 ### `/api/portale-cliente`
 Richiede ruolo `cliente`. Restituisce solo i dati dell'anagrafica collegata
