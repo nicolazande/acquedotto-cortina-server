@@ -15,7 +15,7 @@ const { getTaxRate } = require('../services/billingCalculator');
 const { MESI_DI_PREAVVISO, analizzaCopertura, tariffeInScadenza } = require('../services/tariffService');
 const { riferimentiRotti } = require('../services/referentialIntegrity');
 
-// Le tariffe scadono, e quando scadono la fatturazione si ferma. La regola e in
+// Le tariffe scadono, e da quel momento si fattura ai prezzi vecchi. La regola e in
 // services/tariffService, la stessa che usano la panoramica e il rinnovo: qui si
 // legge soltanto.
 const getCoverageProblems = async () => {
@@ -196,7 +196,7 @@ const main = async () => {
     }
 
     if (inScadenza.length) {
-        console.log('\nDopo quella data la fatturazione di questi listini si ferma:');
+        console.log('\nDopo quella data si continua a fatturare ai prezzi di oggi, finche non arrivano i nuovi:');
         inScadenza.forEach((t) => console.log(
             `  ${t.scadeIl.toISOString().slice(0, 10)}  ${String(t.categoria).padEnd(32)} `
             + `${String(t.contatori).padStart(4)} contatori, fasce ${t.fasceInScadenza}/${t.fasceTotali}`

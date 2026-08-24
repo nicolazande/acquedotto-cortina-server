@@ -78,12 +78,64 @@ const sortBands = (bands) => [...bands].sort((a, b) => {
         || normalizeText(a.tipo).localeCompare(normalizeText(b.tipo));
 });
 
-const getApplicableBands = (bands, { date, listinoId } = {}) => sortBands(
-    bands.filter((band) => {
-        const sameListino = !listinoId || recordId(band.listino) === recordId(listinoId);
-        return sameListino && isInValidity(band, toDate(date));
-    })
+// Una tariffa resta in vigore finche non ne arriva una nuova.
+//
+// Le fasce hanno una data di scadenza, ma quella data dice "questo prezzo vale
+// fino a qui", non "dopo di me non si fattura piu". Nella realta il consiglio
+// approva una tariffa e quella si applica finche non ne delibera un'altra:
+// quasi tutte le fasce in archivio scadono il 31/12/2026 e senza proroga il
+// 1 gennaio la fatturazione si fermerebbe su 1.059 contatori.
+//
+// La proroga riempie solo i buchi: una fascia scaduta viene ripresa se il suo
+// scaglione non e coperto da nessuna fascia ancora valida. Cosi appena si
+// inserisce la tariffa nuova, quella vince, e due prezzi non possono mai
+// applicarsi allo stesso metro cubo.
+const limiteInferiore = (band) => (numberOrZero(band.min) > 0 ? numberOrZero(band.min) - 1 : 0);
+const limiteSuperiore = (band) => (numberOrZero(band.max) > 0 ? numberOrZero(band.max) : Infinity);
+
+const siSovrappongono = (una, altra) => (
+    isFixedBand(una) === isFixedBand(altra)
+    && limiteInferiore(una) < limiteSuperiore(altra)
+    && limiteInferiore(altra) < limiteSuperiore(una)
 );
+
+const fasceProrogate = (candidate, valide) => {
+    // La versione piu recente di ogni scaglione: se una fascia e stata
+    // rinnovata piu volte in passato, vale l'ultima.
+    const perRecenza = [...candidate].sort(
+        (a, b) => (toDate(b.scadenza)?.getTime() || 0) - (toDate(a.scadenza)?.getTime() || 0)
+    );
+    const prorogate = [];
+
+    perRecenza.forEach((band) => {
+        const occupato = [...valide, ...prorogate].some((altra) => siSovrappongono(band, altra));
+        if (!occupato) {
+            prorogate.push(band);
+        }
+    });
+
+    return prorogate;
+};
+
+const getApplicableBands = (bands, { date, listinoId } = {}) => {
+    const delListino = bands.filter(
+        (band) => !listinoId || recordId(band.listino) === recordId(listinoId)
+    );
+    const quando = toDate(date);
+    const valide = delListino.filter((band) => isInValidity(band, quando));
+
+    if (!quando) {
+        return sortBands(valide);
+    }
+
+    const scadute = delListino.filter((band) => {
+        const fine = toDate(band.scadenza);
+        const inizio = toDate(band.inizio);
+        return fine && fine < quando && (!inizio || inizio <= quando);
+    });
+
+    return sortBands([...valide, ...fasceProrogate(scadute, valide)]);
+};
 
 const getArticleByCode = (articlesByCode, code) => articlesByCode?.[code] || null;
 

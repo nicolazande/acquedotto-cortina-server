@@ -1,11 +1,15 @@
 // Le tariffe nel tempo: quando scadono, e come si rinnovano senza sbagliare.
 //
-// Le fasce di un listino hanno una validita. Quando l'ultima utile scade, la
-// fatturazione di quel listino si ferma - il calcolo rifiuta di emettere invece
-// di indovinare un prezzo. E il comportamento giusto, ma va saputo prima: alla
-// scrittura di questo modulo dieci listini su quindici scadevano tutti insieme
-// il 31/12/2026, e un altro era scaduto da due anni senza che nessuno se ne
-// fosse accorto.
+// Le fasce di un listino hanno una validita, ma una tariffa scaduta non ferma
+// la fatturazione: `getApplicableBands` la proroga finche non ne arriva una
+// nuova, perche e cosi che funziona nella realta - il consiglio approva un
+// prezzo e quello vale finche non ne delibera un altro.
+//
+// Restano pero da rinnovare, e accorgersene serve lo stesso: alla scrittura di
+// questo modulo dieci listini su quindici scadevano insieme il 31/12/2026, e
+// uno era scaduto da due anni senza che nessuno se ne fosse accorto. Senza un
+// avviso si finisce per fatturare l'anno nuovo ai prezzi vecchi senza averlo
+// deciso.
 //
 // Le regole su quali fasce siano valide e quali siano quote fisse non sono
 // riscritte qui: arrivano da billingCalculator, cosi il controllo e il calcolo
@@ -124,31 +128,6 @@ const prezzoRinnovato = (prezzo, variazione) => {
     return fromCents(Math.round(centesimi * (1 + Number(variazione) / 100)));
 };
 
-// Le fasce da cui copiare: quelle in vigore alla vigilia, escluse quelle che
-// valgono gia per l'anno di destinazione.
-//
-// Se cosi non resta niente, il listino e gia scaduto da tempo - succede: uno dei
-// listini reali e scaduto due anni prima che qualcuno se ne accorgesse - e si
-// riprendono le ultime tariffe che sono state in vigore. L'esclusione va fatta
-// prima di decidere se ripiegare: un listino la cui unica fascia ancora valida
-// e quella alta sembrerebbe altrimenti in ordine, e non ci sarebbe nulla da
-// rinnovare proprio dove manca tutto il resto.
-const fasceDiRiferimento = (fasce, vigilia, escludi) => {
-    const utili = (data) => getApplicableBands(fasce, { date: data }).filter((f) => !escludi(f));
-
-    const allaVigilia = utili(vigilia);
-    if (allaVigilia.length > 0) {
-        return allaVigilia;
-    }
-
-    const ultimaScadenza = fasce
-        .filter((fascia) => fascia.scadenza && new Date(fascia.scadenza) < vigilia)
-        .map((fascia) => new Date(fascia.scadenza))
-        .sort((a, b) => b - a)[0];
-
-    return ultimaScadenza ? utili(ultimaScadenza) : [];
-};
-
 // Cosa succederebbe rinnovando le tariffe di un listino per un anno.
 //
 // Non tutte le fasce vanno copiate: quelle che valgono gia per l'anno di
@@ -174,7 +153,11 @@ const pianoRinnovo = ({ fasce, anno, variazione = 0 }) => {
     // qualcuno se ne accorgesse. In quel caso si riprendono le ultime tariffe
     // che sono state in vigore, che sono proprio quelle da rinnovare: rifiutarsi
     // lascerebbe scoperto l'unico caso in cui questo strumento serve davvero.
-    const daRinnovare = fasceDiRiferimento(fasce, giornoPrima, (fascia) => giaValide.has(String(fascia._id)));
+    // Le tariffe in vigore alla vigilia. `getApplicableBands` proroga da sola le
+    // fasce scadute che nessuna nuova ha sostituito, quindi qui arrivano anche
+    // le tariffe di un listino fermo da anni: sono proprio quelle da rinnovare.
+    const daRinnovare = getApplicableBands(fasce, { date: giornoPrima })
+        .filter((fascia) => !giaValide.has(String(fascia._id)));
 
     const nuove = daRinnovare.map((fascia) => ({
         tipo: fascia.tipo,

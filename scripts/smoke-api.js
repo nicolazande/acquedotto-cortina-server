@@ -653,9 +653,9 @@ const testInvoiceDelivery = async () => {
     }
 };
 
-// Il rinnovo delle tariffe. Le fasce hanno una validita e quando scade la
-// fatturazione si ferma: rinnovarle a mano, una per una, e come sono nati i
-// buchi che ci sono nei dati. Qui si verifica che il rinnovo copi quello che
+// Il rinnovo delle tariffe. Una fascia scaduta viene prorogata, quindi si
+// continua a fatturare ai prezzi vecchi: rinnovarle a mano, una per una, e come
+// sono nati i buchi che ci sono nei dati. Qui si verifica che il rinnovo copi quello che
 // deve e lasci stare quello che vale gia.
 const testTariffRenewal = async () => {
     if (skipMutation) {

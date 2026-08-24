@@ -86,13 +86,14 @@ chiusa non accumula ritardo, e inventare una data sarebbe peggio.
 
 ### Le tariffe hanno una scadenza
 
-Le fasce dei listini hanno una validita. Quando l'ultima fascia utile scade, la
-fatturazione di quel listino **si ferma**: il calcolo rifiuta di emettere invece
-di indovinare un prezzo.
+Le fasce dei listini hanno una validita, ma una tariffa scaduta **non ferma la
+fatturazione**: viene prorogata finche non ne arriva una nuova, perche e cosi
+che funziona nella realta. Si continua quindi a fatturare ai prezzi dell'anno
+prima, il che va bene per qualche settimana e non va bene per un anno intero.
 
 Alla scrittura di questo documento le fasce di **10 listini su 15 scadono il
-31/12/2026**, e riguardano 1.059 contatori su 1.061: dal 1 gennaio 2027 non si
-fattura piu nulla finche le tariffe non vengono rinnovate. Un listino,
+31/12/2026**, e riguardano 1.059 contatori su 1.061: dal 1 gennaio 2027 si
+continuerebbe a fatturare ai prezzi del 2026. Un listino,
 `SOCIETA' IMMOBILIARI` (2 contatori), e scaduto il 31/12/2023 ed e la causa
 dell'unico errore che i rapporti segnalano da tempo.
 

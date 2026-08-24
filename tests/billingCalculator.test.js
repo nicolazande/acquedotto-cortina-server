@@ -116,12 +116,71 @@ test('listino senza fasce valide: il calcolo si ferma invece di fatturare a zero
     );
 });
 
-test('validita temporale: le fasce scadute non entrano nel calcolo', () => {
+test('validita temporale: una tariffa scaduta resta in vigore finche non ne arriva una nuova', () => {
+    // La data di scadenza dice "questo prezzo vale fino a qui", non "dopo di me
+    // non si fattura piu": il consiglio approva una tariffa e quella si applica
+    // finche non ne delibera un'altra. Senza proroga, il 1 gennaio 2027 la
+    // fatturazione si fermerebbe su 1.059 contatori su 1.061.
     const scadute = [
         fascia({ tipo: 'Tariffa Base', min: 1, max: 100, prezzo: 0.33, inizio: '2020-01-01', scadenza: '2020-12-31' }),
     ];
+    const righe = righeConsumo(calcola({ fasce: scadute, currentValue: 10 }));
 
-    assert.throws(() => calcola({ fasce: scadute }), /non ha fasce consumo valide/);
+    assert.equal(righe.length, 1);
+    assert.equal(righe[0].prezzo, 0.33);
+});
+
+test('validita temporale: senza nessuna fascia il calcolo si ferma', () => {
+    assert.throws(() => calcola({ fasce: [] }), /non ha fasce consumo valide/);
+});
+
+test('validita temporale: una fascia futura non viene prorogata all indietro', () => {
+    // Prorogare una tariffa non ancora in vigore vorrebbe dire applicarla prima
+    // che sia stata deliberata.
+    const future = [
+        fascia({ tipo: 'Tariffa Base', min: 1, max: 100, prezzo: 0.5, inizio: '2030-01-01', scadenza: '2030-12-31' }),
+    ];
+
+    assert.throws(() => calcola({ fasce: future }), /non ha fasce consumo valide/);
+});
+
+test('la proroga riempie solo i buchi, non si sovrappone a una tariffa valida', () => {
+    // Il caso reale: quasi tutte le fasce scadono a fine 2026, ma la piu alta
+    // resta valida fino al 2099. Prorogare anche quella significherebbe
+    // fatturare lo stesso scaglione due volte.
+    const fasce = [
+        fascia({ tipo: 'Tariffa Base', min: 1, max: 100, prezzo: 0.33, inizio: '2020-01-01', scadenza: '2026-12-31' }),
+        fascia({ tipo: 'Ordinaria', min: 101, max: 300, prezzo: 0.73, inizio: '2020-01-01', scadenza: '2026-12-31' }),
+        fascia({ tipo: 'Alta', min: 301, max: 9999, prezzo: 1.23, inizio: '2020-01-01', scadenza: '2099-12-31' }),
+    ];
+    const righe = righeConsumo(calcola({ fasce, lettura: lettura({ data_lettura: new Date('2027-06-15') }), currentValue: 400 }));
+
+    assert.equal(righe.length, 3, 'i tre scaglioni, senza duplicati');
+    assert.deepEqual(righe.map((riga) => riga.prezzo), [0.33, 0.73, 1.23]);
+    assert.equal(righe.reduce((totale, riga) => totale + riga.metri_cubi, 0), 400);
+});
+
+test('la tariffa nuova vince su quella prorogata', () => {
+    // Appena si inserisce il prezzo del nuovo anno, la proroga si fa da parte.
+    const fasce = [
+        fascia({ tipo: 'Tariffa Base', min: 1, max: 100, prezzo: 0.33, inizio: '2020-01-01', scadenza: '2026-12-31' }),
+        fascia({ tipo: 'Tariffa Base', min: 1, max: 100, prezzo: 0.40, inizio: '2027-01-01', scadenza: '2027-12-31' }),
+    ];
+    const righe = righeConsumo(calcola({ fasce, lettura: lettura({ data_lettura: new Date('2027-06-15') }), currentValue: 50 }));
+
+    assert.equal(righe.length, 1);
+    assert.equal(righe[0].prezzo, 0.40);
+});
+
+test('fra due versioni scadute vale la piu recente', () => {
+    const fasce = [
+        fascia({ tipo: 'Tariffa Base', min: 1, max: 100, prezzo: 0.20, inizio: '2018-01-01', scadenza: '2019-12-31' }),
+        fascia({ tipo: 'Tariffa Base', min: 1, max: 100, prezzo: 0.33, inizio: '2020-01-01', scadenza: '2026-12-31' }),
+    ];
+    const righe = righeConsumo(calcola({ fasce, lettura: lettura({ data_lettura: new Date('2027-06-15') }), currentValue: 50 }));
+
+    assert.equal(righe.length, 1);
+    assert.equal(righe[0].prezzo, 0.33);
 });
 
 test('validita temporale: viene scelta la fascia valida alla data della lettura', () => {

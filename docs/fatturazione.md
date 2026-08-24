@@ -57,11 +57,26 @@ Esempio con consumo 135 sul listino `1-100 @ 0,33` / `101-150 @ 0,73` / `151-200
 Solo le fasce valide alla `data_lettura` e appartenenti al listino del contatore
 entrano nel calcolo.
 
-> **Le tariffe scadono, e con loro la fatturazione.** Quasi tutte le fasce in uso
-> scadono il **31/12/2026**: dal giorno dopo il calcolo si rifiuta di emettere,
-> perche non ha un prezzo da applicare. E il comportamento giusto, ma va saputo
-> prima, e il gestionale lo dice in tre punti: un avviso in panoramica, l'elenco
-> in `npm run report:integrita`, e il rinnovo nella scheda del listino.
+### Una tariffa resta in vigore finche non ne arriva una nuova
+
+La data di scadenza di una fascia dice "questo prezzo vale fino a qui", non
+"dopo di me non si fattura piu". Nella realta il consiglio approva una tariffa e
+quella si applica finche non ne delibera un'altra, quindi il calcolo **proroga**
+le fasce scadute che nessuna nuova ha sostituito.
+
+La proroga riempie **solo i buchi**: una fascia scaduta viene ripresa se il suo
+scaglione non e coperto da nessuna fascia ancora valida, e mai se si
+sovrapporrebbe. Appena si inserisce la tariffa del nuovo anno, quella vince.
+Fra due versioni scadute dello stesso scaglione vale la piu recente. Una fascia
+con validita futura non viene mai prorogata all'indietro: applicarla prima che
+sia stata deliberata sarebbe inventare un prezzo.
+
+Senza proroga, il 1 gennaio 2027 la fatturazione si sarebbe fermata su **1.059
+contatori su 1.061**, perche quasi tutte le fasce in uso scadono il 31/12/2026.
+
+> **Continuare ai prezzi vecchi resta una decisione, non un incidente.** Il
+> gestionale lo dice in tre punti: un avviso in panoramica, l'elenco in
+> `npm run report:integrita`, e il rinnovo nella scheda del listino.
 
 ### Rinnovare le tariffe
 

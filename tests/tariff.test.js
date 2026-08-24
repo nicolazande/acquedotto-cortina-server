@@ -51,11 +51,20 @@ test('se manca il primo scaglione lo dice, invece di fatturare da meta', () => {
     assert.match(esito.problemi[0], /I primi 100 mc non hanno tariffa/);
 });
 
-test('dopo la scadenza non resta nulla su cui calcolare', () => {
+test('dopo la scadenza la copertura regge, perche le tariffe restano in vigore', () => {
+    // Le fasce scadute vengono prorogate finche non ne arrivano di nuove: il
+    // listino resta completo e la fatturazione continua ai prezzi dell'anno
+    // prima. Cambia il prezzo che si applica, non la possibilita di fatturare.
     const esito = analizzaCopertura(DOMESTICO_NON_RESIDENTE, new Date('2027-01-15'));
 
-    // Resta solo la fascia alta: il consumo sotto i 301 mc non ha prezzo.
-    assert.match(esito.problemi[0], /I primi 300 mc non hanno tariffa/);
+    assert.deepEqual(esito.problemi, []);
+    assert.equal(esito.tetto, 9999);
+});
+
+test('un listino senza nessuna fascia resta scoperto', () => {
+    const esito = analizzaCopertura([], new Date('2027-01-15'));
+
+    assert.match(esito.problemi[0], /Nessuna fascia valida/);
 });
 
 // --- prezzo ------------------------------------------------------------------
