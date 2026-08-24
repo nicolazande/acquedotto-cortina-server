@@ -236,3 +236,37 @@ test('calculateTotals: senza aliquota salvata usa quella dell articolo', () => {
 test('calculateTotals: elenco vuoto produce totali a zero', () => {
     assert.deepEqual(calculateTotals([]), { imponibile: 0, iva: 0, totale_fattura: 0 });
 });
+
+test("l'IVA si calcola sugli importi di riga arrotondati al centesimo", () => {
+    // Il documento dichiara 4,73: la base imponibile e quella, non 4,729527.
+    // I riparti condominiali importati hanno importi con sei decimali, e
+    // calcolare l'imposta sul valore non arrotondato dava un centesimo in meno
+    // su tre fatture. E anche cio che vuole il riepilogo della fattura
+    // elettronica, che somma gli importi di riga a due decimali.
+    const righe = [
+        { valore_unitario: 4.729527, iva_percentuale: 10 },
+        { valore_unitario: 11.6655, iva_percentuale: 10 },
+    ];
+    const totali = calculateTotals(righe);
+
+    assert.equal(totali.imponibile, 16.4, '4,73 + 11,67');
+    assert.equal(totali.iva, 1.64);
+    assert.equal(totali.totale_fattura, 18.04);
+});
+
+test('il totale di una fattura e sempre imponibile piu imposta', () => {
+    // Vale su qualunque combinazione di aliquote: e la proprieta su cui il
+    // Sistema di Interscambio ricalcola il documento.
+    const combinazioni = [
+        [{ valore_unitario: 0.01, iva_percentuale: 10 }],
+        [{ valore_unitario: 33.33, iva_percentuale: 22 }, { valore_unitario: 6, iva_percentuale: 0 }],
+        [{ valore_unitario: 99.99, iva_percentuale: 10 }, { valore_unitario: 0.05, iva_percentuale: 10 }],
+    ];
+
+    combinazioni.forEach((righe) => {
+        const totali = calculateTotals(righe);
+        const somma = Math.round((totali.imponibile + totali.iva) * 100);
+
+        assert.equal(Math.round(totali.totale_fattura * 100), somma);
+    });
+});

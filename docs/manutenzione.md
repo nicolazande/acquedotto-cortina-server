@@ -60,6 +60,21 @@ Restano **13 scadenze saldate senza data di pagamento**: sono pagate, ma il gior
 non e noto perche mancava all'origine. Il loro ritardo vale zero - una posizione
 chiusa non accumula ritardo, e inventare una data sarebbe peggio.
 
+### Le tariffe hanno una scadenza
+
+Le fasce dei listini hanno una validita. Quando l'ultima fascia utile scade, la
+fatturazione di quel listino **si ferma**: il calcolo rifiuta di emettere invece
+di indovinare un prezzo.
+
+Alla scrittura di questo documento le fasce di **10 listini su 15 scadono il
+31/12/2026**, e riguardano 1.059 contatori su 1.061: dal 1 gennaio 2027 non si
+fattura piu nulla finche le tariffe non vengono rinnovate. Un listino,
+`SOCIETA' IMMOBILIARI` (2 contatori), e scaduto il 31/12/2023 ed e la causa
+dell'unico errore che i rapporti segnalano da tempo.
+
+`npm run report:integrita` elenca i listini in scadenza entro sei mesi. Vale la
+pena guardarlo in autunno, non a gennaio.
+
 ### Il campo `saldo` non e sempre un booleano
 
 Alcuni record importati hanno `saldo: 1` invece di `saldo: true`. Mongoose converte

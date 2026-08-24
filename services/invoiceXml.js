@@ -13,7 +13,7 @@ const { CEDENTE, invoiceCode, naturaPerIva, tipoDocumentoXml } = require('../con
 const { CODICE_DESTINATARIO_ASSENTE, codiceDestinatarioValido } = require('../config/delivery');
 const { customerLabel } = require('../utils/customer');
 const { getTaxRate } = require('./billingCalculator');
-const { fromCents, toCents } = require('../utils/money');
+const { applyRate, fromCents, toCents } = require('../utils/money');
 const { unprocessable } = require('../utils/errors');
 const { siglaProvincia } = require('../utils/province');
 
@@ -111,8 +111,10 @@ const rigaDettaglio = (servizio, indice) => {
     ].filter(Boolean).join('\n');
 };
 
-// Il riepilogo raggruppa per aliquota: e la sezione su cui l'Agenzia verifica i totali.
-const righeRiepilogo = (servizi) => {
+// Il riepilogo raggruppa per aliquota: e la sezione su cui l'Agenzia ricalcola i
+// totali del documento. Restituisce anche le somme, perche il totale dichiarato
+// deve coincidere con queste e non con un valore calcolato altrove.
+const riepilogoPerAliquota = (servizi) => {
     const gruppi = new Map();
 
     servizi.forEach((servizio) => {
@@ -125,20 +127,27 @@ const righeRiepilogo = (servizi) => {
         gruppi.set(chiave, corrente);
     });
 
-    return [...gruppi.values()].map(({ aliquota, natura, centesimi }) => {
-        const imponibile = fromCents(centesimi);
-        const imposta = fromCents(Math.round((centesimi * aliquota) / 100));
+    let imponibileCents = 0;
+    let impostaCents = 0;
+
+    const righe = [...gruppi.values()].map(({ aliquota, natura, centesimi }) => {
+        // L'imposta si arrotonda per gruppo, come vuole il tracciato.
+        const imposta = applyRate(centesimi, aliquota);
+        imponibileCents += centesimi;
+        impostaCents += imposta;
 
         return [
             '      <DatiRiepilogo>',
             `        <AliquotaIVA>${percentuale(aliquota)}</AliquotaIVA>`,
             natura ? `        <Natura>${natura}</Natura>` : '',
-            `        <ImponibileImporto>${importo(imponibile)}</ImponibileImporto>`,
-            `        <Imposta>${importo(imposta)}</Imposta>`,
+            `        <ImponibileImporto>${importo(fromCents(centesimi))}</ImponibileImporto>`,
+            `        <Imposta>${importo(fromCents(imposta))}</Imposta>`,
             natura ? '        <RiferimentoNormativo>Operazione senza applicazione IVA</RiferimentoNormativo>' : '',
             '      </DatiRiepilogo>',
         ].filter(Boolean).join('\n');
     });
+
+    return { righe, imponibileCents, impostaCents };
 };
 
 const buildInvoiceXml = ({ cliente, fattura, servizi }) => {
@@ -158,6 +167,29 @@ const buildInvoiceXml = ({ cliente, fattura, servizi }) => {
     const destinatario = codiceDestinatarioValido(cliente?.codice_destinatario)
         || CODICE_DESTINATARIO_ASSENTE;
     const numero = invoiceCode(fattura) || `${fattura.anno}/${fattura.numero}`;
+
+    // Le righe si costruiscono qui: un problema su una riga (una natura IVA che
+    // manca) e piu specifico del totale che non torna, e va detto per primo.
+    const dettaglio = servizi.map(rigaDettaglio);
+
+    // Il totale del documento deve coincidere con la somma dei suoi riepiloghi:
+    // e il conto che rifa il Sistema di Interscambio, e un centesimo di scarto
+    // basta a far scartare il file. Su 135 fatture importate il totale salvato
+    // dal gestionale precedente non torna con le proprie righe, per via del suo
+    // arrotondamento: quelle non si possono emettere cosi. Il gestionale non
+    // sceglie al posto di nessuno - non riscrive il totale e non emette un file
+    // che sarebbe rifiutato - ma dice cosa non torna.
+    const riepilogo = riepilogoPerAliquota(servizi);
+    const totaleCalcolato = riepilogo.imponibileCents + riepilogo.impostaCents;
+    const totaleDichiarato = toCents(fattura.totale_fattura);
+
+    if (totaleDichiarato !== totaleCalcolato) {
+        throw unprocessable(
+            `Il totale della fattura (${fromCents(totaleDichiarato).toFixed(2)} EUR) non coincide con `
+            + `la somma delle sue righe e della relativa IVA (${fromCents(totaleCalcolato).toFixed(2)} EUR). `
+            + 'Il Sistema di Interscambio rifiuterebbe il file: correggere il documento prima di emetterlo.'
+        );
+    }
 
     const tipoDocumento = tipoDocumentoXml(fattura.tipo_documento);
     if (!tipoDocumento) {
@@ -224,12 +256,12 @@ const buildInvoiceXml = ({ cliente, fattura, servizi }) => {
         <Divisa>EUR</Divisa>
         <Data>${data}</Data>
         <Numero>${testoXml(numero)}</Numero>
-        <ImportoTotaleDocumento>${importo(fattura.totale_fattura)}</ImportoTotaleDocumento>
+        <ImportoTotaleDocumento>${importo(fromCents(totaleCalcolato))}</ImportoTotaleDocumento>
       </DatiGeneraliDocumento>
     </DatiGenerali>
     <DatiBeniServizi>
-${servizi.map(rigaDettaglio).join('\n')}
-${righeRiepilogo(servizi).join('\n')}
+${dettaglio.join('\n')}
+${riepilogo.righe.join('\n')}
     </DatiBeniServizi>
   </FatturaElettronicaBody>
 </p:FatturaElettronica>

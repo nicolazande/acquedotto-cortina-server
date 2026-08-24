@@ -57,6 +57,12 @@ Esempio con consumo 135 sul listino `1-100 @ 0,33` / `101-150 @ 0,73` / `151-200
 Solo le fasce valide alla `data_lettura` e appartenenti al listino del contatore
 entrano nel calcolo.
 
+> **Le tariffe scadono, e con loro la fatturazione.** Quasi tutte le fasce in uso
+> scadono il **31/12/2026**: dal giorno dopo il calcolo si rifiuta di emettere,
+> perche non ha un prezzo da applicare. E il comportamento giusto, ma va saputo
+> prima. `npm run report:integrita` elenca i listini le cui tariffe scadono entro
+> sei mesi, con quanti contatori ciascuno.
+
 ### Controllo di copertura
 
 Dopo aver costruito le righe, il calcolo verifica che la somma dei metri cubi
@@ -126,8 +132,14 @@ IVA        = somma di (valore_unitario x aliquota / 100) di ogni riga
 totale     = imponibile + IVA
 ```
 
-L'IVA viene sommata riga per riga **senza arrotondamenti intermedi** e arrotondata
-solo alla fine.
+L'IVA viene sommata riga per riga e arrotondata **una sola volta, alla fine**.
+
+L'imposta si calcola pero sugli importi di riga **arrotondati al centesimo**, non
+sul loro valore pieno: se la riga dice 4,73 la base imponibile e 4,73, non
+4,729527. Sui riparti condominiali importati, che hanno sei decimali, calcolarla
+sul valore pieno dava un centesimo in meno su tre fatture. E anche il criterio
+che vuole il riepilogo della fattura elettronica, che somma gli importi di riga a
+due decimali: le due sezioni del documento devono tornare fra loro.
 
 ### Perche gli importi sono in centesimi interi
 
@@ -234,6 +246,26 @@ peggio di uno non emesso. La corrispondenza sta in `config/invoicing.js`.
 
 > Le note di credito importate hanno importi **positivi**: nel tracciato il segno
 > lo porta il tipo di documento, non gli importi. Nessuna conversione e applicata.
+
+### Il totale deve tornare con i suoi riepiloghi
+
+Il Sistema di Interscambio ricalcola il documento: somma gli imponibili e le
+imposte dei riepiloghi per aliquota e li confronta con
+`ImportoTotaleDocumento`. **Un centesimo di scarto fa scartare il file.**
+
+Per questo il totale scritto nell'XML e quello dei riepiloghi, e prima di
+emettere si verifica che coincida con il totale salvato sulla fattura. Se non
+coincide l'emissione si ferma, dicendo entrambi i valori: il gestionale non
+riscrive il totale di un documento (l'XML dichiarerebbe un importo diverso da
+quello sulla carta) e non produce un file che verrebbe rifiutato.
+
+Sui dati attuali questo riguarda **129 fatture importate**, il cui totale salvato
+dal gestionale precedente non torna con le proprie righe per via del suo
+arrotondamento. Erano documenti che il vecchio sistema ha comunque emesso; da qui
+non si possono riemettere senza prima correggerli.
+
+Le fatture prodotte da questo gestionale non hanno il problema per costruzione:
+il totale nasce dalla somma delle righe.
 
 ### Conversioni applicate
 

@@ -130,7 +130,9 @@ test('una riga senza imposta dichiara la natura', () => {
         riga: 3, descrizione: 'Mora', metri_cubi: 1, prezzo: 6, valore_unitario: 6,
         articolo: { codice: 'GG_DELAY', iva: 'Esente art.15' },
     }];
-    const { xml } = genera({ servizi: conEsente });
+    // 59,40 di imponibile al 10% piu 6,00 esenti: il totale del documento deve
+    // seguire le righe, altrimenti e il controllo sul totale a fermare tutto.
+    const { xml } = genera({ servizi: conEsente, fattura: { ...fattura, totale_fattura: 71.34 } });
 
     assert.match(xml, /<Natura>N1<\/Natura>/);
     assert.match(xml, /<RiferimentoNormativo>/);
@@ -141,7 +143,10 @@ test('una riga a zero senza natura nota blocca l emissione', () => {
     // Interscambio scarterebbe, o peggio accetterebbe con la natura sbagliata.
     const ignota = [{ riga: 1, descrizione: 'Voce', valore_unitario: 10, articolo: { codice: 'X', iva: 'Regime speciale' } }];
 
-    assert.throws(() => genera({ servizi: ignota }), /nessuna natura corrispondente/);
+    assert.throws(
+        () => genera({ servizi: ignota, fattura: { ...fattura, totale_fattura: 10 } }),
+        /nessuna natura corrispondente/
+    );
 });
 
 test('un cliente senza partita IVA ne codice fiscale blocca l emissione', () => {
@@ -173,4 +178,29 @@ test('siglaProvincia riconosce nomi, sigle e valori non applicabili', () => {
     assert.equal(siglaProvincia('- Nessuna -'), null);
     assert.equal(siglaProvincia('Stato Estero'), null);
     assert.equal(siglaProvincia(''), null);
+});
+
+test('il totale dichiarato deve coincidere con la somma dei riepiloghi', () => {
+    // E il conto che rifa il Sistema di Interscambio: un centesimo di scarto
+    // basta a far scartare il file. Su 135 fatture importate il totale salvato
+    // dal gestionale precedente non torna con le proprie righe.
+    assert.throws(
+        () => genera({ fattura: { ...fattura, totale_fattura: 65.33 } }),
+        /non coincide con la somma delle sue righe/
+    );
+    assert.throws(
+        () => genera({ fattura: { ...fattura, totale_fattura: 65.35 } }),
+        /Sistema di Interscambio rifiuterebbe il file/
+    );
+});
+
+test('il totale scritto nel documento e quello dei suoi riepiloghi', () => {
+    const { xml } = genera();
+    const imponibile = [...xml.matchAll(/<ImponibileImporto>([\d.]+)</g)].map((m) => Number(m[1]));
+    const imposta = [...xml.matchAll(/<Imposta>([\d.]+)</g)].map((m) => Number(m[1]));
+    const somma = [...imponibile, ...imposta].reduce((t, v) => t + v, 0);
+    const dichiarato = Number(xml.match(/<ImportoTotaleDocumento>([\d.]+)</)[1]);
+
+    assert.equal(dichiarato, Number(somma.toFixed(2)));
+    assert.equal(dichiarato, 65.34);
 });

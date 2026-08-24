@@ -1,10 +1,13 @@
 // Controlli di integrita: fatture senza righe, righe orfane, totali che non
-// corrispondono alla somma delle righe, scadenze scollegate.
+// corrispondono alla somma delle righe, scadenze scollegate, tariffe in scadenza.
 //
 // E un rapporto, non un test: stampa cio che trova e non fa fallire nulla.
 const { runScript } = require('./utils/runScript');
 const Articolo = require('../models/Articolo');
+const Contatore = require('../models/Contatore');
+const Fascia = require('../models/Fascia');
 const Fattura = require('../models/Fattura');
+const Listino = require('../models/Listino');
 const Scadenza = require('../models/Scadenza');
 const Servizio = require('../models/Servizio');
 require('../models/Cliente');
@@ -95,6 +98,52 @@ const getInvoiceTotalMismatches = async () => {
 // database. Si ripulisce con `npm run maintenance:allinea-dati -- --fix`.
 const getStoredDelays = () => Scadenza.collection.countDocuments({ ritardo: { $exists: true } });
 
+// Le fasce hanno una validita, e quando scade la fatturazione si ferma: il
+// calcolo rifiuta di emettere invece di indovinare un prezzo. E la cosa giusta,
+// ma va saputa in anticipo e non il giorno in cui si fattura, percio il rapporto
+// guarda avanti di sei mesi.
+const MESI_DI_PREAVVISO = 6;
+
+const getExpiringTariffs = async () => {
+    const limite = new Date();
+    limite.setMonth(limite.getMonth() + MESI_DI_PREAVVISO);
+
+    const listini = await Listino.find({}).lean();
+    const scadenti = [];
+
+    for (const listino of listini) {
+        const contatori = await Contatore.countDocuments({ listino: listino._id });
+        if (contatori === 0) {
+            continue;
+        }
+
+        const fasce = await Fascia.find({ listino: listino._id }).select('tipo scadenza').lean();
+        if (fasce.length === 0) {
+            continue;
+        }
+
+        // La fatturazione si ferma quando scade l'ultima fascia utile, cioe
+        // quando resta scoperta la parte bassa del consumo.
+        const inScadenza = fasce.filter((f) => f.scadenza && new Date(f.scadenza) <= limite);
+        if (inScadenza.length === 0) {
+            continue;
+        }
+
+        const prima = inScadenza
+            .map((f) => new Date(f.scadenza))
+            .sort((a, b) => a - b)[0];
+
+        scadenti.push({
+            listino: listino.categoria || listino.descrizione,
+            contatori,
+            fasce: `${inScadenza.length}/${fasce.length}`,
+            dal: prima.toISOString().slice(0, 10),
+        });
+    }
+
+    return scadenti.sort((a, b) => a.dal.localeCompare(b.dal));
+};
+
 const main = async () => {
 
     const [
@@ -111,6 +160,7 @@ const main = async () => {
         scadenzeNonCollegate,
         totalMismatches,
         ritardiSalvati,
+        tariffeInScadenza,
         articoli,
     ] = await Promise.all([
         Fattura.countDocuments(),
@@ -148,6 +198,7 @@ const main = async () => {
         ]),
         getInvoiceTotalMismatches(),
         getStoredDelays(),
+        getExpiringTariffs(),
         Articolo.find({}).select('codice descrizione iva').lean(),
     ]);
 
@@ -170,6 +221,14 @@ const main = async () => {
     console.log(`Scadenze non collegate a fatture: ${unlinkedDeadlinesCount}`);
     console.log(`Fatture con totali diversi dalla somma servizi: ${totalMismatches.length}`);
     console.log(`Scadenze con il ritardo salvato (valore derivato): ${ritardiSalvati}`);
+    console.log(`Listini con tariffe che scadono entro ${MESI_DI_PREAVVISO} mesi: ${tariffeInScadenza.length}`);
+
+    if (tariffeInScadenza.length) {
+        console.log('\nDopo quella data la fatturazione di questi listini si ferma:');
+        tariffeInScadenza.forEach((t) => console.log(
+            `  ${t.dal}  ${String(t.listino).padEnd(32)} ${String(t.contatori).padStart(4)} contatori, fasce ${t.fasce}`
+        ));
+    }
 
     if (totalMismatches.length) {
         console.log('\nEsempi delta totali:');
@@ -182,6 +241,7 @@ const main = async () => {
         || serviziArticoloMancante.length
         || totalMismatches.length
         || ritardiSalvati
+        || tariffeInScadenza.length
     )) {
         return false;
     }
