@@ -13,6 +13,19 @@ Gli script `verify-*` sono **rapporti, non test**: stampano le anomalie trovate 
 escono sempre con codice 0. Vanno letti. Solo `test:smoke` fallisce davvero quando
 qualcosa non funziona, ed e quindi l'unico adatto a una pipeline automatica.
 
+## Password dimenticata
+
+Le password sono cifrate con bcrypt: non si leggono e non si recuperano, si
+sostituiscono.
+
+```bash
+npm run maintenance:password                       # elenca gli utenti
+npm run maintenance:password -- nicola nuovapassword
+```
+
+Vale per gli amministratori e per gli account del portale clienti. Richiede
+accesso diretto al database, quindi non concede nulla in piu a chi lo esegue.
+
 ## Backup
 
 Prima di qualunque operazione che modifica i dati:
