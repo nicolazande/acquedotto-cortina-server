@@ -7,6 +7,7 @@ const {
     dataPagamento,
     getDueDate,
     withComputedDelay,
+    withDeadlineDelay,
 } = require('../services/deadlineService');
 const { isConfirmedInvoice } = require('../services/invoiceLockService');
 
@@ -140,4 +141,19 @@ test('fattura confermata: riconosciuta sia dal booleano sia dallo stato', () => 
     assert.equal(isConfirmedInvoice({ confermata: false, stato: 'bozza' }), false);
     assert.equal(isConfirmedInvoice({}), false);
     assert.equal(isConfirmedInvoice(null), false);
+});
+
+test('la scadenza annidata in una fattura porta con se il proprio ritardo', () => {
+    // Aprendo una fattura la prima domanda e se e stata incassata: il ritardo
+    // arriva gia calcolato, invece di far rifare il conto all'interfaccia.
+    const fattura = { anno: 2026, numero: 3, scadenza: { scadenza: '2026-06-01', saldo: false } };
+    const letta = withDeadlineDelay(fattura, OGGI);
+
+    assert.equal(letta.anno, 2026);
+    assert.equal(letta.scadenza.ritardo, calculateDelay(fattura.scadenza, new Date()));
+});
+
+test('una fattura senza scadenza resta com e', () => {
+    assert.deepEqual(withDeadlineDelay({ anno: 2026 }), { anno: 2026 });
+    assert.equal(withDeadlineDelay(null), null);
 });

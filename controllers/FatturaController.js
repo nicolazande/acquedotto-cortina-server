@@ -29,7 +29,7 @@ const {
     writeInvoiceAudit,
     writeInvoiceUpdateAudit,
 } = require('../services/invoiceAuditService');
-const { withComputedDelay } = require('../services/deadlineService');
+const { withComputedDelay, withDeadlineDelay } = require('../services/deadlineService');
 const { getInvoiceControlDashboard } = require('../services/invoiceControlService');
 const { deleteInvoice } = require('../services/invoiceDeletionService');
 const { generateInvoicePdf } = require('../services/invoicePdf');
@@ -281,7 +281,13 @@ module.exports = {
     getGenerationPreview,
     getControlDashboard,
     applyFixedCharge,
-    getFattura: getRecord(Fattura, { name: 'Fattura', populate: 'cliente scadenza' }),
+    // La scadenza viaggia insieme alla fattura con il suo ritardo gia calcolato:
+    // aprendo una fattura la prima domanda e se e stata incassata.
+    getFattura: getRecord(Fattura, {
+        name: 'Fattura',
+        populate: 'cliente scadenza',
+        transform: withDeadlineDelay,
+    }),
     verifyCalcolo,
     downloadPdf,
     downloadXml,

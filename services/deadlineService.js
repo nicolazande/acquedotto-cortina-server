@@ -73,6 +73,18 @@ const withComputedDelay = (deadline, now) => {
     };
 };
 
+// Lo stesso ritardo, calcolato sulla scadenza che un altro documento porta con
+// se: la fattura la include gia fra i suoi dati, e senza questo il client
+// dovrebbe rifare il conto per conto proprio, cioe riscrivere la regola.
+const withDeadlineDelay = (record) => {
+    if (!record) {
+        return record;
+    }
+
+    const plain = toPlainObject(record);
+    return plain.scadenza ? { ...plain, scadenza: withComputedDelay(plain.scadenza) } : plain;
+};
+
 const getDueDate = (invoiceDate, dueDate) => (
     startOfDay(dueDate) || addDays(invoiceDate || new Date(), Number.isFinite(DEFAULT_DUE_DAYS) ? DEFAULT_DUE_DAYS : 30)
 );
@@ -197,5 +209,6 @@ module.exports = {
     ensureInvoiceDeadline,
     getDueDate,
     syncInvoiceDeadlineTotal,
+    withDeadlineDelay,
     withComputedDelay,
 };

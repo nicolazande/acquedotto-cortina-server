@@ -301,6 +301,9 @@ richiesta.
 
 `incassi/annulla` riapre scadenze segnate pagate per errore e toglie la data.
 
+`GET /api/fatture/:id` restituisce la scadenza collegata con il **ritardo gia
+calcolato**: lo stato di incasso si legge dalla fattura senza rifare il conto.
+
 Ogni scadenza toccata riceve una voce nel giornale, piu una voce per
 l'operazione nel suo insieme.
 
