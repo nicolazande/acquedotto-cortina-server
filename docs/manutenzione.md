@@ -72,8 +72,11 @@ fattura piu nulla finche le tariffe non vengono rinnovate. Un listino,
 `SOCIETA' IMMOBILIARI` (2 contatori), e scaduto il 31/12/2023 ed e la causa
 dell'unico errore che i rapporti segnalano da tempo.
 
-`npm run report:integrita` elenca i listini in scadenza entro sei mesi. Vale la
-pena guardarlo in autunno, non a gennaio.
+Il gestionale lo dice in tre punti: un avviso in cima alla panoramica,
+`npm run report:integrita` (che elenca anche le fasce incomplete di oggi), e il
+riquadro **Prepara l'anno prossimo** nella scheda del listino, da cui si
+rinnovano in un colpo con l'eventuale aumento. Vale la pena guardarlo in
+autunno, non a gennaio.
 
 ### Il campo `saldo` non e sempre un booleano
 

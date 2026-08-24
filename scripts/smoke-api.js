@@ -627,6 +627,76 @@ const testInvoiceDelivery = async () => {
     }
 };
 
+// Il rinnovo delle tariffe. Le fasce hanno una validita e quando scade la
+// fatturazione si ferma: rinnovarle a mano, una per una, e come sono nati i
+// buchi che ci sono nei dati. Qui si verifica che il rinnovo copi quello che
+// deve e lasci stare quello che vale gia.
+const testTariffRenewal = async () => {
+    if (skipMutation) {
+        console.log('skipped');
+        return;
+    }
+
+    const createdRecords = [];
+    const annoProva = ANNO + 3;
+
+    try {
+        const listino = await createTrackedRecord(createdRecords, 'listini', {
+            categoria: `SMOKE RINNOVO ${Date.now()}`,
+            descrizione: 'Listino temporaneo smoke test',
+        });
+        const scadeAFineAnno = `${ANNO}-12-31`;
+
+        await createTrackedRecord(createdRecords, 'fasce', {
+            tipo: 'Tariffa Base', min: 1, max: 100, prezzo: 0.5,
+            inizio: INIZIO_ANNO, scadenza: scadeAFineAnno, listino: listino._id,
+        });
+        await createTrackedRecord(createdRecords, 'fasce', {
+            tipo: 'Fisso', min: 0, max: 99999, prezzo: 40,
+            inizio: INIZIO_ANNO, scadenza: scadeAFineAnno, listino: listino._id,
+        });
+        // Questa vale gia oltre l'anno di destinazione: duplicarla creerebbe
+        // una sovrapposizione, cioe lo stesso scaglione fatturato due volte.
+        await createTrackedRecord(createdRecords, 'fasce', {
+            tipo: 'Ordinaria', min: 101, max: 9999, prezzo: 1.5,
+            inizio: INIZIO_ANNO, scadenza: `${annoProva}-12-31`, listino: listino._id,
+        });
+
+        const anteprima = await request(`/listini/${listino._id}/rinnovo?anno=${annoProva}&variazione=10`);
+        assert(anteprima.body.applicabile === true, `renewal preview should be applicable: ${anteprima.body.problemi}`);
+        assert(anteprima.body.nuove.length === 2, 'only the expiring bands should be renewed');
+        assert(anteprima.body.giaValide.length === 1, 'the band already valid should be left alone');
+        const base = anteprima.body.nuove.find((fascia) => fascia.tipo === 'Tariffa Base');
+        assert(base.prezzo === 0.55, `renewed price should apply the increase, got ${base.prezzo}`);
+
+        const rinnovo = await request(`/listini/${listino._id}/rinnovo`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ anno: annoProva, variazione: 10 }),
+        });
+        assert(rinnovo.body.create === 2, 'renewal should create exactly the missing bands');
+        rinnovo.body.fasce.forEach((fascia) => createdRecords.push({ resource: 'fasce', id: fascia._id }));
+
+        // Un secondo rinnovo non deve raddoppiare le fasce.
+        let ripetutoBloccato = false;
+        try {
+            await request(`/listini/${listino._id}/rinnovo`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ anno: annoProva }),
+            });
+        } catch (error) {
+            ripetutoBloccato = error.message.includes('422');
+        }
+        assert(ripetutoBloccato, 'renewing an already covered year should be refused');
+
+        const fasce = await request(`/listini/${listino._id}/fasce`);
+        assert(fasce.body.length === 5, `expected 5 bands after renewal, got ${fasce.body.length}`);
+    } finally {
+        await deleteCreatedRecords(createdRecords);
+    }
+};
+
 const main = async () => {
     console.log(`Smoke API target: ${apiUrl}`);
     await step('health endpoint', testHealth);
@@ -636,6 +706,7 @@ const main = async () => {
     await step('billing preview/generation/verification', testBillingGeneration);
     await step('invoice deletion cascade', testInvoiceDeletionCascade);
     await step('invoice delivery queue', testInvoiceDelivery);
+    await step('tariff renewal', testTariffRenewal);
     await step('note attachments create/list/file/delete', testAttachments);
     console.log('Smoke API completed successfully.');
 };

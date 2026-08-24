@@ -7,6 +7,7 @@ const Scadenza = require('../models/Scadenza');
 const AuditLog = require('../models/AuditLog');
 const { delayAggregation, saldataExpression } = require('./deadlineService');
 const { fromCents } = require('../utils/money');
+const { tariffeInScadenza } = require('./tariffService');
 
 // Le letture non ancora fatturate: il flag puo mancare del tutto sui record importati.
 const LETTURE_DA_FATTURARE = { $or: [{ fatturata: false }, { fatturata: { $exists: false } }] };
@@ -92,6 +93,7 @@ const getDashboard = async () => {
         fasce,
         daSollecitare,
         consegne,
+        tariffe,
         attivita,
     ] = await Promise.all([
         Lettura.countDocuments(LETTURE_DA_FATTURARE),
@@ -150,6 +152,9 @@ const getDashboard = async () => {
             { $match: { stato: { $in: ['in_coda', 'errore'] } } },
             { $group: { _id: { stato: '$stato', automatica: '$automatica' }, quante: { $sum: 1 } } },
         ]),
+        // Le tariffe scadono, e con loro si ferma la fatturazione: e la cosa
+        // che conviene vedere con mesi di anticipo, non il giorno stesso.
+        tariffeInScadenza(),
         // Le ultime modifiche registrate: rende visibile chi ha toccato cosa.
         AuditLog.find({})
             .sort({ createdAt: -1 })
@@ -179,6 +184,15 @@ const getDashboard = async () => {
         anagrafiche: { clienti, contatoriAttivi },
         scaduto: { fasce: perFascia(fasce) },
         daSollecitare,
+        tariffe: {
+            inScadenza: tariffe.length,
+            scadute: tariffe.filter((voce) => voce.scaduto).length,
+            contatori: tariffe.reduce((totale, voce) => totale + voce.contatori, 0),
+            prossimaScadenza: tariffe[0]?.scadeIl || null,
+            listini: tariffe.slice(0, 5).map(({ listino, categoria, contatori, scadeIl, scaduto }) => ({
+                listino, categoria, contatori, scadeIl, scaduto,
+            })),
+        },
         consegne: {
             automatiche: consegneCon((riga) => riga._id.stato === 'in_coda' && riga._id.automatica === true),
             daStampare: consegneCon((riga) => riga._id.stato === 'in_coda' && riga._id.automatica !== true),

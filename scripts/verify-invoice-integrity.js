@@ -12,6 +12,30 @@ const Scadenza = require('../models/Scadenza');
 const Servizio = require('../models/Servizio');
 require('../models/Cliente');
 const { getTaxRate } = require('../services/billingCalculator');
+const { MESI_DI_PREAVVISO, analizzaCopertura, tariffeInScadenza } = require('../services/tariffService');
+
+// Le tariffe scadono, e quando scadono la fatturazione si ferma. La regola e in
+// services/tariffService, la stessa che usano la panoramica e il rinnovo: qui si
+// legge soltanto.
+const getCoverageProblems = async () => {
+    const listini = await Listino.find({}).lean();
+    const problemi = [];
+
+    for (const listino of listini) {
+        const contatori = await Contatore.countDocuments({ listino: listino._id });
+        if (contatori === 0) {
+            continue;
+        }
+
+        const fasce = await Fascia.find({ listino: listino._id }).lean();
+        analizzaCopertura(fasce, new Date()).problemi.forEach((problema) => {
+            problemi.push(`${listino.categoria} (${contatori} contatori): ${problema}`);
+        });
+    }
+
+    return problemi;
+};
+
 
 const money = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 const TOLERANCE = 0.02;
@@ -98,52 +122,6 @@ const getInvoiceTotalMismatches = async () => {
 // database. Si ripulisce con `npm run maintenance:allinea-dati -- --fix`.
 const getStoredDelays = () => Scadenza.collection.countDocuments({ ritardo: { $exists: true } });
 
-// Le fasce hanno una validita, e quando scade la fatturazione si ferma: il
-// calcolo rifiuta di emettere invece di indovinare un prezzo. E la cosa giusta,
-// ma va saputa in anticipo e non il giorno in cui si fattura, percio il rapporto
-// guarda avanti di sei mesi.
-const MESI_DI_PREAVVISO = 6;
-
-const getExpiringTariffs = async () => {
-    const limite = new Date();
-    limite.setMonth(limite.getMonth() + MESI_DI_PREAVVISO);
-
-    const listini = await Listino.find({}).lean();
-    const scadenti = [];
-
-    for (const listino of listini) {
-        const contatori = await Contatore.countDocuments({ listino: listino._id });
-        if (contatori === 0) {
-            continue;
-        }
-
-        const fasce = await Fascia.find({ listino: listino._id }).select('tipo scadenza').lean();
-        if (fasce.length === 0) {
-            continue;
-        }
-
-        // La fatturazione si ferma quando scade l'ultima fascia utile, cioe
-        // quando resta scoperta la parte bassa del consumo.
-        const inScadenza = fasce.filter((f) => f.scadenza && new Date(f.scadenza) <= limite);
-        if (inScadenza.length === 0) {
-            continue;
-        }
-
-        const prima = inScadenza
-            .map((f) => new Date(f.scadenza))
-            .sort((a, b) => a - b)[0];
-
-        scadenti.push({
-            listino: listino.categoria || listino.descrizione,
-            contatori,
-            fasce: `${inScadenza.length}/${fasce.length}`,
-            dal: prima.toISOString().slice(0, 10),
-        });
-    }
-
-    return scadenti.sort((a, b) => a.dal.localeCompare(b.dal));
-};
-
 const main = async () => {
 
     const [
@@ -160,7 +138,8 @@ const main = async () => {
         scadenzeNonCollegate,
         totalMismatches,
         ritardiSalvati,
-        tariffeInScadenza,
+        inScadenza,
+        problemiCopertura,
         articoli,
     ] = await Promise.all([
         Fattura.countDocuments(),
@@ -198,7 +177,8 @@ const main = async () => {
         ]),
         getInvoiceTotalMismatches(),
         getStoredDelays(),
-        getExpiringTariffs(),
+        tariffeInScadenza(),
+        getCoverageProblems(),
         Articolo.find({}).select('codice descrizione iva').lean(),
     ]);
 
@@ -221,12 +201,20 @@ const main = async () => {
     console.log(`Scadenze non collegate a fatture: ${unlinkedDeadlinesCount}`);
     console.log(`Fatture con totali diversi dalla somma servizi: ${totalMismatches.length}`);
     console.log(`Scadenze con il ritardo salvato (valore derivato): ${ritardiSalvati}`);
-    console.log(`Listini con tariffe che scadono entro ${MESI_DI_PREAVVISO} mesi: ${tariffeInScadenza.length}`);
+    console.log(`Listini con fasce incomplete oggi: ${problemiCopertura.length}`);
+    console.log(`Listini con tariffe che scadono entro ${MESI_DI_PREAVVISO} mesi: ${inScadenza.length}`);
 
-    if (tariffeInScadenza.length) {
+    if (problemiCopertura.length) {
+        console.log('\nFasce incomplete: su questi listini il calcolo si rifiuta di emettere.');
+        problemiCopertura.forEach((p) => console.log(`  - ${p}`));
+    }
+
+    if (inScadenza.length) {
         console.log('\nDopo quella data la fatturazione di questi listini si ferma:');
-        tariffeInScadenza.forEach((t) => console.log(
-            `  ${t.dal}  ${String(t.listino).padEnd(32)} ${String(t.contatori).padStart(4)} contatori, fasce ${t.fasce}`
+        inScadenza.forEach((t) => console.log(
+            `  ${t.scadeIl.toISOString().slice(0, 10)}  ${String(t.categoria).padEnd(32)} `
+            + `${String(t.contatori).padStart(4)} contatori, fasce ${t.fasceInScadenza}/${t.fasceTotali}`
+            + `${t.scaduto ? '  GIA SCADUTO' : ''}`
         ));
     }
 
@@ -241,7 +229,8 @@ const main = async () => {
         || serviziArticoloMancante.length
         || totalMismatches.length
         || ritardiSalvati
-        || tariffeInScadenza.length
+        || inScadenza.length
+        || problemiCopertura.length
     )) {
         return false;
     }

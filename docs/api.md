@@ -185,6 +185,8 @@ GET    /api/listini/:id                                     getListino
 PUT    /api/listini/:id                                     updateListino
 DELETE /api/listini/:id                                     deleteListino
 POST   /api/listini/:listinoId/fasce/:fasciaId              associateFascia
+GET    /api/listini/:id/rinnovo                            getRinnovo
+POST   /api/listini/:id/rinnovo                            applicaRinnovo
 GET    /api/listini/:id/fasce                               getFasceAssociate
 POST   /api/listini/:listinoId/contatori/:contatoreId       associateContatore
 GET    /api/listini/:id/contatori                           getContatoriAssociati
@@ -257,6 +259,25 @@ consegne come **simulate**, senza spedire nulla e senza datare la fattura.
 
 Viste disponibili con `?vista=`: `in-coda`, `da-stampare`, `automatiche`,
 `errori`, `inviate`, `elettroniche`.
+
+### `/api/listini`
+
+Le fasce di un listino hanno una validita: quando l'ultima utile scade, la
+fatturazione di quel listino si ferma. Il rinnovo copia le tariffe in vigore
+nell'anno successivo.
+
+```text
+GET  /api/listini/:id/rinnovo?anno=2027&variazione=3
+POST /api/listini/:id/rinnovo   { anno, variazione }
+```
+
+L'anteprima (`GET`) non crea nulla: dice quali fasce verrebbero create, con
+quale prezzo, quali sono gia valide per quell'anno, e se il risultato
+resterebbe completo (`applicabile`). Il `POST` rifiuta con `422` se l'anno e
+gia coperto o se il rinnovo lascerebbe buchi o sovrapposizioni.
+
+Le fasce esistenti non vengono mai modificate: sono la tariffa con cui sono
+state emesse le fatture di allora.
 
 ### `/api/portale-cliente`
 Richiede ruolo `cliente`. Restituisce solo i dati dell'anagrafica collegata

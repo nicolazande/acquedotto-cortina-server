@@ -4,6 +4,8 @@ const ListinoController = require('../controllers/ListinoController');
 
 router.post('/', ListinoController.createListino);
 router.get('/', ListinoController.getListini);
+router.get('/:id/rinnovo', ListinoController.getRinnovo);
+router.post('/:id/rinnovo', ListinoController.applicaRinnovo);
 router.get('/:id', ListinoController.getListino);
 router.put('/:id', ListinoController.updateListino);
 router.delete('/:id', ListinoController.deleteListino);

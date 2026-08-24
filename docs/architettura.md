@@ -58,6 +58,7 @@ va aggiunta qui, non ricopiata.
 | `invoiceXml.js`             | fattura elettronica nel tracciato FatturaPA 1.2                   |
 | `deliveryPlan.js`           | **puro, senza database**: dove deve andare una fattura e cosa lo blocca |
 | `deliveryService.js`        | la coda delle consegne: pianifica, elabora, registra l'esito      |
+| `tariffService.js`          | scadenza e rinnovo delle tariffe, copertura delle fasce           |
 | `mailer.js`                 | l'unico punto in cui un messaggio esce davvero                    |
 | `dashboardService.js`       | i numeri della panoramica                                         |
 | `invoiceAuditService.js` / `auditLogService.js` | tracciamento delle modifiche      |

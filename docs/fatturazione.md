@@ -60,8 +60,30 @@ entrano nel calcolo.
 > **Le tariffe scadono, e con loro la fatturazione.** Quasi tutte le fasce in uso
 > scadono il **31/12/2026**: dal giorno dopo il calcolo si rifiuta di emettere,
 > perche non ha un prezzo da applicare. E il comportamento giusto, ma va saputo
-> prima. `npm run report:integrita` elenca i listini le cui tariffe scadono entro
-> sei mesi, con quanti contatori ciascuno.
+> prima, e il gestionale lo dice in tre punti: un avviso in panoramica, l'elenco
+> in `npm run report:integrita`, e il rinnovo nella scheda del listino.
+
+### Rinnovare le tariffe
+
+Dalla scheda del listino, il riquadro **Prepara l'anno prossimo** copia le
+tariffe in vigore nell'anno indicato, con una variazione percentuale
+facoltativa. Prima di creare qualsiasi cosa mostra cosa farebbe.
+
+Tre regole, tutte imparate dai dati reali:
+
+- **Non duplica le fasce che valgono gia** per l'anno di destinazione. Nei dati
+  importati la fascia piu alta di ogni listino arriva al 2099: copiarla creerebbe
+  una sovrapposizione, cioe lo stesso scaglione fatturato due volte.
+- **Verifica il risultato** con le stesse regole del calcolo. Se dopo il rinnovo
+  restassero buchi o sovrapposizioni il rinnovo non e applicabile: la
+  fatturazione si fermerebbe comunque, solo piu tardi.
+- **Non tocca le fasce esistenti.** Sono la tariffa con cui sono state emesse le
+  fatture di allora, e riscriverle cambierebbe il passato.
+
+Se un listino e scaduto da tempo il rinnovo riparte dalle ultime tariffe che
+sono state in vigore. Se pero un listino non ha mai avuto una fascia a consumo -
+succede: `SOCIETA' IMMOBILIARI` ha solo la quota fissa - il rinnovo lo dice e non
+inventa un prezzo.
 
 ### Controllo di copertura
 
