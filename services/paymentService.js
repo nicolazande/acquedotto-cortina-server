@@ -108,7 +108,6 @@ const annullaPagamenti = async ({ scadenze }) => {
 };
 
 module.exports = {
-    MAX_PER_VOLTA,
     annullaPagamenti,
     dataIncasso,
     registraPagamenti,
