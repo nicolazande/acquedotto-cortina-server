@@ -116,7 +116,6 @@ const riferimentiRotti = async () => {
 
 module.exports = {
     assertCancellabile,
-    riferimentiRotti,
     cancellaACascata,
-    legamiCheBloccano,
+    riferimentiRotti,
 };

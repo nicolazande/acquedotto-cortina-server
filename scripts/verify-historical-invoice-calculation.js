@@ -3,6 +3,7 @@
 //
 // E un rapporto, non un test: stampa cio che trova e non fa fallire nulla.
 const { runScript } = require('./utils/runScript');
+const { descriviFattura } = require('./utils/descriviFattura');
 const Fattura = require('../models/Fattura');
 require('../models/Articolo');
 require('../models/Cliente');
@@ -66,11 +67,7 @@ const getMismatchKind = (verification) => {
 };
 
 const summarizeMismatch = (verification) => ({
-    fattura: verification.fattura._id,
-    anno: verification.fattura.anno,
-    numero: verification.fattura.numero,
-    codice: verification.fattura.codice,
-    cliente: verification.fattura.ragione_sociale || verification.fattura.nome_cliente,
+    ...descriviFattura(verification),
     motivo: getMismatchKind(verification),
     imponibileFattura: verification.summary.fatturaImponibile,
     imponibileRigheLettura: verification.summary.lettureImponibile,
