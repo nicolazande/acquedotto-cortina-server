@@ -1013,6 +1013,70 @@ const testDelayFeeChargedOnce = async () => {
     }
 };
 
+// I totali di una fattura sono la somma delle sue righe, e la scadenza porta la
+// stessa cifra. Vale a ogni riga aggiunta o tolta, non solo alla creazione: e
+// stato un difetto vero, nato da due funzioni che facevano lo stesso lavoro e
+// di cui una sola allineava la scadenza.
+const testManualInvoiceLines = async () => {
+    if (skipMutation) {
+        console.log('skipped');
+        return;
+    }
+
+    const createdRecords = [];
+
+    try {
+        const cliente = await createTrackedRecord(createdRecords, 'clienti', {
+            cognome: 'Smoke', nome: 'Righe', ragione_sociale: 'Smoke Righe',
+        });
+        const articoli = await request('/articoli?limit=100');
+        const perCodice = (codice) => articoli.body.data.find((articolo) => articolo.codice === codice);
+        const acqua = perCodice('ACQUA');
+        const mora = perCodice('GG_DELAY');
+        assert(acqua && mora, 'the smoke needs the seeded articles');
+        assert(acqua.aliquota === 10, `ACQUA should carry its rate, got ${acqua.aliquota}`);
+        assert(mora.aliquota === 0, `GG_DELAY is exempt, got ${mora.aliquota}`);
+
+        const fattura = await createRecord('fatture', {
+            cliente: cliente._id, articolo: acqua._id, imponibile: 100,
+            tipo_documento: 'Fattura', data_fattura: OGGI,
+        });
+        createdRecords.push({ resource: 'fatture', id: fattura._id });
+        createdRecords.push({ resource: 'scadenze', id: fattura.scadenza });
+
+        const conti = async (atteso) => {
+            const documento = await request(`/fatture/${fattura._id}`);
+            const scadenza = await request(`/scadenze/${fattura.scadenza}`);
+            const letto = [documento.body.imponibile, documento.body.iva, documento.body.totale_fattura];
+            assert(
+                letto.join('/') === atteso.join('/'),
+                `invoice totals should be ${atteso.join('/')}, got ${letto.join('/')}`
+            );
+            assert(
+                scadenza.body.totale === documento.body.totale_fattura,
+                `the deadline should carry ${documento.body.totale_fattura}, got ${scadenza.body.totale}`
+            );
+        };
+
+        // L'articolo scelto diventa la riga, e l'aliquota viene da lui.
+        const righe = await request(`/fatture/${fattura._id}/servizi`);
+        assert(righe.body.length === 1, `the article should create one line, got ${righe.body.length}`);
+        await conti([100, 10, 110]);
+
+        // Una riga esente aggiunge imponibile ma non imposta.
+        const aggiunta = await createRecord('servizi', {
+            fattura: fattura._id, riga: 2, descrizione: 'Mora',
+            valore_unitario: 6, prezzo: 6, articolo: mora._id,
+        });
+        await conti([106, 10, 116]);
+
+        await request(`/servizi/${aggiunta._id}`, { method: 'DELETE' });
+        await conti([100, 10, 110]);
+    } finally {
+        await deleteCreatedRecords(createdRecords);
+    }
+};
+
 const main = async () => {
     console.log(`Smoke API target: ${apiUrl}`);
     await step('health endpoint', testHealth);
@@ -1026,6 +1090,7 @@ const main = async () => {
     await step('payment registration', testPaymentRegistration);
     await step('referential integrity', testReferentialIntegrity);
     await step('late fee charged once', testDelayFeeChargedOnce);
+    await step('manual invoice lines and totals', testManualInvoiceLines);
     await step('note attachments create/list/file/delete', testAttachments);
 
     if (residui.length > 0) {

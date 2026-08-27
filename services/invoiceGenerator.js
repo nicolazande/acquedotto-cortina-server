@@ -555,6 +555,13 @@ const ricalcolaTotaliFattura = async (fatturaId, session) => {
 
     await withSession(Fattura.updateOne({ _id: fatturaId }, { $set: totali }), session);
 
+    // La scadenza porta l'importo da incassare: se resta indietro, il documento
+    // dice una cifra e la posizione da incassare un'altra. E il motivo per cui
+    // questa deve restare l'unica funzione che rifa i totali - quando erano due,
+    // una sola delle due allineava la scadenza.
+    const fattura = await withSession(Fattura.findById(fatturaId), session).select('scadenza totale_fattura').lean();
+    await syncInvoiceDeadlineTotal({ fattura, session });
+
     return totali;
 };
 
@@ -926,20 +933,6 @@ const getFixedChargeBlockReason = async ({
     return '';
 };
 
-const recalculateInvoiceTotals = async ({ fattura, lines, session }) => {
-    const totals = calculateTotals(lines);
-
-    Object.assign(fattura, totals);
-    await Fattura.updateOne(
-        { _id: fattura._id },
-        { $set: totals },
-        { session }
-    );
-    await syncInvoiceDeadlineTotal({ fattura, session });
-
-    return totals;
-};
-
 const applyFixedChargeToInvoiceInSession = async (fatturaId, session, unlock) => {
     const fattura = await withSession(Fattura.findById(fatturaId).populate('cliente scadenza'), session);
     if (!fattura) {
@@ -990,11 +983,10 @@ const applyFixedChargeToInvoiceInSession = async (fatturaId, session, unlock) =>
         fixedLines.map((line, index) => cleanServiceLine(line, fattura._id, firstNewRow + index)),
         { session }
     );
-    const totals = await recalculateInvoiceTotals({
-        fattura,
-        lines: [...servizi, ...fixedLines],
-        session,
-    });
+    // Le righe sono gia scritte: i totali si rifanno da quelle, con l'unica
+    // funzione che lo sa fare.
+    const totals = await ricalcolaTotaliFattura(fattura._id, session);
+    Object.assign(fattura, totals);
 
     return {
         fattura,
