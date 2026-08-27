@@ -7,7 +7,7 @@ const { badRequest } = require('../../utils/errors');
 // (esportazioni, elenchi lunghi) e resta superabile per singola risorsa.
 const MAX_PAGE_SIZE = Number.parseInt(process.env.MAX_PAGE_SIZE || '500', 10);
 
-const buildSearchQuery = (Model, search) => {
+const buildFieldSearchQuery = (Model, search) => {
     if (!search) {
         return {};
     }
@@ -35,6 +35,31 @@ const buildSearchQuery = (Model, search) => {
         .filter(Boolean);
 
     return conditions.length ? { $or: conditions } : {};
+};
+
+// La ricerca generica guarda solo i campi del modello, quindi su una lettura
+// puo cercare la data e il consumo ma non il nome di chi la paga: il cliente sta
+// due collegamenti piu in la (lettura -> contatore -> cliente). Una lista puo
+// dichiarare `ricercaCollegata` per aggiungere le proprie condizioni, che si
+// uniscono in `$or` a quelle sui campi propri.
+//
+// Si risolve al momento della ricerca invece di copiare il nome dentro la
+// lettura: un nome copiato invecchia appena il cliente cambia ragione sociale, e
+// nessuno se ne accorge finche non cerca e non trova.
+const buildSearchQuery = async (Model, search, ricercaCollegata) => {
+    const perCampi = buildFieldSearchQuery(Model, search);
+
+    if (!search || !ricercaCollegata) {
+        return perCampi;
+    }
+
+    const collegata = await ricercaCollegata(search);
+
+    if (!collegata) {
+        return perCampi;
+    }
+
+    return perCampi.$or ? { $or: [...perCampi.$or, collegata] } : { $or: [collegata] };
 };
 
 // Viste predefinite: ogni lista dichiara un insieme di filtri con un nome, e il
@@ -110,6 +135,7 @@ const sendPaginated = async (Model, req, res, options = {}) => {
         errorMessage = 'Error fetching records',
         maxLimit = MAX_PAGE_SIZE,
         populate,
+        ricercaCollegata,
         transform,
         views,
     } = options;
@@ -121,7 +147,10 @@ const sendPaginated = async (Model, req, res, options = {}) => {
         const sortField = getSortField(req.query.sortField, defaultSort);
         const sortOrder = req.query.sortOrder === 'desc' ? -1 : 1;
         const skip = (page - 1) * limit;
-        const query = combineFilters(buildSearchQuery(Model, search), getViewFilter(views, req.query.vista));
+        const query = combineFilters(
+            await buildSearchQuery(Model, search, ricercaCollegata),
+            getViewFilter(views, req.query.vista)
+        );
         const sort = { [sortField]: sortOrder };
 
         const totalItems = await Model.countDocuments(query);

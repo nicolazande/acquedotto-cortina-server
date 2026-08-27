@@ -7,6 +7,7 @@ export SMOKE_TOKEN=<token admin>
 npm run test:smoke          # percorso completo: API, fatturazione, allegati
 npm run report:tutti  # formule, integrita, anteprime, quota fissa, storico
 npm run report:integrita       # integrita referenziale e totali
+npm run modello             # ridisegna docs/modello.md dagli schemi
 ```
 
 Gli script `verify-*` sono **rapporti, non test**: stampano le anomalie trovate ed
@@ -69,6 +70,30 @@ lista, direttamente da MongoDB (`delayAggregation`).
 Il campo e stato rimosso dai record e l'import non lo riporta piu. Se ricompare,
 `npm run report:integrita` lo segnala e `npm run maintenance:allinea-dati -- --fix`
 lo ripulisce.
+
+### Tre numeri di fattura ripetuti nello storico
+
+Tre documenti importati compaiono piu volte con lo stesso numero e puntano tutti
+alla stessa scadenza: **5121** (Costruzioni Largura, 132,61), **5334** (Jump 3000,
+2.000,00) e **4989** (Siorpaes Luciano, 66,55). Restano inoltre tre scadenze che
+nessuna fattura richiama, degli stessi intestatari: sembrano pagamenti a rate che
+nel gestionale precedente occupavano piu righe.
+
+Non e un difetto del codice e non lascia residui: la cancellazione di una fattura
+elimina la scadenza **solo se nessun'altra la richiama**
+(`services/invoiceDeletionService.js`). E un dato da chiarire con chi teneva la
+contabilita prima di toccarlo: sono 3 casi su 2.702, tutti anteriori al 2026.
+
+### La penale per il ritardo si addebita una volta sola
+
+I 6 euro di mora scattano guardando la scadenza precedente del cliente, e la
+scadenza si segna con `mora_fatturata` appena la fattura esiste. Senza quella
+memoria, due documenti emessi lo stesso giorno guarderebbero entrambi indietro
+alla stessa scadenza aperta e il cliente pagherebbe la penale due volte: con 694
+scadenze aperte non sarebbe un caso di scuola. Il gestionale precedente teneva il
+campo "Fatturato ritardo" esattamente per questo.
+
+Cancellando la fattura che portava la penale, la scadenza torna addebitabile.
 
 ### La data di pagamento 31/12/2099
 
@@ -163,6 +188,45 @@ db.letture.find({fatturata:true}).toArray()
 | react-scripts 3 | Il client dipende da una versione del 2019 che richiede `--openssl-legacy-provider`. Funziona, ma e il debito tecnico piu rilevante del progetto. |
 
 ## Deploy
+
+### Prima di mandare in produzione: due passaggi obbligatori
+
+**1. Scrivere il ruolo sugli account che non ce l'hanno.**
+
+```bash
+npm run maintenance:allinea-dati            # mostra chi manca
+npm run maintenance:allinea-dati -- --fix   # lo scrive
+```
+
+Il controllo dei permessi legge il ruolo dal record e **non ripiega piu su
+`admin` quando il campo manca**. Era il ripiego sbagliato: un account del portale
+che per un import o una modifica a mano perdesse il ruolo sarebbe diventato
+amministratore. Gli account nati prima che il campo esistesse pero funzionavano
+proprio grazie a quel ripiego, quindi **vanno sistemati prima di aggiornare il
+server**, altrimenti non entrano piu. Chi ha un cliente collegato diventa
+`cliente`, gli altri `admin`: e il permesso che hanno gia oggi.
+
+Il server lo ricorda da solo: all'avvio, se trova account senza ruolo, li elenca
+in console.
+
+**2. Controllare `JWT_SECRET` sul servizio.**
+
+E il segreto con cui si firmano i token di accesso: chi lo conosce puo firmarsi
+un accesso da amministratore. Il server ora **rifiuta di partire** se manca o se
+e uno dei valori di esempio (`change-me`, `your_jwt_secret`, `secret`...), a meno
+che `NODE_ENV` non dica `development` o `test`.
+
+Prima il blocco scattava solo con `NODE_ENV=production` esatto: un deploy che si
+dimenticava quella variabile partiva in silenzio con un segreto pubblico. Ora un
+dubbio sull'ambiente chiude la porta invece di aprirla.
+
+Se ne serve uno nuovo:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+```
+
+Sotto i 32 caratteri il server parte ma avvisa in console.
 
 ### Server (Render)
 

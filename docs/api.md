@@ -93,11 +93,18 @@ GET    /api/consegne                                        getConsegne
 GET    /api/consegne/riepilogo                              getRiepilogo
 POST   /api/consegne/pianifica                              pianifica
 POST   /api/consegne/elabora                                elabora
+POST   /api/consegne/stampa                                 stampa
+POST   /api/consegne/xml                                    scaricaXml
 POST   /api/consegne/prova-trasporto                        provaTrasporto
 POST   /api/consegne/:id/evasa                              segnaConsegnata
 POST   /api/consegne/:id/coda                               rimettiInCoda
 POST   /api/consegne/:id/annulla                            annulla
 ```
+
+`stampa` restituisce un solo PDF con tutte le fatture da consegnare a mano, una per
+pagina, e `X-Consegne-Rimaste` dice quante restano oltre il lotto. `xml` restituisce un
+archivio zip con un file per fattura elettronica da trasmettere. Nessuna delle due segna
+le consegne come evase: si possono ripetere.
 
 ### /api/contatori
 ```text
@@ -126,12 +133,18 @@ GET    /api/portale-cliente/fatture/:id/pdf                 downloadInvoicePdf
 ```text
 POST   /api/edifici                                         createEdificio
 GET    /api/edifici                                         getEdifici
+GET    /api/edifici/mappa                                   getMappa
 GET    /api/edifici/:id                                     getEdificio
 PUT    /api/edifici/:id                                     updateEdificio
 DELETE /api/edifici/:id                                     deleteEdificio
 POST   /api/edifici/:edificioId/contatori/:contatoreId      associateContatore
 GET    /api/edifici/:edificioId/contatori                   getContatoriAssociati
 ```
+
+`GET /api/edifici/mappa` non e paginato: restituisce `{ data, senzaPosizione }` con
+tutti gli edifici che hanno coordinate utilizzabili, ridotti ai campi che servono a
+disegnarli, piu il conteggio di quelli che ne restano fuori. La lista pagina cinquanta
+record alla volta, e la mappa mostrava percio solo una parte del territorio.
 
 ### /api/fasce
 ```text
@@ -181,6 +194,12 @@ POST   /api/letture/:letturaId/servizi/:servizioId          associateServizio
 GET    /api/letture/:id/contatore                           getContatoreAssociato
 GET    /api/letture/:id/servizi                             getServiziAssociati
 ```
+
+Il parametro `search` sulle letture cerca anche fra i **clienti**: il testo viene
+confrontato con ragione sociale, cognome e nome, e le letture dei contatori di chi
+corrisponde entrano nel risultato insieme a quelle che corrispondono per campi propri.
+La risposta popola `contatore.cliente`, cosi l'elenco puo mostrare di chi e la lettura.
+
 
 ### /api/listini
 ```text

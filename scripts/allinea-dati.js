@@ -9,8 +9,13 @@
 //   - scadenze: converte `saldo` in booleano dove e salvato come 1/0
 //   - clienti: riporta `stampa_cortesia` ai valori dichiarati in config/delivery
 //   - scadenze: cancella la data di pagamento sentinella 31/12/2099
+//   - utenti: scrive il ruolo dove manca, perche un ruolo assente non deve
+//     dipendere da un valore di ripiego nel codice
+//   - edifici: rimette il punto decimale nelle coordinate che l'hanno perso
 const { runScript } = require('./utils/runScript');
 const Cliente = require('../models/Cliente');
+const Edificio = require('../models/Edificio');
+const User = require('../models/User');
 const Fattura = require('../models/Fattura');
 const Scadenza = require('../models/Scadenza');
 const { MODALITA_CONSEGNA, normalizzaModalita } = require('../config/delivery');
@@ -132,6 +137,99 @@ const rimuoviDataPagamentoSentinella = async () => {
     console.log(`  svuotate: ${risultato.modifiedCount}`);
 };
 
+// Un utente senza `role` funzionava lo stesso, perche il controllo dei permessi
+// ripiegava su "admin" quando il campo mancava. E il ripiego sbagliato: un
+// account del portale che per qualunque motivo perdesse il campo diventerebbe
+// amministratore. Il ripiego va tolto dal codice, ma prima il ruolo va scritto
+// davvero sugli account che non ce l'hanno, altrimenti smetterebbero di entrare.
+//
+// Chi ha un cliente collegato e un accesso al portale, gli altri sono
+// amministratori: e esattamente il permesso che hanno oggi.
+const scriviRuoloUtenti = async () => {
+    const senzaRuolo = { $or: [{ role: { $exists: false } }, { role: null }] };
+    const utenti = await User.find(senzaRuolo).select('username cliente').lean();
+
+    console.log('Utenti senza il ruolo scritto sul record:');
+    console.log(`  da sistemare: ${utenti.length}`);
+    utenti.forEach((utente) => console.log(
+        `    ${utente.username} -> ${utente.cliente ? 'cliente' : 'admin'}`
+    ));
+
+    if (!applica || utenti.length === 0) {
+        return;
+    }
+
+    const portale = utenti.filter((utente) => utente.cliente).map((utente) => utente._id);
+    const amministratori = utenti.filter((utente) => !utente.cliente).map((utente) => utente._id);
+
+    if (portale.length > 0) {
+        await User.collection.updateMany({ _id: { $in: portale } }, { $set: { role: 'cliente' } });
+    }
+    if (amministratori.length > 0) {
+        await User.collection.updateMany({ _id: { $in: amministratori } }, { $set: { role: 'admin' } });
+    }
+    console.log(`  scritti: ${utenti.length}`);
+};
+
+// Cortina sta attorno a 46.53 N, 12.14 E. Un edificio importato con
+// longitudine 12142838 invece di 12.142838 ha perso il punto decimale per
+// strada: sulla mappa finisce dall'altra parte del mondo e trascina con se
+// l'inquadratura di tutti gli altri.
+const ATTORNO_A = { latitudine: 46.53, longitudine: 12.14 };
+const SCARTO_MASSIMO = 0.5;
+
+const rimettiIlPuntoDecimale = (valore, atteso) => {
+    let candidato = Math.abs(valore);
+
+    // Si divide per dieci finche non si torna nell'intorno giusto: e l'unica
+    // correzione possibile senza inventare dati, perche le cifre ci sono tutte
+    // ed e solo la virgola a mancare.
+    for (let tentativi = 0; tentativi < 12; tentativi += 1) {
+        if (Math.abs(candidato - atteso) <= SCARTO_MASSIMO) {
+            return valore < 0 ? -candidato : candidato;
+        }
+        candidato /= 10;
+    }
+
+    return null;
+};
+
+const correggiCoordinateEdifici = async () => {
+    const edifici = await Edificio.find({
+        latitudine: { $nin: [null, 0] },
+        longitudine: { $nin: [null, 0] },
+    }).select('descrizione nome_edificio latitudine longitudine').lean();
+
+    const fuori = edifici
+        .map((edificio) => {
+            const latitudine = rimettiIlPuntoDecimale(edificio.latitudine, ATTORNO_A.latitudine);
+            const longitudine = rimettiIlPuntoDecimale(edificio.longitudine, ATTORNO_A.longitudine);
+            const sbagliata = Math.abs(edificio.latitudine - ATTORNO_A.latitudine) > SCARTO_MASSIMO
+                || Math.abs(edificio.longitudine - ATTORNO_A.longitudine) > SCARTO_MASSIMO;
+            return sbagliata ? { edificio, latitudine, longitudine } : null;
+        })
+        .filter(Boolean);
+
+    console.log('Edifici con coordinate fuori dalla zona di Cortina:');
+    console.log(`  trovati: ${fuori.length}`);
+    fuori.forEach(({ edificio, latitudine, longitudine }) => console.log(
+        `    ${edificio.descrizione || edificio.nome_edificio || edificio._id}: `
+        + `${edificio.latitudine}, ${edificio.longitudine} -> `
+        + (latitudine && longitudine ? `${latitudine}, ${longitudine}` : 'non correggibile, da rilevare')
+    ));
+
+    const correggibili = fuori.filter((voce) => voce.latitudine && voce.longitudine);
+
+    if (!applica || correggibili.length === 0) {
+        return;
+    }
+
+    for (const { edificio, latitudine, longitudine } of correggibili) {
+        await Edificio.collection.updateOne({ _id: edificio._id }, { $set: { latitudine, longitudine } });
+    }
+    console.log(`  corretti: ${correggibili.length}`);
+};
+
 const main = async () => {
     console.log(applica ? '== APPLICO LE CORREZIONI ==\n' : '== SOLA LETTURA (usa --fix per applicare) ==\n');
 
@@ -144,6 +242,10 @@ const main = async () => {
     await normalizzaModalitaConsegna();
     console.log('');
     await rimuoviDataPagamentoSentinella();
+    console.log('');
+    await scriviRuoloUtenti();
+    console.log('');
+    await correggiCoordinateEdifici();
 };
 
 runScript(main);

@@ -4,6 +4,8 @@ const EdificioController = require('../controllers/EdificioController');
 
 router.post('/', EdificioController.createEdificio);
 router.get('/', EdificioController.getEdifici);
+// Prima di '/:id', altrimenti 'mappa' verrebbe letto come un identificativo.
+router.get('/mappa', EdificioController.getMappa);
 router.get('/:id', EdificioController.getEdificio);
 router.put('/:id', EdificioController.updateEdificio);
 router.delete('/:id', EdificioController.deleteEdificio);
