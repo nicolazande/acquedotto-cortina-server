@@ -137,6 +137,14 @@ const createRecord = async (resource, payload) => {
 // dei legami la rifiuta con un 409. Ripetendo il giro, cio che era bloccato si
 // sblocca appena sparisce chi lo teneva. Se un giro intero non cancella nulla,
 // resta davvero qualcosa che non si puo togliere, e va detto.
+// Record che nessuna passata e riuscita a cancellare. Non si solleva subito:
+// una pulizia che fallisce e quasi sempre la conseguenza di una prova gia
+// fallita a meta, che ha lasciato dietro documenti ancora collegati, e la sua
+// eccezione dentro il `finally` prendeva il posto di quella vera - si leggeva
+// "cleanup stuck" e non si sapeva mai perche la prova fosse fallita. Si
+// raccolgono qui e si fallisce alla fine, quando il motivo e gia stato detto.
+const residui = [];
+
 const deleteCreatedRecords = async (records) => {
     let rimanenti = [...records].reverse();
 
@@ -161,7 +169,9 @@ const deleteCreatedRecords = async (records) => {
         }
 
         if (!cancellatoQualcosa) {
-            throw new Error(`Smoke cleanup stuck on: ${bloccati.map((v) => `${v.resource}/${v.id}`).join(', ')}`);
+            bloccati.forEach((voce) => residui.push(voce));
+            console.log(`  (pulizia incompleta: ${bloccati.map((v) => `${v.resource}/${v.id}`).join(', ')})`);
+            return;
         }
 
         rimanenti = bloccati;
@@ -643,6 +653,33 @@ const testInvoiceDelivery = async () => {
         }
 
         // La stampa in blocco: un PDF solo con dentro le fatture da imbustare.
+        // Serve una consegna cartacea in coda, e va creata qui: su un database
+        // vuoto non ce n'e nessuna, e la prova passava solo perche l'archivio
+        // reale ne aveva gia centinaia.
+        const clienteCarta = await createTrackedRecord(createdRecords, 'clienti', {
+            nome: 'Smoke', cognome: 'Posta', ragione_sociale: 'Smoke Posta',
+            stampa_cortesia: 'postale',
+        });
+        const fatturaCarta = await createRecord('fatture', {
+            cliente: clienteCarta._id, data_fattura: OGGI, tipo_documento: 'Fattura',
+            imponibile: 10, iva: 1, totale_fattura: 11,
+        });
+        createdRecords.push({ resource: 'fatture', id: fatturaCarta._id });
+        createdRecords.push({ resource: 'scadenze', id: fatturaCarta.scadenza });
+        await request(`/fatture/${fatturaCarta._id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confermata: true }),
+        });
+        await request('/consegne/pianifica', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fatture: [fatturaCarta._id] }),
+        });
+
+        const daStampare = await request('/consegne/riepilogo');
+        assert(Number(daStampare.body.daStampare || 0) > 0, 'the paper delivery should be waiting to be printed');
+
         const stampa = await request('/consegne/stampa', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -650,6 +687,17 @@ const testInvoiceDelivery = async () => {
         });
         assert(stampa.contentType.includes('application/pdf'), 'the bulk print should return a PDF');
         assert(Buffer.from(stampa.body).subarray(0, 4).toString() === '%PDF', 'the bulk print body is not a PDF');
+
+        // Stampare non segna niente come evaso: il PDF si puo rifare.
+        const dopoStampa = await request('/consegne/riepilogo');
+        assert(
+            Number(dopoStampa.body.daStampare || 0) === Number(daStampare.body.daStampare || 0),
+            'printing must not mark deliveries as done'
+        );
+
+        // Confermata, quindi va sbloccata per cancellarla: la pulizia generica
+        // non lo fa, ed e giusto cosi - lo sblocco resta un gesto deliberato.
+        await request(`/fatture/${fatturaCarta._id}?sbloccoConfermato=true`, { method: 'DELETE' });
 
         const cancellata = await request(`/fatture/${fattura._id}?sbloccoConfermato=true`, { method: 'DELETE' });
         assert(cancellata.response.status === 204, 'the confirmed invoice was not deleted');
@@ -979,6 +1027,13 @@ const main = async () => {
     await step('referential integrity', testReferentialIntegrity);
     await step('late fee charged once', testDelayFeeChargedOnce);
     await step('note attachments create/list/file/delete', testAttachments);
+
+    if (residui.length > 0) {
+        throw new Error(
+            `Record di prova rimasti nel database: ${residui.map((v) => `${v.resource}/${v.id}`).join(', ')}`
+        );
+    }
+
     console.log('Smoke API completed successfully.');
 };
 
