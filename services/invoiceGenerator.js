@@ -531,6 +531,33 @@ const segnaMoraFatturata = async (scadenzaId, session) => {
 const toBoolean = (value) => value === true || ['1', 'true', 'yes'].includes(String(value).toLowerCase());
 const getInvoiceStatus = (confermata) => (toBoolean(confermata) ? 'confermata' : 'bozza');
 
+// I totali della fattura sono la somma delle sue righe, e devono restare tali
+// per sempre: aggiungerne una dalla scheda lasciava imponibile, IVA e totale
+// fermi ai valori del giorno in cui la fattura era nata. Un documento i cui
+// totali non tornano con le righe viene rifiutato dallo SdI, e il rapporto di
+// integrita lo segnala.
+//
+// Si passa dalla stessa funzione della fatturazione automatica: non esiste un
+// secondo modo di sommare una fattura.
+const ricalcolaTotaliFattura = async (fatturaId, session) => {
+    if (!fatturaId) {
+        return null;
+    }
+
+    const righe = await withSession(Servizio.find({ fattura: fatturaId }), session)
+        .populate('articolo')
+        .lean();
+    const totali = calculateTotals(righe.map((riga) => ({
+        valore_unitario: riga.valore_unitario,
+        iva_percentuale: riga.aliquota_iva,
+        articolo: riga.articolo,
+    })));
+
+    await withSession(Fattura.updateOne({ _id: fatturaId }, { $set: totali }), session);
+
+    return totali;
+};
+
 // Una fattura scritta a mano - un rimborso, un allacciamento, la vendita di un
 // contatore - nasceva senza righe: il totale era un numero digitato e basta.
 // Ma una fattura senza righe non si puo trasmettere (l'XML la rifiuta), il
@@ -547,18 +574,17 @@ const creaRigaManuale = async ({ articoloId, imponibile, descrizione }, fatturaI
         throw unprocessable('Articolo non trovato: impossibile creare la riga della fattura.');
     }
 
-    const riga = {
+    const [servizio] = await Servizio.create([{
         riga: 1,
         descrizione: descrizione || articolo.descrizione || articolo.codice,
         valore_unitario: roundMoney(numberOrZero(imponibile)),
         prezzo: roundMoney(numberOrZero(imponibile)),
         articolo: articolo._id,
         aliquota_iva: getTaxRate(articolo),
-    };
+        fattura: fatturaId,
+    }], { session });
 
-    const [servizio] = await Servizio.create([{ ...riga, fattura: fatturaId }], { session });
-
-    return { servizio, totali: calculateTotals([riga]) };
+    return { servizio, totali: await ricalcolaTotaliFattura(fatturaId, session) };
 };
 
 const createManualInvoiceInSession = async (input = {}, session) => {
@@ -602,7 +628,6 @@ const createManualInvoiceInSession = async (input = {}, session) => {
         servizio = esito.servizio;
         // I totali vengono dalla riga: e la riga il documento, non il numero
         // che qualcuno ha digitato accanto.
-        await withSession(Fattura.updateOne({ _id: fattura._id }, { $set: esito.totali }), session);
         Object.assign(fattura, esito.totali);
     }
 
@@ -1052,6 +1077,7 @@ const verifyInvoiceCalculation = async (fatturaId, options = {}) => {
 
 module.exports = {
     getReadingIdsFromServices,
+    ricalcolaTotaliFattura,
     applyFixedChargeToInvoice,
     calculateReadingById,
     createManualInvoice,

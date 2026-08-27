@@ -18,6 +18,7 @@ const {
     writeServiceAudit,
     writeServiceUpdateAudit,
 } = require('../services/invoiceAuditService');
+const { ricalcolaTotaliFattura } = require('../services/invoiceGenerator');
 
 const populate = 'lettura articolo fattura listino fascia';
 
@@ -26,6 +27,10 @@ const createServizio = async (req, res) => {
         await assertInvoiceEditableById(req.body.fattura, 'aggiungere righe servizio', unlockOptions(req));
         const { sbloccoConfermato, ...dati } = req.body;
         const servizio = await Servizio.create(dati);
+        // I totali della fattura sono la somma delle righe: ogni volta che le
+        // righe cambiano vanno rifatti, altrimenti il documento dice una cifra
+        // e le sue righe un'altra.
+        await ricalcolaTotaliFattura(servizio.fattura);
         await writeServiceAudit(req, servizio, 'fattura.servizio_creato', 'Creata riga servizio');
         res.status(201).json(servizio);
     } catch (error) {
@@ -40,6 +45,13 @@ const updateServizio = async (req, res) => {
         const { sbloccoConfermato, ...dati } = req.body;
         const after = await Servizio.findByIdAndUpdate(req.params.id, dati, { new: true }).lean();
 
+        // Se la riga cambia importo, o passa a un'altra fattura, tornano i conti
+        // di entrambe.
+        await ricalcolaTotaliFattura(after?.fattura);
+        if (before?.fattura && String(before.fattura) !== String(after?.fattura)) {
+            await ricalcolaTotaliFattura(before.fattura);
+        }
+
         await writeServiceUpdateAudit(req, before, after);
         res.status(200).json(after);
     } catch (error) {
@@ -51,6 +63,7 @@ const deleteServizio = async (req, res) => {
     try {
         const servizio = await assertServiceInvoiceEditable(req.params.id, 'cancellare righe servizio', unlockOptions(req));
         await Servizio.deleteOne({ _id: req.params.id });
+        await ricalcolaTotaliFattura(servizio.fattura);
         await writeServiceAudit(req, servizio, 'fattura.servizio_cancellato', 'Cancellata riga servizio');
         res.status(204).send();
     } catch (error) {
