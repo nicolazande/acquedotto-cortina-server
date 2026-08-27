@@ -399,6 +399,7 @@ module.exports = {
     calculateTotals,
     getApplicableBands,
     getBandQuantity,
+    getLineTaxRate,
     getTaxRate,
     isFixedBand,
     numberOrZero,

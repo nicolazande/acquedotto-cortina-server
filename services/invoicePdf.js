@@ -9,7 +9,9 @@ const Fattura = require('../models/Fattura');
 require('../models/Lettura');
 require('../models/Listino');
 require('../models/Scadenza');
-const Servizio = require('../models/Servizio');
+const { getLineTaxRate } = require('./billingCalculator');
+const { righeConOrigine } = require('./righeFattura');
+const { applyRate, fromCents, toCents } = require('../utils/money');
 
 const PAGE_WIDTH = 595;
 const PAGE_HEIGHT = 842;
@@ -440,22 +442,23 @@ const drawPhoneBoxes = (pdf) => {
     pdf.text('tutti i giorni', 30, 235, { align: 'center', font: 'bold', size: 6, width: 105 });
 };
 
-const getVatRate = (service) => {
-    if (!isEmpty(service.aliquota_iva)) {
-        return numberOrZero(service.aliquota_iva);
-    }
-
-    const match = String(service.articolo?.iva || '').match(/(\d+(?:[,.]\d+)?)/);
-    return match ? numberOrZero(match[1]) : 0;
-};
-
+// Il riquadro delle aliquote, con la stessa aritmetica di tutto il resto.
+//
+// Aveva un suo modo di leggere l'aliquota dall'etichetta dell'articolo, e non
+// pretendeva il segno di percentuale: "Esente art.15" diventava il 15%, "NI90"
+// il 90%, "Codice iva Art.26" il 26%. Sulle fatture con la mora - 893 righe in
+// archivio - il riquadro stampava "15% su 6,00 = 0,90" e la sua IVA non tornava
+// ne con quella salvata ne con il totale stampato accanto.
+//
+// E sommava in virgola mobile riga per riga. Ora si somma in centesimi interi e
+// si arrotonda una volta per aliquota, che e cio che fa il totale della fattura
+// e cio che dichiara il riepilogo della fattura elettronica: le tre cifre che il
+// cliente puo confrontare vengono dallo stesso calcolo.
 const drawTaxSummary = (pdf, fattura, servizi) => {
     const groups = servizi.reduce((map, service) => {
-        const rate = getVatRate(service);
-        const current = map.get(rate) || { imponibile: 0, iva: 0 };
-        const imponibile = numberOrZero(service.valore_unitario);
-        current.imponibile += imponibile;
-        current.iva += imponibile * rate / 100;
+        const rate = getLineTaxRate(service);
+        const current = map.get(rate) || { centesimi: 0 };
+        current.centesimi += toCents(numberOrZero(service.valore_unitario));
         map.set(rate, current);
         return map;
     }, new Map());
@@ -472,10 +475,10 @@ const drawTaxSummary = (pdf, fattura, servizi) => {
     pdf.line(20, 292, 283, 292, { color: GRAY });
 
     let y = 292;
-    [...groups.entries()].forEach(([rate, values]) => {
+    [...groups.entries()].forEach(([rate, { centesimi }]) => {
         pdf.cellText(`IVA ${formatNumber(rate)}%`, 20, y, 122, 15, { align: 'center', size: 6 });
-        pdf.cellText(formatMoney(values.iva), 142, y, 64, 15, { align: 'center', size: 6 });
-        pdf.cellText(formatMoney(values.imponibile), 206, y, 77, 15, { align: 'center', size: 6 });
+        pdf.cellText(formatMoney(fromCents(applyRate(centesimi, rate))), 142, y, 64, 15, { align: 'center', size: 6 });
+        pdf.cellText(formatMoney(fromCents(centesimi)), 206, y, 77, 15, { align: 'center', size: 6 });
         y += 12;
     });
 };
@@ -581,7 +584,7 @@ const drawDetailTable = (pdf, servizi) => {
             service.tipo_quota || service.tipo_tariffa || '',
             getCounterLabel(service),
             getLineDescription(service),
-            service.articolo?.iva || `IVA ${formatNumber(getVatRate(service))}%`,
+            service.articolo?.iva || `IVA ${formatNumber(getLineTaxRate(service))}%`,
             service.lettura_precedente || '',
             service.lettura_fatturazione || '',
             formatNumber(service.metri_cubi),
@@ -625,15 +628,7 @@ const loadInvoicePdfData = async (fatturaId) => {
         throw error;
     }
 
-    const servizi = await Servizio.find({ fattura: fatturaId })
-        .sort({ riga: 1, _id: 1 })
-        .populate([
-            { path: 'articolo' },
-            { path: 'listino' },
-            { path: 'fascia' },
-            { path: 'lettura', populate: { path: 'contatore' } },
-        ])
-        .lean();
+    const servizi = await righeConOrigine(fatturaId);
 
     return {
         fattura,
