@@ -33,7 +33,7 @@ const {
 const { assertInvoiceEditable } = require('./invoiceLockService');
 const { INVOICE_SERIES, invoiceCode } = require('../config/invoicing');
 const { runWithOptionalTransaction } = require('./transaction');
-const { createError } = require('../utils/errors');
+const { createError, unprocessable } = require('../utils/errors');
 const { hasValue, normalizeText, sumMoneyBy } = require('../utils/values');
 const { uniqueById, withSession } = require('../utils/mongo');
 const { customerLabel } = require('../utils/customer');
@@ -531,6 +531,36 @@ const segnaMoraFatturata = async (scadenzaId, session) => {
 const toBoolean = (value) => value === true || ['1', 'true', 'yes'].includes(String(value).toLowerCase());
 const getInvoiceStatus = (confermata) => (toBoolean(confermata) ? 'confermata' : 'bozza');
 
+// Una fattura scritta a mano - un rimborso, un allacciamento, la vendita di un
+// contatore - nasceva senza righe: il totale era un numero digitato e basta.
+// Ma una fattura senza righe non si puo trasmettere (l'XML la rifiuta), il
+// controllo di integrita la segnala, e l'aliquota restava da indovinare.
+//
+// Scegliendo l'articolo si ottiene tutto: la riga esiste, l'aliquota e quella
+// che l'articolo dichiara - 10% sull'acqua, 22% su un contatore venduto, esente
+// sulla mora - e i totali si calcolano con la stessa funzione della
+// fatturazione automatica invece di essere scritti a mano.
+const creaRigaManuale = async ({ articoloId, imponibile, descrizione }, fatturaId, session) => {
+    const articolo = await withSession(Articolo.findById(articoloId), session).lean();
+
+    if (!articolo) {
+        throw unprocessable('Articolo non trovato: impossibile creare la riga della fattura.');
+    }
+
+    const riga = {
+        riga: 1,
+        descrizione: descrizione || articolo.descrizione || articolo.codice,
+        valore_unitario: roundMoney(numberOrZero(imponibile)),
+        prezzo: roundMoney(numberOrZero(imponibile)),
+        articolo: articolo._id,
+        aliquota_iva: getTaxRate(articolo),
+    };
+
+    const [servizio] = await Servizio.create([{ ...riga, fattura: fatturaId }], { session });
+
+    return { servizio, totali: calculateTotals([riga]) };
+};
+
 const createManualInvoiceInSession = async (input = {}, session) => {
     const invoiceDate = input.data_fattura ? new Date(input.data_fattura) : new Date();
     const year = input.anno || invoiceDate.getFullYear();
@@ -543,8 +573,11 @@ const createManualInvoiceInSession = async (input = {}, session) => {
         : null;
     const customerLabel = getCustomerLabel(cliente);
     const confermata = toBoolean(input.confermata);
+    // `articolo` guida la riga, non e un campo della fattura: va tolto prima di
+    // scrivere il documento.
+    const { articolo: articoloId, ...campiFattura } = input;
     const [fattura] = await Fattura.create([{
-        ...input,
+        ...campiFattura,
         tipo_documento: input.tipo_documento || 'Fattura',
         ragione_sociale: input.ragione_sociale || customerLabel,
         confermata,
@@ -559,6 +592,20 @@ const createManualInvoiceInSession = async (input = {}, session) => {
         cliente: cliente?._id || input.cliente,
         scadenza: input.scadenza || undefined,
     }], { session });
+    let servizio = null;
+    if (articoloId) {
+        const esito = await creaRigaManuale({
+            articoloId,
+            imponibile: input.imponibile,
+            descrizione: input.descrizione,
+        }, fattura._id, session);
+        servizio = esito.servizio;
+        // I totali vengono dalla riga: e la riga il documento, non il numero
+        // che qualcuno ha digitato accanto.
+        await withSession(Fattura.updateOne({ _id: fattura._id }, { $set: esito.totali }), session);
+        Object.assign(fattura, esito.totali);
+    }
+
     const scadenza = await ensureInvoiceDeadline({
         cliente,
         dueDate: input.data_scadenza,
@@ -569,6 +616,7 @@ const createManualInvoiceInSession = async (input = {}, session) => {
     return {
         fattura,
         scadenza,
+        servizio,
     };
 };
 
