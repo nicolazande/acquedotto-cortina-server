@@ -33,6 +33,7 @@ const {
 const { assertInvoiceEditable } = require('./invoiceLockService');
 const { INVOICE_SERIES, invoiceCode } = require('../config/invoicing');
 const { runWithOptionalTransaction } = require('./transaction');
+const { righeConOrigine, righeDellaFattura } = require('./righeFattura');
 const { createError, unprocessable } = require('../utils/errors');
 const { hasValue, normalizeText, sumMoneyBy } = require('../utils/values');
 const { uniqueById, withSession } = require('../utils/mongo');
@@ -544,9 +545,7 @@ const ricalcolaTotaliFattura = async (fatturaId, session) => {
         return null;
     }
 
-    const righe = await withSession(Servizio.find({ fattura: fatturaId }), session)
-        .populate('articolo')
-        .lean();
+    const righe = await righeDellaFattura(fatturaId, session);
     const totali = calculateTotals(righe.map((riga) => ({
         valore_unitario: riga.valore_unitario,
         iva_percentuale: riga.aliquota_iva,
@@ -940,10 +939,7 @@ const applyFixedChargeToInvoiceInSession = async (fatturaId, session, unlock) =>
     }
     assertInvoiceEditable(fattura, 'aggiungere la quota fissa', unlock);
 
-    const servizi = await withSession(
-        Servizio.find({ fattura: fatturaId }).populate('lettura articolo listino fascia'),
-        session
-    ).lean();
+    const servizi = await righeConOrigine(fatturaId, session);
     const serviziLettura = getReadingServices(servizi);
     const serviziFisso = getFixedServices(serviziLettura);
 
@@ -1005,7 +1001,7 @@ const verifyInvoiceCalculation = async (fatturaId, options = {}) => {
         throw createError('Fattura not found', 404);
     }
 
-    const servizi = await Servizio.find({ fattura: fatturaId }).populate('lettura articolo listino fascia').lean();
+    const servizi = await righeConOrigine(fatturaId);
     const { calculations, letturaIds } = await calculateInvoiceReadingsFromServices({
         annualFixedLookupCache: options.annualFixedLookupCache,
         fattura,

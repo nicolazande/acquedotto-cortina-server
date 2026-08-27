@@ -1,6 +1,7 @@
 const Fattura = require('../models/Fattura');
 const Cliente = require('../models/Cliente');
 const Servizio = require('../models/Servizio');
+const { righeDellaFattura } = require('../services/righeFattura');
 const Scadenza = require('../models/Scadenza');
 const { sendPaginated } = require('./utils/paginatedQuery');
 const {
@@ -8,6 +9,7 @@ const {
     getManyByField,
     getPopulatedRelation,
     getRecord,
+    rifiutaFatturaConfermata,
     sendServiceError,
 } = require('./utils/controllerActions');
 const { invoiceGenerationOptions, parseOptionalBoolean } = require('./utils/requestOptions');
@@ -54,7 +56,7 @@ const withEditableInvoice = (handler, idParam, action) => async (req, res) => {
         await assertInvoiceEditableById(req.params[idParam], action, unlockOptions(req));
         return handler(req, res);
     } catch (error) {
-        return sendServiceError(res, error, 'Fattura confermata', error.status || 400);
+        return rifiutaFatturaConfermata(res, error);
     }
 };
 
@@ -156,10 +158,7 @@ const downloadXml = async (req, res) => {
             return res.status(404).json({ error: 'Fattura not found' });
         }
 
-        const servizi = await Servizio.find({ fattura: fattura._id })
-            .populate('articolo')
-            .sort({ riga: 1 })
-            .lean();
+        const servizi = await righeDellaFattura(fattura._id);
 
         const { filename, xml } = buildInvoiceXml({ cliente: fattura.cliente, fattura, servizi });
 

@@ -13,7 +13,7 @@
 const Cliente = require('../models/Cliente');
 const Consegna = require('../models/Consegna');
 const Fattura = require('../models/Fattura');
-const Servizio = require('../models/Servizio');
+const { righeDellaFattura } = require('./righeFattura');
 const { CANALE_TRASMISSIONE_SDI, testoEmailCortesia } = require('../config/delivery');
 const { pianoConsegne } = require('./deliveryPlan');
 const { generateInvoicePdf, generateInvoicesPdf } = require('./invoicePdf');
@@ -177,10 +177,7 @@ const allegatoPdf = async (fatturaId) => {
 };
 
 const allegatoXml = async (fattura) => {
-    const servizi = await Servizio.find({ fattura: fattura._id })
-        .populate('articolo')
-        .sort({ riga: 1 })
-        .lean();
+    const servizi = await righeDellaFattura(fattura._id);
     const { filename, xml } = buildInvoiceXml({ cliente: fattura.cliente, fattura, servizi });
 
     return { nome: filename, contenuto: Buffer.from(xml, 'utf8'), tipo: 'application/xml' };
@@ -409,10 +406,7 @@ const xmlDaTrasmettere = async ({ limite } = {}) => {
             continue;
         }
 
-        const servizi = await Servizio.find({ fattura: fattura._id })
-            .populate('articolo')
-            .sort({ riga: 1 })
-            .lean();
+        const servizi = await righeDellaFattura(fattura._id);
         const { filename, xml } = buildInvoiceXml({ cliente: fattura.cliente, fattura, servizi });
         file.push({ nome: filename, contenuto: xml });
     }
