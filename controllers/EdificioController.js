@@ -17,11 +17,17 @@ const {
 // pagina aperta: chi deve organizzare un giro di letture per zona vedeva
 // cinquanta punti su centosettanta e non poteva sapere cosa mancava. Sono
 // centosettanta record di quattro campi, una manciata di kB: si mandano tutti.
+// Una latitudine sta fra -90 e 90, una longitudine fra -180 e 180: fuori di li
+// non e un punto sbagliato, non e un punto. Un edificio importato con la
+// longitudine 12142838 invece di 12.142838 - il punto decimale perso per strada
+// - obbligava la mappa a inquadrare mezzo pianeta, e degli altri centosessanta
+// non si vedeva piu niente. Restano fuori dalla mappa e contati fra quelli
+// senza posizione, che e cio che sono finche qualcuno non li corregge.
 const getMappa = async (req, res) => {
     try {
         const edifici = await Edificio.find({
-            latitudine: { $nin: [null, 0] },
-            longitudine: { $nin: [null, 0] },
+            latitudine: { $nin: [null, 0], $gte: -90, $lte: 90 },
+            longitudine: { $nin: [null, 0], $gte: -180, $lte: 180 },
         })
             .select('descrizione nome_edificio indirizzo latitudine longitudine')
             .sort({ descrizione: 1 })

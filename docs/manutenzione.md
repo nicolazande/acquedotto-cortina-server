@@ -209,7 +209,15 @@ server**, altrimenti non entrano piu. Chi ha un cliente collegato diventa
 Il server lo ricorda da solo: all'avvio, se trova account senza ruolo, li elenca
 in console.
 
-**2. Controllare `JWT_SECRET` sul servizio.**
+**2. Rimettere il punto decimale alle coordinate.**
+
+Lo stesso comando corregge un edificio importato con la longitudine `12142838`
+invece di `12.142838`. Finche non lo si esegue quell'edificio resta fuori dalla
+mappa, contato fra quelli senza posizione: e cio che era gia successo in
+produzione, dove la mappa mostrava il mondo intero perche doveva inquadrare
+anche un punto dall'altra parte del pianeta.
+
+**3. Controllare `JWT_SECRET` sul servizio.**
 
 E il segreto con cui si firmano i token di accesso: chi lo conosce puo firmarsi
 un accesso da amministratore. Il server ora **rifiuta di partire** se manca o se
