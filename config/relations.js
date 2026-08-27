@@ -14,6 +14,14 @@
 //            precedente, che su clienti, listini, articoli ed edifici non offre
 //            proprio il pulsante di eliminazione.
 //
+//   conserva il documento collegato resta, e il riferimento puo restare
+//            appeso. Serve solo dove il collegato tiene gia la sua copia di
+//            cio che gli serve: il giornale delle modifiche salva il nome e il
+//            ruolo di chi ha agito accanto al riferimento all'utente, proprio
+//            perche un registro deve sopravvivere alla cancellazione di chi vi
+//            compare. Per queste il rapporto di integrita non segnala il
+//            riferimento appeso: e voluto, non un difetto.
+//
 //   cascata  i documenti collegati vengono cancellati insieme al padre, perche
 //            senza di lui non significano niente: le righe di una fattura, le
 //            sue consegne, le fasce di un listino.
@@ -51,7 +59,6 @@ const DIPENDENZE = {
     ],
     Lettura: [
         { modello: 'Servizio', campo: 'lettura', politica: 'blocca', descrizione: 'righe di fattura' },
-        { modello: 'Fattura', campo: 'letture', politica: 'blocca', descrizione: 'fatture' },
     ],
     Listino: [
         { modello: 'Contatore', campo: 'listino', politica: 'blocca', descrizione: 'contatori' },
@@ -60,6 +67,9 @@ const DIPENDENZE = {
     ],
     Scadenza: [
         { modello: 'Fattura', campo: 'scadenza', politica: 'blocca', descrizione: 'fatture' },
+    ],
+    User: [
+        { modello: 'AuditLog', campo: 'actor', politica: 'conserva', descrizione: 'voci del giornale' },
     ],
 };
 

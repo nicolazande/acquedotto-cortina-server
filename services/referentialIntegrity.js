@@ -14,6 +14,7 @@ const mongoose = require('mongoose');
 // I modelli si risolvono per nome, quindi devono essere tutti registrati: chi
 // usa questo servizio non deve doversi ricordare quali importare.
 require('../models/Articolo');
+require('../models/AuditLog');
 require('../models/Cliente');
 require('../models/Consegna');
 require('../models/Contatore');
@@ -30,8 +31,8 @@ const { conflict } = require('../utils/errors');
 
 const modello = (nome) => mongoose.model(nome);
 
-// Il filtro che trova i documenti collegati. Un campo array (le letture di una
-// fattura) si interroga allo stesso modo di un riferimento singolo.
+// Il filtro che trova i documenti collegati. Un campo array si interroga allo
+// stesso modo di un riferimento singolo.
 const filtroCollegati = (campo, id) => ({ [campo]: id });
 
 // Cosa impedisce la cancellazione, con i numeri.
@@ -91,7 +92,9 @@ const cancellaACascata = async (nome, id) => {
 const riferimentiRotti = async () => {
     const rotti = [];
 
-    for (const arco of TUTTI_I_LEGAMI) {
+    // I legami "conserva" possono avere il riferimento appeso per costruzione:
+    // segnalarli vorrebbe dire riportare come difetto una scelta voluta.
+    for (const arco of TUTTI_I_LEGAMI.filter((voce) => voce.politica !== 'conserva')) {
         const esistenti = new Set(
             (await modello(arco.bersaglio).find({}).select('_id').lean()).map((doc) => String(doc._id))
         );

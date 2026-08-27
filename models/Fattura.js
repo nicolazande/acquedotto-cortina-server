@@ -30,7 +30,6 @@ const fatturaSchema = new Schema(
         // tenuto allineato automaticamente: prima i due potevano divergere.
         stato: { type: String, required: false, enum: ['bozza', 'confermata'], default: 'bozza' },
         origine: { type: String, required: false, default: 'manuale' },
-        letture: [{ type: Schema.Types.ObjectId, ref: 'Lettura' }],
         cliente: { type: Schema.Types.ObjectId, ref: 'Cliente' },
         scadenza: { type: Schema.Types.ObjectId, ref: 'Scadenza' }
     },

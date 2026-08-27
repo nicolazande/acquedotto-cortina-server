@@ -6,6 +6,7 @@ const Fattura = require('../models/Fattura');
 const InvoiceCounter = require('../models/InvoiceCounter');
 const Lettura = require('../models/Lettura');
 require('../models/Listino');
+const Scadenza = require('../models/Scadenza');
 const Servizio = require('../models/Servizio');
 const {
     annualFixedKey,
@@ -497,12 +498,34 @@ const getDelayLineForCustomer = async ({ articlesByCode, clienteId, invoiceDate,
         return null;
     }
 
+    // La penale si addebita una volta sola per scadenza. Senza questo controllo
+    // un cliente fatturato due volte mentre la stessa scadenza resta aperta la
+    // pagherebbe due volte, e con 694 scadenze aperte non e un caso di scuola.
+    if (previousInvoice.scadenza.mora_fatturata) {
+        return null;
+    }
+
     const article = articlesByCode[DEFAULT_DELAY_ARTICLE_CODE];
     if (!article) {
         throw createError('Articolo GG_DELAY mancante: impossibile calcolare il ritardo in modo sicuro');
     }
 
-    return buildDelayLine({ article, previousInvoice });
+    return {
+        ...buildDelayLine({ article, previousInvoice }),
+        // Da segnare sulla scadenza appena la fattura esiste davvero: se la
+        // generazione fallisce, la penale non risulta addebitata.
+        scadenzaDaSegnare: recordId(previousInvoice.scadenza),
+    };
+};
+
+// La penale e stata messa in fattura: da qui in avanti quella scadenza non ne
+// genera altre.
+const segnaMoraFatturata = async (scadenzaId, session) => {
+    if (!scadenzaId) {
+        return;
+    }
+
+    await withSession(Scadenza.updateOne({ _id: scadenzaId }, { $set: { mora_fatturata: true } }), session);
 };
 
 const toBoolean = (value) => value === true || ['1', 'true', 'yes'].includes(String(value).toLowerCase());
@@ -605,9 +628,13 @@ const createInvoiceFromReadingsInSession = async ({
             invoiceDate,
             session,
         });
+        // Il riferimento alla scadenza da segnare non e un dato della riga:
+        // viaggia a parte, altrimenti finirebbe salvato nel servizio.
+        const scadenzaDaSegnare = delayLine?.scadenzaDaSegnare;
+        const rigaMora = delayLine ? { ...delayLine, scadenzaDaSegnare: undefined } : null;
         const allLines = [
             ...calculations.flatMap((calculation) => calculation.lines),
-            ...(delayLine ? [delayLine] : []),
+            ...(rigaMora ? [rigaMora] : []),
         ];
         if (allLines.length === 0) {
             throw createError('Le letture selezionate non generano righe fatturabili');
@@ -633,7 +660,6 @@ const createInvoiceFromReadingsInSession = async ({
             totale_fattura: totals.totale_fattura,
             nome_cliente: getCustomerLabel(cliente),
             cliente: cliente._id,
-            letture: letturaIds,
         }], { session });
         createdFatturaId = fattura._id;
 
@@ -647,6 +673,7 @@ const createInvoiceFromReadingsInSession = async ({
             fattura,
             session,
         });
+        await segnaMoraFatturata(scadenzaDaSegnare, session);
 
         return {
             fattura,
@@ -976,6 +1003,7 @@ const verifyInvoiceCalculation = async (fatturaId, options = {}) => {
 };
 
 module.exports = {
+    getReadingIdsFromServices,
     applyFixedChargeToInvoice,
     calculateReadingById,
     createManualInvoice,

@@ -3,10 +3,11 @@ const Fattura = require('../models/Fattura');
 const Lettura = require('../models/Lettura');
 const Scadenza = require('../models/Scadenza');
 const Servizio = require('../models/Servizio');
+const { getReadingIdsFromServices } = require('./invoiceGenerator');
 const { assertInvoiceEditable } = require('./invoiceLockService');
 const { runWithOptionalTransaction } = require('./transaction');
 const { notFound } = require('../utils/errors');
-const { recordId, uniqueById, withSession } = require('../utils/mongo');
+const { recordId, withSession } = require('../utils/mongo');
 
 // Cancellare una fattura senza toccare cio che le sta attorno lasciava:
 // - righe servizio orfane, che puntavano a una fattura inesistente e che
@@ -16,11 +17,6 @@ const { recordId, uniqueById, withSession } = require('../utils/mongo');
 // - le consegne in coda per un documento che non esiste piu, che avrebbero
 //   continuato a comparire fra le fatture da recapitare.
 // Qui la cancellazione diventa un'operazione unica e completa.
-const collectReadingIds = (fattura, servizi) => uniqueById([
-    ...(fattura.letture || []),
-    ...servizi.map((servizio) => servizio.lettura).filter(Boolean),
-]).map((lettura) => recordId(lettura));
-
 const deleteInvoiceInSession = async (fatturaId, session, unlock) => {
     const fattura = await withSession(Fattura.findById(fatturaId), session).lean();
     if (!fattura) {
@@ -30,9 +26,9 @@ const deleteInvoiceInSession = async (fatturaId, session, unlock) => {
     const eraConfermata = assertInvoiceEditable(fattura, 'cancellare la fattura', unlock);
 
     const servizi = await withSession(Servizio.find({ fattura: fatturaId }), session)
-        .select('_id lettura')
+        .select('_id lettura calcolo_snapshot')
         .lean();
-    const letturaIds = collectReadingIds(fattura, servizi);
+    const letturaIds = getReadingIdsFromServices(servizi).map(recordId);
 
     if (servizi.length > 0) {
         await withSession(Servizio.deleteMany({ fattura: fatturaId }), session);
@@ -71,6 +67,21 @@ const deleteInvoiceInSession = async (fatturaId, session, unlock) => {
         }
     }
 
+    // Se la fattura portava la penale per il ritardo, la scadenza che l'aveva
+    // generata torna addebitabile: altrimenti resterebbe marcata come "mora gia
+    // fatturata" per una mora che non esiste piu.
+    const scadenzeDaLiberare = servizi
+        .filter((servizio) => servizio.calcolo_snapshot?.quota === 'delay')
+        .map((servizio) => servizio.calcolo_snapshot?.scadenza?._id)
+        .filter(Boolean);
+
+    if (scadenzeDaLiberare.length > 0) {
+        await withSession(
+            Scadenza.updateMany({ _id: { $in: scadenzeDaLiberare } }, { $unset: { mora_fatturata: '' } }),
+            session
+        );
+    }
+
     // Le consegne appartengono al documento: senza di lui non hanno significato.
     const consegne = await withSession(Consegna.deleteMany({ fattura: fatturaId }), session);
 
@@ -83,6 +94,7 @@ const deleteInvoiceInSession = async (fatturaId, session, unlock) => {
         letturaSbloccate,
         scadenzaCancellata,
         consegneCancellate: consegne.deletedCount || 0,
+        moreLiberate: scadenzeDaLiberare.length,
     };
 };
 

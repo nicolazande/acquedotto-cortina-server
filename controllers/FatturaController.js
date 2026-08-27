@@ -84,7 +84,7 @@ const generateFromReadings = async (req, res) => {
 
         await writeInvoiceAudit(req, result.fattura, 'fattura.generata', `Generata ${invoiceLabel(result.fattura)}`, {
             metadata: {
-                letture: result.fattura.letture?.length || result.calculations?.length || 0,
+                letture: result.calculations?.length || 0,
             },
         });
         res.status(201).json(result);

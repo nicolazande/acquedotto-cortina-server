@@ -7,8 +7,16 @@ const { DIPENDENZE, TUTTI_I_LEGAMI, dipendenzeDi } = require('../config/relation
 // renderebbe il controllo silenziosamente inefficace, che e il modo peggiore di
 // fallire per un guardiano.
 const mongoose = require('mongoose');
-['Articolo', 'Cliente', 'Consegna', 'Contatore', 'Edificio', 'Fascia', 'Fattura', 'Lettura',
-    'Listino', 'NoteAttachment', 'Scadenza', 'Servizio', 'User'].forEach((nome) => require(`../models/${nome}`));
+const fs = require('node:fs');
+const path = require('node:path');
+
+// Si caricano tutti i modelli che esistono, non un elenco scritto a mano: era
+// proprio un modello dimenticato nell'elenco (AuditLog) a far passare inosservato
+// un riferimento senza politica dichiarata.
+const CARTELLA_MODELLI = path.join(__dirname, '..', 'models');
+fs.readdirSync(CARTELLA_MODELLI)
+    .filter((file) => file.endsWith('.js'))
+    .forEach((file) => require(path.join(CARTELLA_MODELLI, file)));
 
 test('ogni legame dichiarato punta a modelli e campi che esistono', () => {
     TUTTI_I_LEGAMI.forEach((arco) => {
@@ -59,9 +67,21 @@ test('le anagrafiche si bloccano, i figli di un documento vanno a cascata', () =
 
 test('ogni politica dichiarata e una di quelle previste', () => {
     TUTTI_I_LEGAMI.forEach((arco) => {
-        assert.ok(['blocca', 'cascata'].includes(arco.politica), `politica sconosciuta: ${arco.politica}`);
+        assert.ok(['blocca', 'cascata', 'conserva'].includes(arco.politica), `politica sconosciuta: ${arco.politica}`);
         assert.ok(arco.descrizione, `${arco.modello}.${arco.campo} senza descrizione leggibile`);
     });
+});
+
+test('il giornale delle modifiche sopravvive a chi vi compare', () => {
+    // AuditLog.actor punta a un utente, ma il giornale tiene gia il nome e il
+    // ruolo accanto al riferimento: cancellare un utente non deve ne essere
+    // impedito dal registro ne cancellarne le voci.
+    const arco = dipendenzeDi('User').find((voce) => voce.modello === 'AuditLog');
+    assert.equal(arco?.politica, 'conserva');
+
+    const giornale = mongoose.model('AuditLog').schema.paths;
+    assert.ok(giornale.actorUsername, 'il giornale deve tenere il nome di chi ha agito');
+    assert.ok(giornale.actorRole, 'il giornale deve tenere il ruolo di chi ha agito');
 });
 
 test('le anagrafiche principali sono tutte protette', () => {

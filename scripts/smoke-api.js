@@ -437,7 +437,7 @@ const testBillingGeneration = async () => {
         assert(fattura.scadenza, 'generated invoice should create a deadline');
         const generatedDeadline = await request(`/fatture/${fattura._id}/scadenza`);
         assert(generatedDeadline.body.scadenza.startsWith(SCADENZA_ATTESA), 'generated invoice deadline should default to 30 days');
-        assert((fattura.letture || []).includes(lettura._id), 'generated invoice should keep billed reading ids');
+        assert(servizi.some((servizio) => String(servizio.lettura?._id || servizio.lettura) === lettura._id), 'generated services should link the billed reading');
         assert(servizi.length === 3, 'generated invoice should have 3 service rows');
         assert(servizi.every((servizio) => servizio.listino), 'generated services should store listino snapshot reference');
         assert(servizi.every((servizio) => servizio.fascia), 'generated services should store fascia snapshot reference');
@@ -641,6 +641,15 @@ const testInvoiceDelivery = async () => {
         if (registrata.simulata) {
             assert(!documento.body.data_invio_fattura, 'a simulated delivery must not date the invoice');
         }
+
+        // La stampa in blocco: un PDF solo con dentro le fatture da imbustare.
+        const stampa = await request('/consegne/stampa', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ limite: 5 }),
+        });
+        assert(stampa.contentType.includes('application/pdf'), 'the bulk print should return a PDF');
+        assert(Buffer.from(stampa.body).subarray(0, 4).toString() === '%PDF', 'the bulk print body is not a PDF');
 
         const cancellata = await request(`/fatture/${fattura._id}?sbloccoConfermato=true`, { method: 'DELETE' });
         assert(cancellata.response.status === 204, 'the confirmed invoice was not deleted');
@@ -875,6 +884,87 @@ const testReferentialIntegrity = async () => {
     }
 };
 
+// La penale per il ritardo si addebita una volta sola per scadenza.
+//
+// Il caso reale e la fatturazione massiva: due documenti emessi lo stesso
+// giorno guardano entrambi indietro alla stessa scadenza scaduta, perche il
+// confronto e sulla data e non sull'ordine. Senza memoria il cliente paga la
+// penale due volte, e con 694 scadenze aperte non e un caso di scuola. Il
+// gestionale precedente teneva il campo "Fatturato ritardo" per questo.
+const testDelayFeeChargedOnce = async () => {
+    if (skipMutation) {
+        console.log('skipped');
+        return;
+    }
+
+    const createdRecords = [];
+
+    try {
+        const cliente = await createTrackedRecord(createdRecords, 'clienti', {
+            cognome: 'Smoke', nome: 'Mora', ragione_sociale: 'Smoke Mora',
+        });
+        const listino = await createTrackedRecord(createdRecords, 'listini', {
+            categoria: `SMOKE MORA ${Date.now()}`, descrizione: 'Listino temporaneo smoke test',
+        });
+        await createTrackedRecord(createdRecords, 'fasce', {
+            tipo: 'Tariffa Base', min: 1, max: 9999, prezzo: 1,
+            inizio: INIZIO_ANNO, scadenza: FINE_ANNO, listino: listino._id,
+        });
+        const contatore = await createTrackedRecord(createdRecords, 'contatori', {
+            codice: 'SMOKE-MORA', seriale: 'SMOKE-MORA', cliente: cliente._id, listino: listino._id,
+        });
+
+        // La fattura vecchia con la scadenza gia superata: e lei a far scattare
+        // la penale sulle successive.
+        const vecchia = await createRecord('fatture', {
+            cliente: cliente._id, data_fattura: giorniDopo(-120), tipo_documento: 'Fattura',
+            data_scadenza: giorniDopo(-90), imponibile: 10, iva: 1, totale_fattura: 11,
+        });
+        createdRecords.push({ resource: 'fatture', id: vecchia._id });
+        createdRecords.push({ resource: 'scadenze', id: vecchia.scadenza });
+
+        const scaduta = await request(`/scadenze/${vecchia.scadenza}`);
+        assert(scaduta.body.ritardo > 0, 'the old deadline should be overdue');
+        assert(!scaduta.body.mora_fatturata, 'no fee has been charged yet');
+
+        await createTrackedRecord(createdRecords, 'letture', {
+            data_lettura: INIZIO_ANNO, consumo: 0, unita_misura: 'm3', fatturata: true, contatore: contatore._id,
+        });
+        const generaDa = async (consumo) => {
+            const lettura = await createTrackedRecord(createdRecords, 'letture', {
+                data_lettura: OGGI, consumo, unita_misura: 'm3', fatturata: false, contatore: contatore._id,
+            });
+            const generata = await request('/fatture/genera-da-letture', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ letture: [lettura._id], data_fattura: OGGI, includeFixedCharge: false }),
+            });
+            createdRecords.push({ resource: 'fatture', id: generata.body.fattura._id });
+            createdRecords.push({ resource: 'scadenze', id: generata.body.fattura.scadenza });
+            return generata.body.servizi.filter((riga) => riga.calcolo_snapshot?.quota === 'delay');
+        };
+
+        const primaMora = await generaDa(10);
+        assert(primaMora.length === 1, `the first invoice should carry the late fee, found ${primaMora.length}`);
+
+        const segnata = await request(`/scadenze/${vecchia.scadenza}`);
+        assert(segnata.body.mora_fatturata === true, 'the deadline should be marked as already charged');
+
+        const secondaMora = await generaDa(20);
+        assert(secondaMora.length === 0, `the late fee must not be charged twice, found ${secondaMora.length}`);
+
+        // Cancellando la fattura che portava la penale, la scadenza torna
+        // addebitabile: restare marcata per una mora che non esiste piu
+        // sarebbe una memoria falsa.
+        const conMora = createdRecords.filter((voce) => voce.resource === 'fatture').slice(-2, -1)[0];
+        await request(`/fatture/${conMora.id}`, { method: 'DELETE' });
+        const liberata = await request(`/scadenze/${vecchia.scadenza}`);
+        assert(!liberata.body.mora_fatturata, 'deleting the invoice should free the deadline again');
+    } finally {
+        await deleteCreatedRecords(createdRecords);
+    }
+};
+
 const main = async () => {
     console.log(`Smoke API target: ${apiUrl}`);
     await step('health endpoint', testHealth);
@@ -887,6 +977,7 @@ const main = async () => {
     await step('tariff renewal', testTariffRenewal);
     await step('payment registration', testPaymentRegistration);
     await step('referential integrity', testReferentialIntegrity);
+    await step('late fee charged once', testDelayFeeChargedOnce);
     await step('note attachments create/list/file/delete', testAttachments);
     console.log('Smoke API completed successfully.');
 };

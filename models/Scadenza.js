@@ -12,6 +12,11 @@ const scadenzaSchema = new Schema(
         nome: { type: String, required: false },
         totale: { type: Number, required: false },
         solleciti: { type: Number, required: false },
+        // La penale per il ritardo di questa scadenza e gia stata addebitata.
+        // Senza questa memoria, un cliente fatturato due volte mentre la stessa
+        // scadenza resta aperta la paga due volte: il gestionale precedente
+        // teneva il campo "Fatturato ritardo" esattamente per questo.
+        mora_fatturata: { type: Boolean, required: false },
     },
     {
         collection: 'scadenze'
