@@ -37,6 +37,7 @@ const invoiceAssets = {
 };
 
 const { isEmptyValue: isEmpty, numberOrZero } = require('../utils/values');
+const { unprocessable } = require('../utils/errors');
 const { formatItalianDate } = require('../utils/dates');
 const { customerLabel } = require('../utils/customer');
 const { invoiceCode: documentCode } = require('../config/invoicing');
@@ -640,11 +641,9 @@ const loadInvoicePdfData = async (fatturaId) => {
     };
 };
 
-const generateInvoicePdf = async (fatturaId) => {
-    const { fattura, servizi } = await loadInvoicePdfData(fatturaId);
-    const pdf = new PdfDocument();
-
-    registerInvoiceAssets(pdf);
+// Il disegno di una fattura sulla pagina corrente. Estratto perche la stampa in
+// blocco ripete esattamente questo, una fattura dopo l'altra.
+const drawInvoice = (pdf, fattura, servizi) => {
     drawCompanyHeader(pdf);
     drawCustomerBox(pdf, fattura, fattura.cliente);
     drawPhoneBoxes(pdf);
@@ -653,6 +652,14 @@ const generateInvoicePdf = async (fatturaId) => {
     drawPayment(pdf, fattura, fattura.scadenza);
     drawDetailTable(pdf, servizi);
     drawFooter(pdf);
+};
+
+const generateInvoicePdf = async (fatturaId) => {
+    const { fattura, servizi } = await loadInvoicePdfData(fatturaId);
+    const pdf = new PdfDocument();
+
+    registerInvoiceAssets(pdf);
+    drawInvoice(pdf, fattura, servizi);
 
     return {
         buffer: pdf.toBuffer(),
@@ -660,6 +667,41 @@ const generateInvoicePdf = async (fatturaId) => {
     };
 };
 
+// Un solo PDF con dentro tutte le fatture, una per pagina.
+//
+// Serve per le consegne cartacee: la coda dice quante buste ci sono da
+// preparare, e senza questo si aprirebbero cinquecento PDF uno alla volta.
+// Il gestionale precedente aveva la stessa funzione ("Stampa Fatture").
+const generateInvoicesPdf = async (fatturaIds) => {
+    if (!fatturaIds?.length) {
+        throw unprocessable('Nessuna fattura da stampare.');
+    }
+
+    const pdf = new PdfDocument();
+    registerInvoiceAssets(pdf);
+
+    let stampate = 0;
+    for (const fatturaId of fatturaIds) {
+        const { fattura, servizi } = await loadInvoicePdfData(fatturaId);
+
+        // Le pagine si aggiungono fra una fattura e l'altra, mai prima della
+        // prima: il documento nasce gia con una pagina bianca.
+        if (stampate > 0) {
+            pdf.addPage();
+        }
+
+        drawInvoice(pdf, fattura, servizi);
+        stampate += 1;
+    }
+
+    return {
+        buffer: pdf.toBuffer(),
+        filename: `fatture-${new Date().toISOString().slice(0, 10)}.pdf`,
+        stampate,
+    };
+};
+
 module.exports = {
     generateInvoicePdf,
+    generateInvoicesPdf,
 };

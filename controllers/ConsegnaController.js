@@ -11,6 +11,8 @@ const {
     riepilogo,
     rimettiInCoda,
     segnaConsegnata,
+    stampaDaConsegnare,
+    xmlDaTrasmettere,
 } = require('../services/deliveryService');
 const { consegnaViews } = require('../config/listViews');
 
@@ -93,6 +95,44 @@ const azione = (esegui, action, descrizione) => async (req, res) => {
     }
 };
 
+// Un unico PDF con le fatture da imbustare. Non cambia lo stato delle
+// consegne: si stampa, si controlla, e solo dopo si dichiarano evase.
+const stampa = async (req, res) => {
+    try {
+        const { buffer, filename, stampate, rimaste } = await stampaDaConsegnare({ limite: req.body.limite });
+
+        await registra(req, null, 'consegna.stampata', `Stampate ${stampate} fatture da consegnare`, {
+            stampate, rimaste,
+        });
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+        res.setHeader('Content-Length', buffer.length);
+        // L'intestazione dice quante ne restano fuori: il PDF da solo non
+        // potrebbe raccontarlo, e chi stampa deve saperlo.
+        res.setHeader('X-Consegne-Rimaste', String(rimaste));
+        res.status(200).send(buffer);
+    } catch (error) {
+        sendServiceError(res, error, 'Error printing deliveries', error.status || 400);
+    }
+};
+
+// I file XML delle fatture elettroniche ancora da trasmettere, in un archivio.
+const scaricaXml = async (req, res) => {
+    try {
+        const { buffer, filename, quante } = await xmlDaTrasmettere({ limite: req.body.limite });
+
+        await registra(req, null, 'consegna.xml_scaricati', `Scaricati ${quante} file XML da trasmettere`, { quante });
+
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Length', buffer.length);
+        res.status(200).send(buffer);
+    } catch (error) {
+        sendServiceError(res, error, 'Error exporting electronic invoices', error.status || 400);
+    }
+};
+
 const provaTrasporto = async (req, res) => {
     try {
         res.status(200).json(await verificaTrasporto());
@@ -110,5 +150,7 @@ module.exports = {
     pianifica,
     provaTrasporto,
     rimettiInCoda: azione(rimettiInCoda, 'consegna.riaccodata', 'Rimessa in coda la consegna'),
+    scaricaXml,
+    stampa,
     segnaConsegnata: azione(segnaConsegnata, 'consegna.evasa', 'Evasa consegna'),
 };
