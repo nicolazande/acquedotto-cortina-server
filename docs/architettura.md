@@ -15,6 +15,10 @@ richiesta HTTP
     └─ utils/               funzioni pure condivise da tutti i livelli
 ```
 
+Le collezioni e i loro legami sono disegnati in [modello.md](modello.md), generato
+dagli schemi con `npm run modello`: un test fallisce se il disegno resta indietro
+rispetto al codice.
+
 ## Il percorso di una richiesta
 
 1. `server.js` applica CORS e i parser del corpo.
