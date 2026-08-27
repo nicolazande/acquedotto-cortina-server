@@ -7,6 +7,7 @@ const {
     associateRecords,
     getPopulatedRelation,
     getRecord,
+    rifiutaFatturaConfermata,
     sendServiceError,
 } = require('./utils/controllerActions');
 const {
@@ -112,7 +113,7 @@ const withEditableServiceInvoice = (handler, action) => async (req, res) => {
         await assertServiceInvoiceEditable(req.params.servizioId, action, unlockOptions(req));
         return handler(req, res);
     } catch (error) {
-        return sendServiceError(res, error, 'Fattura confermata', error.status || 400);
+        return rifiutaFatturaConfermata(res, error);
     }
 };
 
@@ -122,7 +123,7 @@ const associateFatturaSafely = async (req, res) => {
         await assertInvoiceEditableById(req.params.fatturaId, 'associare righe servizio', unlockOptions(req));
         return associateFattura(req, res);
     } catch (error) {
-        return sendServiceError(res, error, 'Fattura confermata', error.status || 400);
+        return rifiutaFatturaConfermata(res, error);
     }
 };
 

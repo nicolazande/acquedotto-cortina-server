@@ -206,7 +206,19 @@ const getManyByField = ({ Model, field, idParam = 'id', populate, errorMessage }
     }
 );
 
+// Il rifiuto di toccare una fattura gia emessa. Il controllo da cui arriva
+// cambia - c'e chi parte dalla fattura e chi da una sua riga - ma cio che legge
+// l'utente e sempre lo stesso, e un messaggio visibile non deve poter divergere
+// fra due file.
+const rifiutaFatturaConfermata = (res, error) => sendServiceError(
+    res,
+    error,
+    'Fattura confermata',
+    error.status || 400
+);
+
 module.exports = {
+    rifiutaFatturaConfermata,
     associateRecords,
     createRecord,
     deleteRecord,
