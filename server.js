@@ -53,8 +53,32 @@ app.use('/api', routes);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
+// Il controllo dei permessi legge il ruolo dal record e non ripiega piu su
+// "admin" quando manca. Un account rimasto senza ruolo quindi non entra: va
+// visto all'avvio, non scoperto da chi prova ad accedere.
+const avvisaSuUtentiSenzaRuolo = async () => {
+    try {
+        const User = require('./models/User');
+        const senzaRuolo = await User.find({ $or: [{ role: { $exists: false } }, { role: null }] })
+            .select('username')
+            .lean();
+
+        if (senzaRuolo.length > 0) {
+            console.warn(
+                `ATTENZIONE: ${senzaRuolo.length} utenti senza ruolo non potranno accedere `
+                + `(${senzaRuolo.map((utente) => utente.username).join(', ')}). `
+                + 'Sistemare con: npm run maintenance:allinea-dati -- --fix'
+            );
+        }
+    } catch (error) {
+        // Un controllo di cortesia non deve impedire l'avvio del server.
+        console.warn('Controllo dei ruoli non riuscito:', error.message);
+    }
+};
+
 const startServer = async () => {
     await connectDB();
+    await avvisaSuUtentiSenzaRuolo();
 
     app.listen(port, () => {
         console.log(`Server is running on port: ${port}`);
