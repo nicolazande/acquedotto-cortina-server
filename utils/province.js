@@ -40,4 +40,4 @@ const siglaProvincia = (valore) => {
     return SIGLE[testo.toLowerCase()] || null;
 };
 
-module.exports = { SIGLE, siglaProvincia };
+module.exports = { siglaProvincia };
