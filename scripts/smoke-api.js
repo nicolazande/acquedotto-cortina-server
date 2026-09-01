@@ -1072,6 +1072,27 @@ const testManualInvoiceLines = async () => {
 
         await request(`/servizi/${aggiunta._id}`, { method: 'DELETE' });
         await conti([100, 10, 110]);
+
+        // Che il totale corrisponda alle righe si controlla su ogni fattura, non
+        // solo su quelle nate da letture: una scritta a mano con il totale che
+        // non torna e esattamente il documento che lo SdI rifiuta, e prima
+        // nessuno la segnalava.
+        const segnalazioni = async () => {
+            const esito = await request('/fatture/controlli?limit=400');
+            return esito.body.issues.filter((voce) => String(voce.fatturaId) === String(fattura._id));
+        };
+        assert((await segnalazioni()).length === 0, 'a coherent manual invoice should raise nothing');
+
+        await request(`/fatture/${fattura._id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imponibile: 900, totale_fattura: 999 }),
+        });
+        const rotte = await segnalazioni();
+        assert(
+            rotte.some((voce) => voce.type === 'totale'),
+            `a manual invoice whose total does not match its lines must be reported, got ${JSON.stringify(rotte.map((v) => v.type))}`
+        );
     } finally {
         await deleteCreatedRecords(createdRecords);
     }

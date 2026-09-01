@@ -67,13 +67,22 @@ const inspectInvoice = async (fattura, annualFixedLookupCache) => {
         const verification = await verifyInvoiceCalculation(fattura._id, { annualFixedLookupCache });
         const calculation = verification.summary;
 
-        if (calculation.letture > 0 && !calculation.fatturaCoerente) {
+        // Che il totale corrisponda alle righe vale per qualunque fattura: e
+        // aritmetica, non tariffa. Era chiesto solo a quelle nate da letture, e
+        // cosi una fattura scritta a mano poteva portare un totale che le sue
+        // stesse righe non giustificano senza che nessuno lo dicesse - ed e
+        // esattamente il documento che lo SdI rifiuta.
+        if (!calculation.fatturaCoerente) {
             counters.scostamentoFattura = 1;
             issues.push(createIssue(fattura, 'totale', 'danger', 'Totale fattura diverso dalle righe servizio', {
                 delta: calculation.deltaFattura,
             }));
         }
 
+        // I due controlli che seguono confrontano le righe con il listino, e un
+        // listino c'e solo dove c'e una lettura: su una fattura scritta a mano -
+        // un rimborso, la vendita di un contatore - non avrebbero senso, e
+        // chiederli produrrebbe allarmi che non si possono risolvere.
         if (calculation.letture > 0 && calculation.quotaFissaApplicabile) {
             counters.quotaFissaApplicabile = 1;
             issues.push(createIssue(fattura, 'quota-fissa', 'warning', 'Quota fissa applicabile non presente', {
