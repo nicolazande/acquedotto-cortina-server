@@ -14,6 +14,7 @@ const fasciaRoutes = require('./fasciaRoutes');
 const fatturaRoutes = require('./fatturaRoutes');
 const letturaRoutes = require('./letturaRoutes');
 const listinoRoutes = require('./listinoRoutes');
+const provinceRoutes = require('./provinceRoutes');
 const servizioRoutes = require('./servizioRoutes');
 const scadenzaRoutes = require('./scadenzaRoutes');
 const AuthMiddleware = require('../middlewares/AuthMiddleware');
@@ -35,6 +36,7 @@ router.use('/fasce', fasciaRoutes);
 router.use('/fatture', fatturaRoutes);
 router.use('/letture', letturaRoutes);
 router.use('/listini', listinoRoutes);
+router.use('/province', provinceRoutes);
 router.use('/servizi', servizioRoutes);
 router.use('/scadenze', scadenzaRoutes);
 

@@ -181,6 +181,15 @@ GET    /api/fatture/:id/cliente                             getClienteAssociato
 GET    /api/fatture/:id/scadenza                            getScadenzaAssociata
 ```
 
+### /api/province
+```text
+GET    /api/province                                        elenco delle province
+```
+
+Sigla e nome delle 107 province italiane, in ordine alfabetico. E l'elenco da cui
+il gestionale fa scegliere, ed e lo stesso che converte la provincia in sigla per la
+fattura elettronica: si puo scegliere solo una provincia che la fattura sa scrivere.
+
 ### /api/letture
 ```text
 POST   /api/letture                                         createLettura
