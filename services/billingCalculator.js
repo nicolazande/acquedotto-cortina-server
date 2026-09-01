@@ -315,7 +315,21 @@ const calculateReadingInvoice = ({
 }) => {
     const startValue = numberOrZero(previousValue);
     const endValue = numberOrZero(currentValue ?? lettura?.consumo);
-    const billableConsumption = Math.max(0, roundMoney(endValue - startValue));
+
+    // Un contatore non torna indietro. Se la lettura e piu bassa della
+    // precedente, il contatore e stato sostituito o azzerato, oppure e una
+    // cifra sbagliata: in tutti e tre i casi la decisione e di una persona.
+    // Prima il consumo veniva semplicemente portato a zero, quindi il cliente
+    // compariva pronto da fatturare e usciva una fattura senza consumi, senza
+    // che nulla dicesse perche.
+    if (endValue < startValue) {
+        throw createCalculationError(
+            `La lettura ${endValue} e piu bassa della precedente ${startValue}: `
+            + 'il contatore e stato sostituito o la cifra e sbagliata'
+        );
+    }
+
+    const billableConsumption = roundMoney(endValue - startValue);
     const applicableBands = getApplicableBands(fasce, {
         date: lettura?.data_lettura,
         listinoId: contatore?.listino,

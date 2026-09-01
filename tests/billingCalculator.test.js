@@ -62,11 +62,28 @@ test('consumo nullo: nessuna riga di consumo e nessun errore', () => {
     assert.equal(risultato.totals.imponibile, 0);
 });
 
-test('contatore sostituito: indice che riparte da zero non genera importi negativi', () => {
-    const risultato = calcola({ previousValue: 359, currentValue: 0 });
+test('contatore sostituito: una lettura piu bassa della precedente si ferma e dice perche', () => {
+    // Non deve mai uscirne un importo negativo, ed e cio che questo controllo
+    // garantiva gia portando il consumo a zero. Ma zero in silenzio significa
+    // una fattura senza consumi e un cliente che risulta fatturato: i metri
+    // cubi letti sul contatore nuovo non li paga nessuno, e nulla lo dice.
+    // Un contatore non torna indietro: o e stato sostituito, o e stato
+    // azzerato, o la cifra e sbagliata, e in tutti e tre i casi decide una
+    // persona. L'anomalia esce dallo stesso canale delle altre e la fattura
+    // non parte.
+    assert.throws(
+        () => calcola({ previousValue: 359, currentValue: 0 }),
+        /piu bassa della precedente/
+    );
+});
+
+test('consumo pari a zero fra due letture uguali resta una fattura senza consumi', () => {
+    // Un contatore fermo e un caso normale - l'utenza non ha consumato - e non
+    // va confuso con uno che torna indietro.
+    const risultato = calcola({ previousValue: 359, currentValue: 359 });
 
     assert.equal(risultato.billableConsumption, 0);
-    assert.equal(risultato.lines.length, 0);
+    assert.equal(righeConsumo(risultato).length, 0);
     assert.equal(risultato.totals.totale_fattura, 0);
 });
 
