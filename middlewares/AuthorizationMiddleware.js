@@ -19,7 +19,24 @@ const requireRole = (...roles) => (req, res, next) => {
     return next();
 };
 
+// Le risorse che servono a chi va in giro a leggere i contatori. Senza
+// `scrittura` puo soltanto guardarle: registra letture, non modifica anagrafiche.
+//
+// Non e un sistema di permessi: sono tre risorse e due ruoli, e una tabella
+// dichiarativa costerebbe piu di quanto renda. Se un giorno i ruoli saranno sei,
+// quello sara il momento di estrarla - non prima.
+const anchePerLetturista = ({ scrittura = false } = {}) => (req, res, next) => {
+    const ruolo = getUserRole(req.user);
+
+    if (ruolo === 'admin' || (ruolo === 'letturista' && (scrittura || req.method === 'GET'))) {
+        return next();
+    }
+
+    return res.status(403).json({ error: 'Permessi insufficienti' });
+};
+
 module.exports = {
+    anchePerLetturista,
     getUserRole,
     requireAdmin: requireRole('admin'),
     requireCustomer: requireRole('cliente'),

@@ -5,6 +5,7 @@ const Listino = require('../models/Listino');
 const Lettura = require('../models/Lettura');
 const { sendPaginated } = require('./utils/paginatedQuery');
 const { storiaContatore } = require('../services/counterHistoryService');
+const { CAMPI_PER_LETTURISTA } = require('../utils/customer');
 const {
     associateRecords,
     createRecord,
@@ -18,7 +19,15 @@ const {
 
 const { contatoreViews } = require('../config/listViews');
 
-const populate = 'edificio listino cliente';
+// Il cliente arriva ridotto a cio che identifica: la scheda del contatore mostra
+// `nome_cliente`, che e gia salvato, e il resto lo chiede alla sua risorsa. Cosi
+// un elenco di contatori non si porta dietro IBAN e dati fiscali di novecento
+// persone.
+const populate = [
+    { path: 'edificio' },
+    { path: 'listino' },
+    { path: 'cliente', select: CAMPI_PER_LETTURISTA.join(' ') },
+];
 
 const getStoria = async (req, res) => {
     try {

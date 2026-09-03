@@ -18,23 +18,34 @@ const provinceRoutes = require('./provinceRoutes');
 const servizioRoutes = require('./servizioRoutes');
 const scadenzaRoutes = require('./scadenzaRoutes');
 const AuthMiddleware = require('../middlewares/AuthMiddleware');
-const { requireAdmin, requireCustomer } = require('../middlewares/AuthorizationMiddleware');
+const {
+    anchePerLetturista,
+    requireAdmin,
+    requireCustomer,
+} = require('../middlewares/AuthorizationMiddleware');
 
 router.use('/auth', authRoutes);
 router.use('/portale-cliente', AuthMiddleware, requireCustomer, customerPortalRoutes);
 
-router.use(AuthMiddleware, requireAdmin);
+// Da qui in poi bisogna essere entrati. Il ruolo si decide risorsa per risorsa,
+// e l'ordine e la protezione: sotto la riga `requireAdmin` tutto e riservato
+// all'amministratore, quindi una rotta aggiunta domani nasce chiusa. Le poche
+// aperte al letturista stanno sopra, elencate una per una.
+router.use(AuthMiddleware);
+
+router.use('/edifici', anchePerLetturista(), edificioRoutes);
+router.use('/contatori', anchePerLetturista(), contatoreRoutes);
+router.use('/clienti', anchePerLetturista(), clienteRoutes);
+router.use('/letture', anchePerLetturista({ scrittura: true }), letturaRoutes);
+
+router.use(requireAdmin);
 
 router.use('/attachments', attachmentRoutes);
 router.use('/articoli', articoloRoutes);
-router.use('/clienti', clienteRoutes);
 router.use('/panoramica', dashboardRoutes);
 router.use('/consegne', consegnaRoutes);
-router.use('/contatori', contatoreRoutes);
-router.use('/edifici', edificioRoutes);
 router.use('/fasce', fasciaRoutes);
 router.use('/fatture', fatturaRoutes);
-router.use('/letture', letturaRoutes);
 router.use('/listini', listinoRoutes);
 router.use('/province', provinceRoutes);
 router.use('/servizi', servizioRoutes);

@@ -178,7 +178,33 @@ non valido, utente inesistente) e aggiunge un campo `reason` che il client usa p
 spiegare all'utente perche e stato disconnesso. Il 403 resta riservato ai casi in
 cui l'identita e valida ma i permessi no (ruolo sbagliato, account disabilitato).
 
-Due ruoli: `admin` vede tutto il gestionale, `cliente` vede solo il proprio portale.
+Tre ruoli: `admin` vede tutto il gestionale, `cliente` solo il proprio portale,
+`letturista` le quattro risorse che gli servono per il giro delle letture.
+
+Il permesso si decide in `routes/index.js`, e **l'ordine e la protezione**:
+
+```
+router.use(AuthMiddleware);                                   da qui serve l'accesso
+
+router.use('/edifici',   anchePerLetturista(),  ...)          sola lettura
+router.use('/contatori', anchePerLetturista(),  ...)
+router.use('/clienti',   anchePerLetturista(),  ...)
+router.use('/letture',   anchePerLetturista({ scrittura: true }), ...)
+
+router.use(requireAdmin);                                     sotto questa riga, tutto chiuso
+router.use('/fatture',   ...)                                 e chi aggiunge una rotta
+router.use('/consegne',  ...)                                 la trova gia protetta
+```
+
+Non c'e una tabella di permessi: con tre ruoli e quattro risorse aperte costerebbe
+piu di quanto renda, e sarebbe generalizzazione prematura. Se un giorno i ruoli
+saranno sei, quello sara il momento di estrarla.
+
+Il letturista vede di un cliente solo i campi di `CAMPI_PER_LETTURISTA`
+(`utils/customer.js`): nome, recapito, telefono. Codice fiscale, partita IVA,
+IBAN e mandato non gli vengono inviati - il taglio e sul server, nelle due sole
+vie da cui un cliente esce intero, perche nasconderli nel client sarebbe un
+trucco visivo e non una protezione.
 
 ## Allegati
 

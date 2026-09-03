@@ -3,12 +3,13 @@ const Contatore = require('../models/Contatore');
 const Fattura = require('../models/Fattura');
 const User = require('../models/User');
 const { sendPaginated } = require('./utils/paginatedQuery');
+const { getUserRole } = require('../middlewares/AuthorizationMiddleware');
+const { soloCampiPerLetturista } = require('../utils/customer');
 const {
     associateRecords,
     createRecord,
     deleteRecord,
     getManyByField,
-    getRecord,
     sendServiceError,
     updateRecord,
 } = require('./utils/controllerActions');
@@ -47,11 +48,33 @@ const validatePortalPassword = (password) => {
     }
 };
 
+// Chi legge i contatori vede di un cliente solo cio che gli serve per trovarlo.
+// Il taglio si fa qui, nelle due sole vie da cui un cliente esce intero: se
+// restasse al client sarebbe un trucco visivo, non una protezione.
+const perChiGuarda = (req) => (record) => (
+    getUserRole(req.user) === 'letturista' ? soloCampiPerLetturista(record) : record
+);
+
 const getClienti = (req, res) => sendPaginated(Cliente, req, res, {
     views: clienteViews,
     defaultSort: 'nome',
     errorMessage: 'Error fetching clienti',
+    transform: perChiGuarda(req),
 });
+
+const getCliente = async (req, res) => {
+    try {
+        const cliente = await Cliente.findById(req.params.id).lean();
+
+        if (!cliente) {
+            return res.status(404).json({ error: 'Cliente not found' });
+        }
+
+        return res.status(200).json(perChiGuarda(req)(cliente));
+    } catch (error) {
+        return sendServiceError(res, error, 'Error fetching cliente');
+    }
+};
 
 const getFatturazionePreview = async (req, res) => {
     try {
@@ -172,7 +195,7 @@ const updatePortalUser = async (req, res) => {
 module.exports = {
     createCliente: createRecord(Cliente, { name: 'Cliente' }),
     getClienti,
-    getCliente: getRecord(Cliente, { name: 'Cliente' }),
+    getCliente,
     getFatturazionePreview,
     generateFattura,
     getPortalUser,
