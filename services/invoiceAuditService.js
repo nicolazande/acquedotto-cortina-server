@@ -10,7 +10,6 @@ const INVOICE_AUDIT_FIELDS = [
     'data_invio_fattura',
     'imponibile',
     'iva',
-    'sconto_imponibile',
     'totale_fattura',
     'tipo_pagamento',
 ];

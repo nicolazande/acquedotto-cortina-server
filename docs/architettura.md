@@ -69,10 +69,38 @@ va aggiunta qui, non ricopiata.
 | `dashboardService.js`       | i numeri della panoramica                                         |
 | `invoiceAuditService.js` / `auditLogService.js` | tracciamento delle modifiche      |
 | `transaction.js`            | transazione quando il database la supporta, fallback quando no    |
+| `righeFattura.js`           | come si leggono le righe di una fattura: due forme, non sette copie |
+| `counters.js`               | i progressivi persistenti: numero della fattura e progressivo di invio |
+| `counterHistoryService.js`  | la storia di un punto di fornitura attraverso le sostituzioni     |
 
 `billingCalculator.js` e `deliveryPlan.js` non conoscono Mongoose: si testano
 passando oggetti semplici. Tutto cio che tocca il database sta rispettivamente in
 `invoiceGenerator.js` e `deliveryService.js`.
+
+**Una regola, un posto.** Le poche che decidono soldi o identita vivono ognuna in
+un file solo, e chi ne ha bisogno la importa invece di riscriverla:
+
+| Regola                                   | Dove vive                    |
+|------------------------------------------|------------------------------|
+| aritmetica monetaria, IVA per aliquota    | `utils/money.js`             |
+| confini di una fascia tariffaria          | `billingCalculator.js`       |
+| aliquota di una riga, dal suo articolo    | `billingCalculator.js`       |
+| totali di una fattura e importo scadenza  | `invoiceGenerator.js`        |
+| chi dipende da chi alla cancellazione     | `config/relations.js`        |
+| dove va a finire una fattura              | `config/delivery.js`         |
+| province e loro sigla                     | `utils/province.js`          |
+
+Sono state tutte, in origine, scritte due volte. Ogni volta la copia in piu ha
+prodotto un difetto silenzioso: il riquadro IVA del PDF che dichiarava il 15%
+sulla mora esente, i totali che restavano fermi aggiungendo una riga, la
+scadenza che non seguiva la fattura. Prima di duplicarne una, conviene ricordare
+che il costo non e la riga in piu: e il giorno in cui le due copie diranno cose
+diverse e nessuno se ne accorgera.
+
+> **Il modulo da tenere d'occhio.** `invoiceGenerator.js` e a 1.080 righe e cinque
+> responsabilita (calcolo di una lettura, anteprime, creazione, verifica, quota
+> fissa): e li che atterra ogni nuova funzione sulle fatture. Non e ancora un
+> problema, ma e il posto dove lo diventera per primo.
 
 ### `controllers/utils/` — i CRUD non si scrivono a mano
 

@@ -110,8 +110,6 @@ classDiagram
         String seriale
         Boolean inattivo
         Number consumo
-        Boolean subentro
-        Boolean sostituzione
         Boolean condominiale
         Date inizio
         Date scadenza
@@ -167,7 +165,6 @@ classDiagram
         String destinazione
         Number imponibile
         Number iva
-        Number sconto_imponibile
         Number totale_fattura
         Date data_fattura_elettronica
         Date data_invio_fattura

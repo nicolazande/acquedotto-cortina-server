@@ -165,11 +165,27 @@ importo `INVOICE_DELAY_FEE` (default 6 EUR, esente IVA).
 
 ```
 imponibile = somma dei valore_unitario delle righe
-IVA        = somma di (valore_unitario x aliquota / 100) di ogni riga
+IVA        = per ogni aliquota: somma degli imponibili di quell'aliquota,
+             poi imposta arrotondata una volta sola
 totale     = imponibile + IVA
 ```
 
-L'IVA viene sommata riga per riga e arrotondata **una sola volta, alla fine**.
+**L'IVA si arrotonda una volta per aliquota**, non una volta sola sul totale. E
+cio che dichiara il riepilogo della fattura elettronica, che raggruppa le righe
+per aliquota e mette in ogni `DatiRiepilogo` l'imposta di quel gruppo; ed e come
+l'imposta si calcola, perche un'aliquota si applica a un imponibile e non a un
+miscuglio di imponibili diversi.
+
+Finche esiste una sola aliquota diversa da zero i due modi coincidono - sulle
+3.472 fatture in archivio danno lo stesso identico risultato - ma bastano due
+aliquote insieme per divergere di un centesimo: 1,01 al 10% piu 1,02 al 22%
+fanno 0,33 sommando prima e 0,32 arrotondando per aliquota. Il totale della
+fattura si sarebbe scostato dal suo stesso riepilogo, e l'emissione si rifiuta
+proprio quando quei due non tornano.
+
+Lo stesso calcolo vale in tre posti che il cliente puo confrontare: il totale
+salvato sulla fattura, il riquadro delle aliquote sul PDF e il riepilogo
+dell'XML. Passano tutti da `applyRateToLines`.
 
 L'imposta si calcola pero sugli importi di riga **arrotondati al centesimo**, non
 sul loro valore pieno: se la riga dice 4,73 la base imponibile e 4,73, non
@@ -177,6 +193,15 @@ sul loro valore pieno: se la riga dice 4,73 la base imponibile e 4,73, non
 sul valore pieno dava un centesimo in meno su tre fatture. E anche il criterio
 che vuole il riepilogo della fattura elettronica, che somma gli importi di riga a
 due decimali: le due sezioni del documento devono tornare fra loro.
+
+### I totali seguono sempre le righe
+
+I totali non si scrivono a mano e non restano fermi: `ricalcolaTotaliFattura` li
+rifa ogni volta che le righe cambiano - aggiunte, modificate, spostate su
+un'altra fattura, cancellate - e allinea anche l'importo della scadenza
+collegata. E l'unica funzione che somma una fattura: quando erano due, una sola
+sapeva della scadenza, e aggiungere una riga lasciava la cifra da incassare
+ferma al valore del giorno prima.
 
 ### Perche gli importi sono in centesimi interi
 

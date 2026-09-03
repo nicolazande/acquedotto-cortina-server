@@ -19,7 +19,6 @@ const fatturaSchema = new Schema(
         destinazione: { type: String, required: false },
         imponibile: { type: Number, required: false },
         iva: { type: Number, required: false },
-        sconto_imponibile: { type: Number, required: false },
         totale_fattura: { type: Number, required: false },
         data_fattura_elettronica: { type: Date, required: false },
         data_invio_fattura: { type: Date, required: false },

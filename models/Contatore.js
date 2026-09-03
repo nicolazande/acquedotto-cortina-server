@@ -12,8 +12,6 @@ const contatoreSchema = new Schema(
         seriale: String,
         inattivo: Boolean,
         consumo: Number,
-        subentro: Boolean,
-        sostituzione: Boolean,
         condominiale: Boolean,
         inizio: Date,
         scadenza: Date,

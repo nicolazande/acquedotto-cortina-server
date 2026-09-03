@@ -89,6 +89,15 @@ ha significato e continuerebbe a comparire fra le fatture da recapitare.
 3. **Evadi** (`POST /api/consegne/:id/evasa`) chiude a mano una consegna che una
    persona ha portato a termine: la busta imbucata, la fattura ritirata.
 
+Due operazioni servono a portare fuori cio che non parte da solo:
+
+4. **Stampa** (`POST /api/consegne/stampa`) restituisce un solo PDF con dentro
+   tutte le fatture da consegnare a mano, una per pagina. Lavora a lotti di
+   duecento e dice quante ne restano; non segna nulla come evaso, quindi si puo
+   ripetere.
+5. **XML** (`POST /api/consegne/xml`) restituisce un archivio zip con un file per
+   fattura elettronica da trasmettere, per chi la inoltra.
+
 ## Niente parte per sbaglio
 
 Perche un messaggio esca servono **due condizioni insieme**:
@@ -145,6 +154,29 @@ tecnica.
 > risposta non arriva, la scelta prudente e lasciare `intermediario`: le consegne
 > elettroniche restano in coda come promemoria e nessuna trasmissione parte a
 > insaputa di nessuno.
+
+### Il nome del file: un progressivo che non si ripete
+
+Il file trasmesso si chiama `IT<partitaIva>_<progressivo>.xml`, e quel nome deve
+essere **unico per sempre** presso lo SdI: un file con un nome gia visto viene
+rifiutato. Il progressivo arriva quindi da un contatore dedicato
+(`services/counters.js`, ambito `trasmissioni`) che non riparte mai, nemmeno a
+gennaio, e viene scritto sulla consegna.
+
+Ogni tentativo ne prende uno nuovo, anche il secondo sulla stessa fattura: e
+questo che permette di **rispedire una fattura scartata**. Un progressivo dedotto
+da anno e numero non potrebbe cambiare - e nell'archivio storico si ripeterebbe
+499 volte, perche il gestionale precedente numerava le fatture per cliente e non
+globalmente.
+
+### Cosa manca per l'invio davvero automatico
+
+1. **Le ricevute dello SdI** (consegnata, scartata, mancata consegna): oggi nessuno
+   le legge, quindi una fattura scartata resterebbe "inviata" senza che nessuno lo
+   sappia. E il pezzo piu importante, e va costruito prima di accendere il canale
+   automatico;
+2. la **conservazione sostitutiva** a norma, dieci anni: di solito si affida a un
+   servizio esterno.
 
 ### Per quali clienti
 
