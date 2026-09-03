@@ -25,6 +25,22 @@ Si toglie dal gestionale, nella scheda del cliente, oppure si disattiva. Da oggi
 non puo piu succedere: cancellare un cliente con un accesso collegato viene
 rifiutato.
 
+## Account e ruoli
+
+I ruoli sono tre: `admin` vede tutto, `letturista` le quattro risorse del giro
+letture (edifici, contatori, clienti in sola lettura, letture anche in scrittura),
+`cliente` solo il proprio portale.
+
+La registrazione dal gestionale crea sempre un amministratore e nessuna schermata
+permette di scegliere il ruolo: un letturista si crea da riga di comando.
+
+```bash
+npm run maintenance:password -- mario passwordsegreta letturista
+```
+
+Indicando il ruolo l'account viene creato se non esiste, o cambia ruolo se c'e
+gia. Senza ruolo il comando reimposta soltanto la password.
+
 ## Password dimenticata
 
 Le password sono cifrate con bcrypt: non si leggono e non si recuperano, si
@@ -33,6 +49,7 @@ sostituiscono.
 ```bash
 npm run maintenance:password                       # elenca gli utenti
 npm run maintenance:password -- nicola nuovapassword
+npm run maintenance:password -- mario passwordsegreta letturista   # crea l'account
 ```
 
 Vale per gli amministratori e per gli account del portale clienti. Richiede
