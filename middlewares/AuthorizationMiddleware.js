@@ -1,3 +1,5 @@
+const { RESOURCE_NAMES } = require('../config/resources');
+
 // Chi puo fare cosa.
 //
 // Il ruolo si legge dal record dell'utente e basta. Prima, quando il campo
@@ -29,6 +31,22 @@ const RISORSE_DEL_LETTURISTA = {
     letture: { scrittura: true },
 };
 
+// Cosa puo toccare chi sta guardando. E l'unico elenco: il server ci decide i
+// permessi e il client ci disegna il menu e i pannelli, invece di tenere una
+// propria idea di chi vede cosa che col tempo direbbe altro.
+const risorsePerRuolo = (ruolo) => {
+    if (ruolo === 'admin') {
+        return RESOURCE_NAMES;
+    }
+
+    if (ruolo === 'letturista') {
+        return Object.keys(RISORSE_DEL_LETTURISTA);
+    }
+
+    // Il cliente non passa da queste risorse: ha il suo portale.
+    return [];
+};
+
 // Le risorse che servono a chi va in giro a leggere i contatori. Senza
 // `scrittura` puo soltanto guardarle: registra letture, non modifica anagrafiche.
 //
@@ -47,6 +65,7 @@ const anchePerLetturista = ({ scrittura = false } = {}) => (req, res, next) => {
 
 module.exports = {
     RISORSE_DEL_LETTURISTA,
+    risorsePerRuolo,
     anchePerLetturista,
     getUserRole,
     requireAdmin: requireRole('admin'),

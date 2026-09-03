@@ -2,7 +2,7 @@ const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 const { JWT_EXPIRES_IN, JWT_SECRET } = require('../config/auth');
-const { getUserRole } = require('../middlewares/AuthorizationMiddleware');
+const { getUserRole, risorsePerRuolo } = require('../middlewares/AuthorizationMiddleware');
 
 const MAX_ADMIN_USERS = Number.parseInt(process.env.MAX_ADMIN_USERS || '2', 10);
 
@@ -94,6 +94,10 @@ const getProfile = async (req, res) => {
             email: user.email,
             numero_telefono: user.numero_telefono,
             role: getUserRole(user),
+            // Le risorse che questo ruolo puo aprire. Il client ci disegna il
+            // menu e i pannelli: cosi non tiene una propria idea di chi vede
+            // cosa, che col tempo direbbe altro rispetto ai permessi veri.
+            risorse: risorsePerRuolo(getUserRole(user)),
             cliente: user.cliente || null,
         });
     } catch (error) {

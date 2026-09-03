@@ -200,6 +200,13 @@ Non c'e una tabella di permessi: con tre ruoli e quattro risorse aperte costereb
 piu di quanto renda, e sarebbe generalizzazione prematura. Se un giorno i ruoli
 saranno sei, quello sara il momento di estrarla.
 
+Il profilo (`GET /api/auth/profile`) restituisce anche `risorse`, cioe cosa quel
+ruolo puo aprire. Il client ci disegna il menu e i riquadri delle relazioni:
+**l'elenco e uno solo**, deciso dal server che concede i permessi, e il client
+non tiene una propria idea di chi vede cosa che col tempo direbbe altro. Un
+riquadro verso una risorsa non concessa - Fatture sulla scheda cliente, Listino
+su quella di un contatore - semplicemente non compare.
+
 Gli allegati hanno una rotta sola per tutte le risorse
 (`/attachments/:resource/:id`), quindi il permesso non puo stare sul montaggio:
 lo decide il controller guardando **a cosa e attaccata** la nota. Un allegato vale
