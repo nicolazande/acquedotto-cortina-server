@@ -245,10 +245,11 @@ schermata che si riempie di errori. Prima esistevano due elenchi paralleli di
 rotte e di voci, uno per il cliente e uno per tutti gli altri: aggiungere una
 pagina voleva dire ricordarsi di entrambi.
 
-Un riquadro verso una risorsa non concessa - Fatture sulla scheda cliente,
-Listino su quella di un contatore - non compare, e su cio che si puo solo
-consultare spariscono "Nuovo", "Modifica", "Elimina" e "Associa": un pulsante che
-risponde 403 e peggio di un pulsante assente.
+Dallo stesso filtro passano anche le schede di accesso rapido della panoramica
+(`itemsByGroup`), un riquadro verso una risorsa non concessa - Fatture sulla
+scheda cliente, Listino su quella di un contatore - non compare, e su cio che si
+puo solo consultare spariscono "Nuovo", "Modifica", "Elimina" e "Associa": un
+pulsante che risponde 403 e peggio di un pulsante assente.
 
 Restano fuori da questo conto i pannelli che non appartengono a nessuna risorsa -
 accesso al portale di un cliente, anteprima di fatturazione, calcolo di una
