@@ -8,12 +8,17 @@ richiesta HTTP
     │
     ├─ server.js            CORS, body parser, montaggio /api, gestione errori
     ├─ routes/              quali URL esistono
-    ├─ middlewares/         chi sei (AuthMiddleware) e cosa puoi fare (AuthorizationMiddleware)
+    ├─ middlewares/         chi sei (AuthMiddleware) e i guardiani delle rotte
     ├─ controllers/         traduzione HTTP <-> dominio, nessuna regola di calcolo
     ├─ services/            le regole: fatturazione, PDF, scadenze, audit
     ├─ models/              schemi Mongoose e indici
+    ├─ config/              le politiche dichiarate: permessi, integrita, risorse, consegna
     └─ utils/               funzioni pure condivise da tutti i livelli
 ```
+
+Le frecce vanno in una direzione sola - rotte, controller, servizi, modelli - e
+`config/` e `utils/` sono foglie che chiunque puo leggere senza che nascano
+anelli: un controllo automatico verifica che di cicli non ce ne sia nessuno.
 
 Le collezioni e i loro legami sono disegnati in [modello.md](modello.md), generato
 dagli schemi con `npm run modello`: un test fallisce se il disegno resta indietro
@@ -52,7 +57,11 @@ va aggiunta qui, non ricopiata.
 | File                        | Responsabilita                                                    |
 |-----------------------------|-------------------------------------------------------------------|
 | `billingCalculator.js`      | **puro, senza database**: da lettura + fasce + articoli produce righe e totali |
-| `invoiceGenerator.js`       | orchestrazione: carica i dati, blocca le letture, numera, salva, anteprime |
+| `calcoloLettura.js`         | **quanto costa una lettura**: indice precedente, fasce, quota fissa. Non scrive |
+| `confrontoRighe.js`         | le righe che una fattura ha contro quelle che dovrebbe avere      |
+| `invoiceGenerator.js`       | **l'unico che scrive fatture**: numera, blocca le letture, salva, rifa i totali |
+| `verificaFattura.js`        | "questa fattura torna?" e l'aggiunta della quota fissa mancante   |
+| `anteprimaFatturazione.js`  | cosa si fatturerebbe adesso, raggruppato per cliente. Non scrive  |
 | `invoiceDeletionService.js` | cancellazione completa di una fattura (righe, scadenza, sblocco letture) |
 | `invoiceLockService.js`     | regola unica sulle fatture confermate                             |
 | `annualFixedChargeService.js` | quota fissa gia applicata nell'anno per contatore                |
@@ -75,7 +84,7 @@ va aggiunta qui, non ricopiata.
 
 `billingCalculator.js` e `deliveryPlan.js` non conoscono Mongoose: si testano
 passando oggetti semplici. Tutto cio che tocca il database sta rispettivamente in
-`invoiceGenerator.js` e `deliveryService.js`.
+`calcoloLettura.js` / `invoiceGenerator.js` e in `deliveryService.js`.
 
 **Una regola, un posto.** Le poche che decidono soldi o identita vivono ognuna in
 un file solo, e chi ne ha bisogno la importa invece di riscriverla:
@@ -83,10 +92,13 @@ un file solo, e chi ne ha bisogno la importa invece di riscriverla:
 | Regola                                   | Dove vive                    |
 |------------------------------------------|------------------------------|
 | aritmetica monetaria, IVA per aliquota    | `utils/money.js`             |
+| quando due importi sono lo stesso importo | `utils/money.js`             |
 | confini di una fascia tariffaria          | `billingCalculator.js`       |
 | aliquota di una riga, dal suo articolo    | `billingCalculator.js`       |
 | totali di una fattura e importo scadenza  | `invoiceGenerator.js`        |
+| quando una scadenza e saldata             | `models/Scadenza.js`         |
 | chi dipende da chi alla cancellazione     | `config/relations.js`        |
+| chi puo aprire e cambiare cosa            | `config/permessi.js`         |
 | dove va a finire una fattura              | `config/delivery.js`         |
 | province e loro sigla                     | `utils/province.js`          |
 
@@ -97,10 +109,30 @@ scadenza che non seguiva la fattura. Prima di duplicarne una, conviene ricordare
 che il costo non e la riga in piu: e il giorno in cui le due copie diranno cose
 diverse e nessuno se ne accorgera.
 
-> **Il modulo da tenere d'occhio.** `invoiceGenerator.js` e a 1.080 righe e cinque
-> responsabilita (calcolo di una lettura, anteprime, creazione, verifica, quota
-> fissa): e li che atterra ogni nuova funzione sulle fatture. Non e ancora un
-> problema, ma e il posto dove lo diventera per primo.
+**La fatturazione, in cinque moduli invece di uno.** `invoiceGenerator.js` era
+arrivato a 1.066 righe con cinque responsabilita, ed era li che atterrava ogni
+nuova funzione sulle fatture. Ora sono moduli separati, impilati in un ordine
+che non ammette anelli:
+
+```
+                       calcoloLettura        confrontoRighe
+                         (219 righe)          (194 righe)
+                          |      \             /      |
+        anteprimaFatturazione     invoiceGenerator     |
+             (157 righe)            (449 righe)        |
+                                         \             |
+                                          verificaFattura
+                                            (209 righe)
+```
+
+Chi sta sotto non sa che esiste chi sta sopra. `calcoloLettura` e
+`confrontoRighe` non scrivono niente: si leggono senza chiedersi se stanno
+cambiando qualcosa. `invoiceGenerator` resta l'unico che crea documenti e ne
+rifa i totali - anche la quota fissa, che aggiunge una riga, passa da li.
+
+Il modulo da tenere d'occhio adesso e `deliveryService.js` (541 righe): pianifica,
+elabora, spedisce e registra l'esito. Non e ancora un problema, ma e il prossimo
+posto dove lo diventerebbe.
 
 ### `controllers/utils/` — i CRUD non si scrivono a mano
 
@@ -197,8 +229,7 @@ router.use('/consegne',  ...)                                 la trova gia prote
 ```
 
 Il montaggio dice **quale** risorsa; cosa se ne puo fare lo dice
-`RISORSE_DEL_LETTURISTA` in `middlewares/AuthorizationMiddleware.js`, in un posto
-solo:
+`RISORSE_DEL_LETTURISTA` in `config/permessi.js`, in un posto solo:
 
 | risorsa | scrittura | relazioni raggiungibili |
 |---|---|---|
@@ -216,6 +247,13 @@ e chiuso, quindi anche una sotto-rotta aggiunta domani nasce chiusa, come le
 risorse nuove sotto `requireAdmin`. Montare una risorsa non prevista solleva un
 errore all'avvio: meglio un server che non parte di uno che apre le fatture per
 un refuso.
+
+La regola sta in `config/permessi.js`, il guardiano che la applica alle rotte in
+`middlewares/AuthorizationMiddleware.js`. La divisione non e formale: cosi la
+regola la leggono anche i controller e i servizi - il controllo sugli allegati,
+il giornale delle modifiche - che di Express non sanno niente e non devono
+dipenderne. Prima il permesso del letturista era scritto due volte, nel guardiano
+e nel controller degli allegati.
 
 Non c'e un sistema di permessi generale: con tre ruoli e quattro risorse aperte
 costerebbe piu di quanto renda, e sarebbe generalizzazione prematura. Se un

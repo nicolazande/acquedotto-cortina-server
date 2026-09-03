@@ -6,7 +6,7 @@ const {
     getUserRole,
     risorsePerRuolo,
     risorseScrivibiliPerRuolo,
-} = require('../middlewares/AuthorizationMiddleware');
+} = require('../config/permessi');
 
 const MAX_ADMIN_USERS = Number.parseInt(process.env.MAX_ADMIN_USERS || '2', 10);
 

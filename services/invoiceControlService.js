@@ -1,10 +1,10 @@
 const Fattura = require('../models/Fattura');
 const { buildAnnualFixedLookupCache } = require('./annualFixedChargeService');
 const { isConfirmedInvoice } = require('./invoiceLockService');
-const { verifyInvoiceCalculation } = require('./invoiceGenerator');
+const { verifyInvoiceCalculation } = require('./verificaFattura');
 const { customerLabel } = require('../utils/customer');
 
-const MONEY_TOLERANCE = 0.01;
+const { MONEY_TOLERANCE } = require('../utils/money');
 const isNonZero = (value) => Math.abs(Number(value) || 0) > MONEY_TOLERANCE;
 
 const getControlsQuery = ({ limit, year } = {}) => ({

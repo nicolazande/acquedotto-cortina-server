@@ -2,7 +2,7 @@
 //
 // E un rapporto, non un test: stampa cio che trova e non fa fallire nulla.
 const { runScript } = require('./utils/runScript');
-const { previewBillingBatch } = require('../services/invoiceGenerator');
+const { previewBillingBatch } = require('../services/anteprimaFatturazione');
 
 const parseArgs = () => {
     const limitIndex = process.argv.indexOf('--limit');

@@ -1,4 +1,5 @@
 const Scadenza = require('../models/Scadenza');
+const { saldataExpression } = require('../models/Scadenza');
 const { numberOrZero } = require('../utils/values');
 const { addDays, daysBetween, startOfDay, toDate } = require('../utils/dates');
 const { customerLabel } = require('../utils/customer');
@@ -142,15 +143,6 @@ const syncInvoiceDeadlineTotal = async ({ fattura, session }) => {
     );
 };
 
-// Stato di una scadenza. Definito qui una volta sola: prima la stessa condizione
-// era riscritta in tre punti (viste delle liste, panoramica, ordinamento) con tre
-// espressioni diverse, che potevano divergere senza che nulla lo segnalasse.
-// Il campo puo mancare sui record piu vecchi: assente significa non saldata.
-const SALDATA = { saldo: true };
-const NON_SALDATA = { $or: [{ saldo: false }, { saldo: { $exists: false } }] };
-
-// La stessa condizione per le pipeline di aggregazione.
-const saldataExpression = () => ({ $eq: [{ $ifNull: ['$saldo', false] }, true] });
 
 // Una scadenza saldata con una data di pagamento vera, cioe non la sentinella
 // del gestionale precedente.
@@ -199,12 +191,9 @@ const delayAggregation = () => ({
 
 module.exports = {
     DATA_IMPLAUSIBILE,
-    NON_SALDATA,
-    SALDATA,
     dataPagamento,
     buildDeadlinePayload,
     delayAggregation,
-    saldataExpression,
     calculateDelay,
     ensureInvoiceDeadline,
     getDueDate,

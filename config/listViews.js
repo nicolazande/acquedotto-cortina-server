@@ -3,7 +3,7 @@
 // Vivono sul server perche il client possa solo sceglierne una, non comporre
 // interrogazioni arbitrarie, e perche restino verificabili con i test.
 
-const { NON_SALDATA, SALDATA } = require('../services/deadlineService');
+const { NON_SALDATA, SALDATA } = require('../models/Scadenza');
 const { ALIAS_MODALITA, MODALITA_CONSEGNA, MODALITA_PREDEFINITA } = require('./delivery');
 const { escapeRegex } = require('../utils/values');
 

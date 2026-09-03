@@ -10,7 +10,8 @@
 // deadlineService: questo modulo si occupa solo di registrare il fatto.
 
 const Scadenza = require('../models/Scadenza');
-const { NON_SALDATA, dataPagamento } = require('./deadlineService');
+const { dataPagamento } = require('./deadlineService');
+const { NON_SALDATA } = require('../models/Scadenza');
 const { toDate } = require('../utils/dates');
 const { badRequest } = require('../utils/errors');
 const { sumMoneyBy } = require('../utils/values');

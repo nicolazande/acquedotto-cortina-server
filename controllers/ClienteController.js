@@ -3,7 +3,7 @@ const Contatore = require('../models/Contatore');
 const Fattura = require('../models/Fattura');
 const User = require('../models/User');
 const { sendPaginated } = require('./utils/paginatedQuery');
-const { getUserRole } = require('../middlewares/AuthorizationMiddleware');
+const { getUserRole } = require('../config/permessi');
 const { soloCampiPerLetturista } = require('../utils/customer');
 const {
     associateRecords,
@@ -14,10 +14,8 @@ const {
     updateRecord,
 } = require('./utils/controllerActions');
 const { invoiceGenerationOptions, parseOptionalBoolean } = require('./utils/requestOptions');
-const {
-    createInvoiceFromReadings,
-    previewClienteBilling,
-} = require('../services/invoiceGenerator');
+const { createInvoiceFromReadings } = require('../services/invoiceGenerator');
+const { previewClienteBilling } = require('../services/anteprimaFatturazione');
 const { writeAuditLog } = require('../services/auditLogService');
 const { clienteViews } = require('../config/listViews');
 

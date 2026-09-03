@@ -14,12 +14,14 @@ const {
 } = require('./utils/controllerActions');
 const { invoiceGenerationOptions, parseOptionalBoolean } = require('./utils/requestOptions');
 const {
-    applyFixedChargeToInvoice,
     createManualInvoice,
     createInvoiceFromReadings,
-    previewBillingBatch,
-    verifyInvoiceCalculation,
 } = require('../services/invoiceGenerator');
+const {
+    applyFixedChargeToInvoice,
+    verifyInvoiceCalculation,
+} = require('../services/verificaFattura');
+const { previewBillingBatch } = require('../services/anteprimaFatturazione');
 const {
     assertInvoiceEditable,
     assertInvoiceEditableById,

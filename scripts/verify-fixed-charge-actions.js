@@ -15,7 +15,7 @@ require('../models/Servizio');
 
 const { buildAnnualFixedLookupCache } = require('../services/annualFixedChargeService');
 const { roundMoney } = require('../services/billingCalculator');
-const { verifyInvoiceCalculation } = require('../services/invoiceGenerator');
+const { verifyInvoiceCalculation } = require('../services/verificaFattura');
 
 const TOLERANCE = 0.01;
 

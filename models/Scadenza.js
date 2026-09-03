@@ -31,4 +31,20 @@ scadenzaSchema.index({ scadenza: 1 });
 scadenzaSchema.index({ anno: 1, numero: 1 });
 scadenzaSchema.index({ saldo: 1, scadenza: 1 });
 
-module.exports = mongoose.model('Scadenza', scadenzaSchema);
+// Come si riconosce una scadenza saldata. Sta qui, accanto al campo che
+// descrive, perche il campo ha una storia: sui record importati dal gestionale
+// precedente puo mancare del tutto, e assente significa non saldata. Chi lo
+// dimentica conta come pagate scadenze che nessuno ha pagato.
+//
+// Due forme dello stesso fatto - una per le ricerche, una per le aggregazioni -
+// tenute vicine perche devono dire la stessa cosa.
+const SALDATA = { saldo: true };
+const NON_SALDATA = { $or: [{ saldo: false }, { saldo: { $exists: false } }] };
+const saldataExpression = () => ({ $eq: [{ $ifNull: ['$saldo', false] }, true] });
+
+const Scadenza = mongoose.model('Scadenza', scadenzaSchema);
+
+module.exports = Scadenza;
+module.exports.SALDATA = SALDATA;
+module.exports.NON_SALDATA = NON_SALDATA;
+module.exports.saldataExpression = saldataExpression;

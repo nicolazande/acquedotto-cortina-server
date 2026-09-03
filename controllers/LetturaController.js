@@ -15,7 +15,7 @@ const {
 } = require('./utils/controllerActions');
 const { parseOptionalBoolean } = require('./utils/requestOptions');
 const { escapeRegex } = require('../utils/values');
-const { calculateReadingById } = require('../services/invoiceGenerator');
+const { calculateReadingById } = require('../services/calcoloLettura');
 const { letturaViews } = require('../config/listViews');
 
 const populatedContatore = {

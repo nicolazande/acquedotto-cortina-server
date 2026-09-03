@@ -3,11 +3,17 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
+// La regola sta in `config/permessi`, il guardiano che la applica alle rotte in
+// `middlewares/AuthorizationMiddleware`: i test le controllano entrambe, ognuna
+// da dove vive.
 const {
     RISORSE_DEL_LETTURISTA,
-    anchePerLetturista,
-    risorsePerRuolo,
     getUserRole,
+    puoUsareRisorsa,
+    risorsePerRuolo,
+} = require('../config/permessi');
+const {
+    anchePerLetturista,
     requireAdmin,
     requireCustomer,
 } = require('../middlewares/AuthorizationMiddleware');
@@ -216,8 +222,6 @@ test('il profilo dice a ogni ruolo tutto cio che puo aprire', () => {
 test('la stessa regola protegge le rotte e gli allegati', () => {
     // Erano due copie: quella del middleware e quella del controller degli
     // allegati. Ora e una funzione sola, e questo lo verifica.
-    const { puoUsareRisorsa } = require('../middlewares/AuthorizationMiddleware');
-
     assert.equal(puoUsareRisorsa('admin', 'fatture'), true);
     assert.equal(puoUsareRisorsa('letturista', 'contatori'), true);
     assert.equal(puoUsareRisorsa('letturista', 'contatori', { scrittura: true }), false);

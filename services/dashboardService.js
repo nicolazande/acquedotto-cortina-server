@@ -5,7 +5,8 @@ const Fattura = require('../models/Fattura');
 const Lettura = require('../models/Lettura');
 const Scadenza = require('../models/Scadenza');
 const AuditLog = require('../models/AuditLog');
-const { delayAggregation, saldataExpression } = require('./deadlineService');
+const { delayAggregation } = require('./deadlineService');
+const { saldataExpression } = require('../models/Scadenza');
 const { fromCents } = require('../utils/money');
 const { tariffeInScadenza } = require('./tariffService');
 

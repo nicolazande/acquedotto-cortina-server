@@ -14,7 +14,7 @@ require('../models/Listino');
 require('../models/Servizio');
 
 const { buildAnnualFixedLookupCache } = require('../services/annualFixedChargeService');
-const { verifyInvoiceCalculation } = require('../services/invoiceGenerator');
+const { verifyInvoiceCalculation } = require('../services/verificaFattura');
 const { roundMoney } = require('../services/billingCalculator');
 
 const parseArgs = () => {

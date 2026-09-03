@@ -5,7 +5,14 @@ const {
     roundMoney,
     sumMoneyBy,
 } = require('../utils/values');
-const { applyRateToLines, fromCents, multiplyCents, sumCents, toCents } = require('../utils/money');
+const {
+    MONEY_TOLERANCE,
+    applyRateToLines,
+    fromCents,
+    multiplyCents,
+    sumCents,
+    toCents,
+} = require('../utils/money');
 const { toDate } = require('../utils/dates');
 const { recordId } = require('../utils/mongo');
 const { unprocessable } = require('../utils/errors');
@@ -16,7 +23,6 @@ const DEFAULT_CONDOMINIUM_ARTICLE_CODE = 'COND';
 const DEFAULT_CONDOMINIUM_FIXED_ARTICLE_CODE = 'CONDF';
 const DEFAULT_DELAY_ARTICLE_CODE = 'GG_DELAY';
 const DEFAULT_FIXED_QUOTA = 'Q.Fissa';
-const MONEY_TOLERANCE = 0.01;
 
 const createCalculationError = (message) => unprocessable(message);
 

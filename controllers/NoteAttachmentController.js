@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const { getResourceModel } = require('../config/resources');
 const NoteAttachment = require('../models/NoteAttachment');
-const { getUserRole, puoUsareRisorsa } = require('../middlewares/AuthorizationMiddleware');
+const { getUserRole, puoUsareRisorsa } = require('../config/permessi');
 
 // Un allegato vale quanto il documento a cui e attaccato: le note su un
 // contatore le puo leggere chi puo leggere quel contatore, quelle su una fattura

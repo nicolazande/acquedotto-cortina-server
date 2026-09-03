@@ -1,5 +1,5 @@
 const AuditLog = require('../models/AuditLog');
-const { getUserRole } = require('../middlewares/AuthorizationMiddleware');
+const { getUserRole } = require('../config/permessi');
 
 const normalizeValue = (value) => {
     if (value === undefined) return undefined;

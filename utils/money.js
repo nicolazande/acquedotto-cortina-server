@@ -9,6 +9,10 @@
 // Convenzione: "cents" e sempre un intero; "euro" e un numero con due decimali.
 
 const CENTS_PER_UNIT = 100;
+// Un centesimo: sotto questa differenza due importi sono lo stesso importo.
+// Serve ovunque si confrontino due totali calcolati per strade diverse, e per
+// questo va definita una volta sola - era ripetuta in tre servizi.
+const MONEY_TOLERANCE = 0.01;
 // Le aliquote sono espresse in punti base (10% = 1000) per restare interi
 // anche con aliquote frazionarie come 4,5%.
 const BASIS_POINTS_PER_PERCENT = 100;
@@ -105,6 +109,7 @@ const applyRateToLines = (lines) => {
 };
 
 module.exports = {
+    MONEY_TOLERANCE,
     applyRate,
     applyRateToLines,
     fromCents,
