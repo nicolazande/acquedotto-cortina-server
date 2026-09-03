@@ -90,8 +90,13 @@ const sortBands = (bands) => [...bands].sort((a, b) => {
 // scaglione non e coperto da nessuna fascia ancora valida. Cosi appena si
 // inserisce la tariffa nuova, quella vince, e due prezzi non possono mai
 // applicarsi allo stesso metro cubo.
-const limiteInferiore = (band) => (numberOrZero(band.min) > 0 ? numberOrZero(band.min) - 1 : 0);
-const limiteSuperiore = (band) => (numberOrZero(band.max) > 0 ? numberOrZero(band.max) : Infinity);
+// Dove comincia e dove finisce una fascia. Una regola sola, perche la usano in
+// due per scopi opposti: qui per fatturare, e in tariffService per dire se le
+// fasce coprono tutto il consumo. Scritte due volte potrebbero divergere, e
+// allora il controllo direbbe che le tariffe vanno bene mentre il calcolo si
+// rifiuta di emettere - o, peggio, il contrario.
+const limiteInferiore = (fascia) => (numberOrZero(fascia.min) > 0 ? numberOrZero(fascia.min) - 1 : 0);
+const limiteSuperiore = (fascia) => (numberOrZero(fascia.max) > 0 ? numberOrZero(fascia.max) : Infinity);
 
 const siSovrappongono = (una, altra) => (
     isFixedBand(una) === isFixedBand(altra)
@@ -416,6 +421,8 @@ module.exports = {
     getLineTaxRate,
     getTaxRate,
     isFixedBand,
+    limiteInferiore,
+    limiteSuperiore,
     numberOrZero,
     recordId,
     roundMoney,

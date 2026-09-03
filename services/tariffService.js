@@ -18,7 +18,12 @@
 const Contatore = require('../models/Contatore');
 const Fascia = require('../models/Fascia');
 const Listino = require('../models/Listino');
-const { getApplicableBands, isFixedBand } = require('./billingCalculator');
+const {
+    getApplicableBands,
+    isFixedBand,
+    limiteInferiore,
+    limiteSuperiore,
+} = require('./billingCalculator');
 const { fromCents, toCents } = require('../utils/money');
 const { numberOrZero } = require('../utils/values');
 const { badRequest, notFound, unprocessable } = require('../utils/errors');
@@ -29,9 +34,6 @@ const MESI_DI_PREAVVISO = 6;
 // Gli estremi delle fasce sono inclusivi (1-100, 101-150). Il calcolo lavora su
 // un limite inferiore esclusivo, e queste due funzioni fanno la stessa
 // conversione che fa billingCalculator.
-const limiteInferiore = (fascia) => (numberOrZero(fascia.min) > 0 ? numberOrZero(fascia.min) - 1 : 0);
-const limiteSuperiore = (fascia) => (numberOrZero(fascia.max) > 0 ? numberOrZero(fascia.max) : Infinity);
-
 const inizioAnno = (anno) => new Date(Date.UTC(anno, 0, 1));
 const fineAnno = (anno) => new Date(Date.UTC(anno, 11, 31));
 const soloData = (valore) => (valore ? new Date(valore).toISOString().slice(0, 10) : null);
