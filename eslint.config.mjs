@@ -31,6 +31,11 @@ export default [
             eqeqeq: ['warn', 'smart'],
             'prefer-const': 'warn',
             'no-var': 'error',
+            // Una costante usata prima di essere definita non e un dettaglio di
+            // stile: `const x = x(...)` passa il lint, passa i test e va in
+            // pezzi in produzione. E gia successo, togliendo un alias che
+            // sembrava inutile e serviva a evitare proprio questo.
+            'no-use-before-define': ['error', { functions: false, classes: false }],
         },
     },
 ];

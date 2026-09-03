@@ -3,12 +3,7 @@ const Contatore = require('../models/Contatore');
 const Fattura = require('../models/Fattura');
 const Lettura = require('../models/Lettura');
 const { generateInvoicePdf } = require('../services/invoicePdf');
-
-const customerName = (cliente) => (
-    cliente?.ragione_sociale
-    || [cliente?.cognome, cliente?.nome].filter(Boolean).join(' ').trim()
-    || ''
-);
+const { customerLabel } = require('../utils/customer');
 
 const getCustomerId = (req) => req.user?.cliente?._id || req.user?.cliente;
 
@@ -59,7 +54,7 @@ const getPortalData = async (req, res) => {
         res.status(200).json({
             cliente: {
                 ...cliente,
-                displayName: customerName(cliente),
+                displayName: customerLabel(cliente),
             },
             contatori,
             fatture,

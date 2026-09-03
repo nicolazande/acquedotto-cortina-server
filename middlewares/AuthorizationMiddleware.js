@@ -39,19 +39,32 @@ const RISORSE_DEL_LETTURISTA = {
     letture: { scrittura: true, relazioni: ['contatore'] },
 };
 
-// Cosa puo toccare chi sta guardando. E l'unico elenco: il server ci decide i
-// permessi e il client ci disegna il menu e i pannelli, invece di tenere una
-// propria idea di chi vede cosa che col tempo direbbe altro.
+// Due aree di lavoro non sono risorse con elenco e scheda - non hanno un
+// modello - ma sono pagine che si aprono, e vanno nell'elenco insieme alle
+// altre: altrimenti il client, che da quell'elenco disegna menu e rotte, non
+// saprebbe che esistono.
+const CRUSCOTTI_DELL_AMMINISTRATORE = ['panoramica', 'consegne'];
+
+// L'area del cliente, che non e una risorsa del gestionale ma il suo portale.
+const AREA_DEL_CLIENTE = 'portale-cliente';
+
+// Cosa puo aprire chi sta guardando: risorse e aree, in un elenco solo. E la
+// sola verita sui permessi - il server ci decide chi entra e il client ci
+// disegna menu, rotte e pannelli - invece di tenerne due copie che col tempo
+// divergono.
 const risorsePerRuolo = (ruolo) => {
     if (ruolo === 'admin') {
-        return RESOURCE_NAMES;
+        return [...RESOURCE_NAMES, ...CRUSCOTTI_DELL_AMMINISTRATORE];
     }
 
     if (ruolo === 'letturista') {
         return Object.keys(RISORSE_DEL_LETTURISTA);
     }
 
-    // Il cliente non passa da queste risorse: ha il suo portale.
+    if (ruolo === 'cliente') {
+        return [AREA_DEL_CLIENTE];
+    }
+
     return [];
 };
 
@@ -70,6 +83,18 @@ const risorseScrivibiliPerRuolo = (ruolo) => {
     }
 
     return [];
+};
+
+// Il permesso del letturista su una risorsa, in una riga sola. Lo usano il
+// guardiano delle rotte e il controller degli allegati, che senza questa
+// funzione se lo riscriverebbero uguale - e prima o poi diverso.
+const puoUsareRisorsa = (ruolo, risorsa, { scrittura = false } = {}) => {
+    if (ruolo === 'admin') {
+        return true;
+    }
+
+    const permesso = RISORSE_DEL_LETTURISTA[risorsa];
+    return ruolo === 'letturista' && Boolean(permesso) && (!scrittura || permesso.scrittura);
 };
 
 // Dentro la risorsa il letturista arriva all'elenco, alla singola scheda e alle
@@ -100,14 +125,9 @@ const anchePerLetturista = (risorsa) => {
 
     return (req, res, next) => {
         const ruolo = getUserRole(req.user);
-
-        if (ruolo === 'admin') {
-            return next();
-        }
-
-        const puo = ruolo === 'letturista'
-            && (permesso.scrittura || req.method === 'GET')
-            && percorsoConcesso(req.path, permesso.relazioni);
+        const scrittura = req.method !== 'GET';
+        const puo = puoUsareRisorsa(ruolo, risorsa, { scrittura })
+            && (ruolo === 'admin' || percorsoConcesso(req.path, permesso.relazioni));
 
         return puo ? next() : res.status(403).json({ error: 'Permessi insufficienti' });
     };
@@ -116,6 +136,7 @@ const anchePerLetturista = (risorsa) => {
 module.exports = {
     RISORSE_DEL_LETTURISTA,
     risorsePerRuolo,
+    puoUsareRisorsa,
     risorseScrivibiliPerRuolo,
     anchePerLetturista,
     getUserRole,

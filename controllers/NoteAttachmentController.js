@@ -1,23 +1,16 @@
 const mongoose = require('mongoose');
 const { getResourceModel } = require('../config/resources');
 const NoteAttachment = require('../models/NoteAttachment');
-const { RISORSE_DEL_LETTURISTA, getUserRole } = require('../middlewares/AuthorizationMiddleware');
+const { getUserRole, puoUsareRisorsa } = require('../middlewares/AuthorizationMiddleware');
 
 // Un allegato vale quanto il documento a cui e attaccato: le note su un
 // contatore le puo leggere chi puo leggere quel contatore, quelle su una fattura
 // no. La rotta e una sola per tutte le risorse, quindi il controllo si fa qui,
 // sul nome della risorsa che arriva nell'indirizzo - altrimenti aprire gli
-// allegati al letturista gli aprirebbe anche quelli delle fatture.
-const puoAccedere = (req, risorsa, { scrittura = false } = {}) => {
-    const ruolo = getUserRole(req.user);
-
-    if (ruolo === 'admin') {
-        return true;
-    }
-
-    const permesso = RISORSE_DEL_LETTURISTA[risorsa];
-    return ruolo === 'letturista' && Boolean(permesso) && (!scrittura || permesso.scrittura);
-};
+// allegati al letturista gli aprirebbe anche quelli delle fatture. La regola e
+// la stessa che protegge le rotte, e viene da li: riscriverla qui vorrebbe dire
+// due regole che un giorno diranno cose diverse.
+const puoAccedere = (req, risorsa, opzioni) => puoUsareRisorsa(getUserRole(req.user), risorsa, opzioni);
 
 const permessiInsufficienti = (res) => res.status(403).json({ error: 'Permessi insufficienti' });
 

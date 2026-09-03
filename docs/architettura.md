@@ -222,14 +222,33 @@ costerebbe piu di quanto renda, e sarebbe generalizzazione prematura. Se un
 giorno i ruoli saranno sei, quello sara il momento di estrarlo.
 
 Il profilo (`GET /api/auth/profile`) restituisce anche `risorse` (cosa quel ruolo
-puo aprire) e `scrivibili` (cosa puo anche cambiare). Il client ci disegna il
-menu, i riquadri delle relazioni e i pulsanti: **l'elenco e uno solo**, deciso
-dal server che concede i permessi, e il client non tiene una propria idea di chi
-vede cosa che col tempo direbbe altro. Un riquadro verso una risorsa non
-concessa - Fatture sulla scheda cliente, Listino su quella di un contatore - non
-compare, e su cio che si puo solo consultare spariscono "Nuovo", "Modifica",
-"Elimina" e "Associa": un pulsante che risponde 403 e peggio di un pulsante
-assente.
+puo aprire) e `scrivibili` (cosa puo anche cambiare). Il client ci disegna
+**menu, rotte, riquadri delle relazioni e pulsanti**: l'elenco e uno solo,
+deciso dal server che concede i permessi, e il client non tiene una propria idea
+di chi vede cosa che col tempo direbbe altro.
+
+`risorse` comprende anche due aree che non sono risorse con elenco e scheda -
+`panoramica` e `consegne`, che non hanno un modello - e `portale-cliente` per il
+ruolo `cliente`. Sono pagine che si aprono, quindi stanno nello stesso elenco:
+quando non c'erano, il menu dell'amministratore perdeva Panoramica, Consegne e
+Incassi, perche il client filtrava confrontando l'indirizzo con i nomi delle
+risorse e quelli non erano fra loro.
+
+Nel client ogni voce di navigazione dichiara la propria `area`, e
+`areaDelPercorso` traduce un indirizzo nel nome corrispondente guardando il
+primo segmento: cosi `/fatture/generazione` e `/fatture/12/cliente` ricadono
+sotto `fatture` senza doverli elencare. Una voce senza area - il profilo - la
+apre chiunque sia entrato. Da quella stessa dichiarazione si costruiscono le
+rotte: **una pagina che il ruolo non puo aprire non viene montata**, e chi ne
+scrive l'indirizzo finisce sulla propria pagina iniziale invece di vedere una
+schermata che si riempie di errori. Prima esistevano due elenchi paralleli di
+rotte e di voci, uno per il cliente e uno per tutti gli altri: aggiungere una
+pagina voleva dire ricordarsi di entrambi.
+
+Un riquadro verso una risorsa non concessa - Fatture sulla scheda cliente,
+Listino su quella di un contatore - non compare, e su cio che si puo solo
+consultare spariscono "Nuovo", "Modifica", "Elimina" e "Associa": un pulsante che
+risponde 403 e peggio di un pulsante assente.
 
 Restano fuori da questo conto i pannelli che non appartengono a nessuna risorsa -
 accesso al portale di un cliente, anteprima di fatturazione, calcolo di una
@@ -238,7 +257,9 @@ non vengono disegnati su schede che il letturista apre legittimamente.
 
 Gli allegati hanno una rotta sola per tutte le risorse
 (`/attachments/:resource/:id`), quindi il permesso non puo stare sul montaggio:
-lo decide il controller guardando **a cosa e attaccata** la nota. Un allegato vale
+lo decide il controller guardando **a cosa e attaccata** la nota, con la stessa
+funzione (`puoUsareRisorsa`) che protegge le rotte - prima erano due copie della
+stessa regola. Un allegato vale
 quanto il documento che lo porta, e le risorse aperte sono quelle di
 `RISORSE_DEL_LETTURISTA`. Un test verifica che quell'elenco e le rotte montate
 dicano la stessa cosa, perche sono due espressioni dello stesso fatto.

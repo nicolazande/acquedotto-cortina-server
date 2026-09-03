@@ -54,7 +54,6 @@ const asciiText = (value) => String(value ?? '')
 const formatMoney = (value) => `Euro ${numberOrZero(value).toFixed(2).replace('.', ',')}`;
 const formatNumber = (value) => Number.isFinite(Number(value)) ? String(Number(value)).replace('.', ',') : '';
 
-const customerName = (cliente, fattura) => customerLabel(cliente, fattura);
 
 const joinAddress = (...parts) => parts.filter((part) => !isEmpty(part)).join(' ').trim();
 
@@ -418,13 +417,13 @@ const drawCustomerBox = (pdf, fattura, cliente) => {
 
     pdf.rect(352, 40, 218, 17, { fill: LIGHT_BLUE, stroke: BLACK });
     pdf.boxText(`Codice Cliente: ${code}`, 352, 40, 218, 17, { font: 'bold', size: 8 });
-    pdf.text(customerName(cliente, fattura), 353, 74, { size: 8 });
+    pdf.text(customerLabel(cliente, fattura), 353, 74, { size: 8 });
     pdf.text(address.address, 353, 89, { size: 8 });
     pdf.text(address.city, 353, 104, { size: 8 });
     pdf.text(`C.F.  ${cliente?.codice_fiscale || cliente?.partita_iva || ''}`, 353, 121, { size: 8 });
 
     pdf.text('Destinazione', 353, 162, { font: 'bold', size: 7 });
-    pdf.text(cliente?.destinazione_fatturazione || customerName(cliente, fattura), 353, 182, { font: 'bold', size: 7 });
+    pdf.text(cliente?.destinazione_fatturazione || customerLabel(cliente, fattura), 353, 182, { font: 'bold', size: 7 });
     pdf.text(address.address, 353, 200, { font: 'bold', size: 7 });
     pdf.text(address.city, 353, 218, { font: 'bold', size: 7 });
 };

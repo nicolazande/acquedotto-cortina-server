@@ -54,7 +54,6 @@ const summarizeBillablePreviews = (previews) => {
         totale_fattura: sumMoneyBy(billablePreviews, (preview) => preview.totals.totale_fattura),
     };
 };
-const getCustomerLabel = (cliente) => customerLabel(cliente);
 
 const isCondominiumSplitCounter = (contatore) => {
     const counterType = normalizeText(contatore?.tipo_contatore);
@@ -143,68 +142,6 @@ const loadReading = (id, session) => withSession(Lettura.findById(id), session).
     populate: ['listino', 'cliente'],
 }).lean();
 
-const calculateReadings = async (letturaIds, context, options = {}) => {
-    const calculations = [];
-
-    for (const id of letturaIds) {
-        calculations.push(await calculateReadingById(id, {
-            ...context,
-            ...options,
-        }));
-    }
-
-    return calculations;
-};
-
-const releaseReadingsForBilling = async (letturaIds) => {
-    if (!letturaIds.length) {
-        return;
-    }
-
-    await Lettura.updateMany(
-        { _id: { $in: letturaIds } },
-        { $set: { fatturata: false } }
-    );
-};
-
-const rollbackGeneratedInvoice = async ({ fatturaId, lockedReadingIds }) => {
-    try {
-        if (fatturaId) {
-            await Servizio.deleteMany({ fattura: fatturaId });
-            await Fattura.deleteOne({ _id: fatturaId });
-        }
-        await releaseReadingsForBilling(lockedReadingIds);
-    } catch (cleanupError) {
-        console.error('Rollback generazione fattura non completato:', cleanupError);
-    }
-};
-
-const lockReadingsForBilling = async (letturaIds, session) => {
-    const lockedIds = [];
-
-    for (const letturaId of letturaIds) {
-        const locked = await withSession(Lettura.findOneAndUpdate(
-            {
-                _id: letturaId,
-                $or: [{ fatturata: false }, { fatturata: { $exists: false } }],
-            },
-            { $set: { fatturata: true } },
-            { new: true }
-        ), session).select('_id').lean();
-
-        if (!locked) {
-            if (!session) {
-                await releaseReadingsForBilling(lockedIds);
-            }
-            throw createError('Almeno una lettura selezionata risulta gia fatturata', 409);
-        }
-
-        lockedIds.push(letturaId);
-    }
-
-    return lockedIds;
-};
-
 const calculateReadingById = async (letturaId, options = {}) => {
     const { session } = options;
     const lettura = await loadReading(letturaId, session);
@@ -285,6 +222,68 @@ const calculateReadingById = async (letturaId, options = {}) => {
         },
         fixedChargeAlreadyBilled: fixedAlreadyBilled || fixedAlreadySelected,
     };
+};
+
+const calculateReadings = async (letturaIds, context, options = {}) => {
+    const calculations = [];
+
+    for (const id of letturaIds) {
+        calculations.push(await calculateReadingById(id, {
+            ...context,
+            ...options,
+        }));
+    }
+
+    return calculations;
+};
+
+const releaseReadingsForBilling = async (letturaIds) => {
+    if (!letturaIds.length) {
+        return;
+    }
+
+    await Lettura.updateMany(
+        { _id: { $in: letturaIds } },
+        { $set: { fatturata: false } }
+    );
+};
+
+const rollbackGeneratedInvoice = async ({ fatturaId, lockedReadingIds }) => {
+    try {
+        if (fatturaId) {
+            await Servizio.deleteMany({ fattura: fatturaId });
+            await Fattura.deleteOne({ _id: fatturaId });
+        }
+        await releaseReadingsForBilling(lockedReadingIds);
+    } catch (cleanupError) {
+        console.error('Rollback generazione fattura non completato:', cleanupError);
+    }
+};
+
+const lockReadingsForBilling = async (letturaIds, session) => {
+    const lockedIds = [];
+
+    for (const letturaId of letturaIds) {
+        const locked = await withSession(Lettura.findOneAndUpdate(
+            {
+                _id: letturaId,
+                $or: [{ fatturata: false }, { fatturata: { $exists: false } }],
+            },
+            { $set: { fatturata: true } },
+            { new: true }
+        ), session).select('_id').lean();
+
+        if (!locked) {
+            if (!session) {
+                await releaseReadingsForBilling(lockedIds);
+            }
+            throw createError('Almeno una lettura selezionata risulta gia fatturata', 409);
+        }
+
+        lockedIds.push(letturaId);
+    }
+
+    return lockedIds;
 };
 
 const getClienteFromReadings = (readings) => {
@@ -384,11 +383,6 @@ const toLineIssue = (line, lettura) => ({
     lettura: lettura?._id || lettura,
 });
 
-const getMissingCalculatedLines = (servizi, calculations) => {
-    const missingLines = getMissingCalculatedBillingLines(servizi, calculations);
-    return missingLines.map((line) => toLineIssue(line, line.lettura));
-};
-
 const getMissingCalculatedBillingLines = (servizi, calculations) => {
     const unusedServices = [...servizi];
     const missingLines = [];
@@ -410,6 +404,11 @@ const getMissingCalculatedBillingLines = (servizi, calculations) => {
     });
 
     return missingLines;
+};
+
+const getMissingCalculatedLines = (servizi, calculations) => {
+    const missingLines = getMissingCalculatedBillingLines(servizi, calculations);
+    return missingLines.map((line) => toLineIssue(line, line.lettura));
 };
 
 const groupServicesByReading = (servizi) => servizi.reduce((groups, servizio) => {
@@ -593,7 +592,7 @@ const createManualInvoiceInSession = async (input = {}, session) => {
     const cliente = input.cliente
         ? await withSession(Cliente.findById(input.cliente), session).lean()
         : null;
-    const customerLabel = getCustomerLabel(cliente);
+    const intestatario = customerLabel(cliente);
     const confermata = toBoolean(input.confermata);
     // `articolo` guida la riga, non e un campo della fattura: va tolto prima di
     // scrivere il documento.
@@ -601,7 +600,7 @@ const createManualInvoiceInSession = async (input = {}, session) => {
     const [fattura] = await Fattura.create([{
         ...campiFattura,
         tipo_documento: input.tipo_documento || 'Fattura',
-        ragione_sociale: input.ragione_sociale || customerLabel,
+        ragione_sociale: input.ragione_sociale || intestatario,
         confermata,
         stato: input.stato || getInvoiceStatus(confermata),
         origine: input.origine || 'manuale',
@@ -610,7 +609,7 @@ const createManualInvoiceInSession = async (input = {}, session) => {
         serie,
         codice: input.codice || invoiceCode({ anno: year, numero, serie }),
         data_fattura: invoiceDate,
-        nome_cliente: input.nome_cliente || customerLabel,
+        nome_cliente: input.nome_cliente || intestatario,
         cliente: cliente?._id || input.cliente,
         scadenza: input.scadenza || undefined,
     }], { session });
@@ -715,7 +714,7 @@ const createInvoiceFromReadingsInSession = async ({
 
         const [fattura] = await Fattura.create([{
             tipo_documento,
-            ragione_sociale: getCustomerLabel(cliente),
+            ragione_sociale: customerLabel(cliente),
             confermata: toBoolean(confermata),
             stato: getInvoiceStatus(confermata),
             origine: 'letture',
@@ -727,7 +726,7 @@ const createInvoiceFromReadingsInSession = async ({
             imponibile: totals.imponibile,
             iva: totals.iva,
             totale_fattura: totals.totale_fattura,
-            nome_cliente: getCustomerLabel(cliente),
+            nome_cliente: customerLabel(cliente),
             cliente: cliente._id,
         }], { session });
         createdFatturaId = fattura._id;

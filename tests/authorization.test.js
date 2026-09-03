@@ -6,6 +6,7 @@ const path = require('node:path');
 const {
     RISORSE_DEL_LETTURISTA,
     anchePerLetturista,
+    risorsePerRuolo,
     getUserRole,
     requireAdmin,
     requireCustomer,
@@ -190,4 +191,38 @@ test('gli allegati delle fatture restano fuori dalla portata del letturista', ()
     ['fatture', 'consegne', 'scadenze', 'listini', 'servizi', 'articoli'].forEach((risorsa) => {
         assert.equal(RISORSE_DEL_LETTURISTA[risorsa], undefined, `${risorsa} non deve essergli aperta`);
     });
+});
+
+test('il profilo dice a ogni ruolo tutto cio che puo aprire', () => {
+    // Il client ci disegna menu e rotte: cio che non e in questo elenco per lui
+    // non esiste. Panoramica e consegne non sono risorse con un modello, ma sono
+    // pagine, e senza il loro nome sparirebbero dal menu dell'amministratore -
+    // e gia successo.
+    const { RESOURCE_NAMES } = require('../config/resources');
+    const admin = risorsePerRuolo('admin');
+
+    RESOURCE_NAMES.forEach((nome) => assert.ok(admin.includes(nome), `manca ${nome}`));
+    assert.ok(admin.includes('panoramica'));
+    assert.ok(admin.includes('consegne'));
+
+    assert.deepEqual(risorsePerRuolo('letturista').sort(), Object.keys(RISORSE_DEL_LETTURISTA).sort());
+    assert.deepEqual(risorsePerRuolo('cliente'), ['portale-cliente']);
+
+    // Un ruolo assente o inventato non apre niente.
+    assert.deepEqual(risorsePerRuolo(null), []);
+    assert.deepEqual(risorsePerRuolo('superadmin'), []);
+});
+
+test('la stessa regola protegge le rotte e gli allegati', () => {
+    // Erano due copie: quella del middleware e quella del controller degli
+    // allegati. Ora e una funzione sola, e questo lo verifica.
+    const { puoUsareRisorsa } = require('../middlewares/AuthorizationMiddleware');
+
+    assert.equal(puoUsareRisorsa('admin', 'fatture'), true);
+    assert.equal(puoUsareRisorsa('letturista', 'contatori'), true);
+    assert.equal(puoUsareRisorsa('letturista', 'contatori', { scrittura: true }), false);
+    assert.equal(puoUsareRisorsa('letturista', 'letture', { scrittura: true }), true);
+    assert.equal(puoUsareRisorsa('letturista', 'fatture'), false);
+    assert.equal(puoUsareRisorsa('cliente', 'letture'), false);
+    assert.equal(puoUsareRisorsa(null, 'letture'), false);
 });

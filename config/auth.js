@@ -5,7 +5,6 @@ const SEGRETO_DI_RIPIEGO = 'solo-per-lo-sviluppo-locale';
 // produzione, il segreto e pubblico e chiunque puo firmarsi un token da
 // amministratore.
 const SEGNAPOSTO = new Set([
-    SEGRETO_DI_RIPIEGO,
     'your_jwt_secret',
     'change-me',
     'changeme',
