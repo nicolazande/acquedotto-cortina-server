@@ -37,10 +37,12 @@ router.use('/edifici', anchePerLetturista(), edificioRoutes);
 router.use('/contatori', anchePerLetturista(), contatoreRoutes);
 router.use('/clienti', anchePerLetturista(), clienteRoutes);
 router.use('/letture', anchePerLetturista({ scrittura: true }), letturaRoutes);
+// Gli allegati servono tutte le risorse con una rotta sola: il permesso lo
+// decide il controller, guardando a cosa e attaccata la nota.
+router.use('/attachments', attachmentRoutes);
 
 router.use(requireAdmin);
 
-router.use('/attachments', attachmentRoutes);
 router.use('/articoli', articoloRoutes);
 router.use('/panoramica', dashboardRoutes);
 router.use('/consegne', consegnaRoutes);

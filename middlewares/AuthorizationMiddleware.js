@@ -19,6 +19,16 @@ const requireRole = (...roles) => (req, res, next) => {
     return next();
 };
 
+// Le risorse che il letturista puo toccare, e quali anche scrivere. Sta qui
+// perche serve in due punti che devono restare d'accordo: il montaggio delle
+// rotte e gli allegati, che ereditano il permesso di cio a cui sono attaccati.
+const RISORSE_DEL_LETTURISTA = {
+    edifici: { scrittura: false },
+    contatori: { scrittura: false },
+    clienti: { scrittura: false },
+    letture: { scrittura: true },
+};
+
 // Le risorse che servono a chi va in giro a leggere i contatori. Senza
 // `scrittura` puo soltanto guardarle: registra letture, non modifica anagrafiche.
 //
@@ -36,6 +46,7 @@ const anchePerLetturista = ({ scrittura = false } = {}) => (req, res, next) => {
 };
 
 module.exports = {
+    RISORSE_DEL_LETTURISTA,
     anchePerLetturista,
     getUserRole,
     requireAdmin: requireRole('admin'),

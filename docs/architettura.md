@@ -200,6 +200,13 @@ Non c'e una tabella di permessi: con tre ruoli e quattro risorse aperte costereb
 piu di quanto renda, e sarebbe generalizzazione prematura. Se un giorno i ruoli
 saranno sei, quello sara il momento di estrarla.
 
+Gli allegati hanno una rotta sola per tutte le risorse
+(`/attachments/:resource/:id`), quindi il permesso non puo stare sul montaggio:
+lo decide il controller guardando **a cosa e attaccata** la nota. Un allegato vale
+quanto il documento che lo porta, e le risorse aperte sono quelle di
+`RISORSE_DEL_LETTURISTA`. Un test verifica che quell'elenco e le rotte montate
+dicano la stessa cosa, perche sono due espressioni dello stesso fatto.
+
 Il letturista vede di un cliente solo i campi di `CAMPI_PER_LETTURISTA`
 (`utils/customer.js`): nome, recapito, telefono. Codice fiscale, partita IVA,
 IBAN e mandato non gli vengono inviati - il taglio e sul server, nelle due sole

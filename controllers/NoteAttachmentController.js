@@ -1,6 +1,25 @@
 const mongoose = require('mongoose');
 const { getResourceModel } = require('../config/resources');
 const NoteAttachment = require('../models/NoteAttachment');
+const { RISORSE_DEL_LETTURISTA, getUserRole } = require('../middlewares/AuthorizationMiddleware');
+
+// Un allegato vale quanto il documento a cui e attaccato: le note su un
+// contatore le puo leggere chi puo leggere quel contatore, quelle su una fattura
+// no. La rotta e una sola per tutte le risorse, quindi il controllo si fa qui,
+// sul nome della risorsa che arriva nell'indirizzo - altrimenti aprire gli
+// allegati al letturista gli aprirebbe anche quelli delle fatture.
+const puoAccedere = (req, risorsa, { scrittura = false } = {}) => {
+    const ruolo = getUserRole(req.user);
+
+    if (ruolo === 'admin') {
+        return true;
+    }
+
+    const permesso = RISORSE_DEL_LETTURISTA[risorsa];
+    return ruolo === 'letturista' && Boolean(permesso) && (!scrittura || permesso.scrittura);
+};
+
+const permessiInsufficienti = (res) => res.status(403).json({ error: 'Permessi insufficienti' });
 
 const allowedAttachmentTypes = new Set([
     'application/msword',
@@ -108,6 +127,11 @@ class NoteAttachmentController {
     static async list(req, res) {
         try {
             const { resource, recordId } = req.params;
+
+            if (!puoAccedere(req, resource)) {
+                return permessiInsufficienti(res);
+            }
+
             const Model = getResourceModel(resource);
             const recordFilter = getRecordFilter(recordId);
 
@@ -129,6 +153,10 @@ class NoteAttachmentController {
 
     static async create(req, res) {
         try {
+            if (!puoAccedere(req, req.params.resource, { scrittura: true })) {
+                return permessiInsufficienti(res);
+            }
+
             const { resource, recordId } = req.params;
             const Model = getResourceModel(resource);
             const recordFilter = getRecordFilter(recordId);
@@ -172,6 +200,10 @@ class NoteAttachmentController {
                 return res.status(404).json({ error: 'Attachment not found' });
             }
 
+            if (!puoAccedere(req, attachment.resource)) {
+                return permessiInsufficienti(res);
+            }
+
             res.set('Content-Type', attachment.contentType);
             res.set('Content-Length', String(attachment.size));
             res.set('Cache-Control', 'private, max-age=3600');
@@ -186,11 +218,18 @@ class NoteAttachmentController {
 
     static async remove(req, res) {
         try {
-            const deleted = await NoteAttachment.findByIdAndDelete(req.params.id);
-            if (!deleted) {
+            // Si guarda prima di cancellare: sapere a cosa e attaccato serve a
+            // decidere se chi chiede puo farlo.
+            const attachment = await NoteAttachment.findById(req.params.id);
+            if (!attachment) {
                 return res.status(404).json({ error: 'Attachment not found' });
             }
 
+            if (!puoAccedere(req, attachment.resource, { scrittura: true })) {
+                return permessiInsufficienti(res);
+            }
+
+            await NoteAttachment.deleteOne({ _id: attachment._id });
             return res.status(204).send();
         } catch (error) {
             console.error(error);

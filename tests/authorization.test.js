@@ -1,7 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const {
+    RISORSE_DEL_LETTURISTA,
     anchePerLetturista,
     getUserRole,
     requireAdmin,
@@ -103,4 +106,37 @@ test('di un cliente il letturista vede come trovarlo, non come pagarlo', () => {
         assert.equal(ridotto[campo], undefined, `${campo} non deve uscire`);
     });
     assert.ok(!CAMPI_PER_LETTURISTA.some((campo) => /iban|fiscale|partita|mandato|pec/i.test(campo)));
+});
+
+test('le risorse del letturista sono le stesse che le rotte gli aprono', () => {
+    // Gli allegati hanno una rotta sola per tutte le risorse, quindi il permesso
+    // lo decidono guardando questo elenco. Se divergesse da come sono montate le
+    // rotte, un allegato su una fattura potrebbe uscire da li.
+    const montate = fs.readFileSync(path.join(__dirname, '..', 'routes', 'index.js'), 'utf8')
+        .split('\n')
+        .filter((riga) => riga.includes('anchePerLetturista'))
+        .map((riga) => riga.match(/'\/(\w+)'/)?.[1])
+        .filter(Boolean);
+
+    assert.deepEqual(montate.sort(), Object.keys(RISORSE_DEL_LETTURISTA).sort());
+
+    // E la scrittura e concessa solo dove le rotte la concedono.
+    const conScrittura = fs.readFileSync(path.join(__dirname, '..', 'routes', 'index.js'), 'utf8')
+        .split('\n')
+        .filter((riga) => riga.includes('scrittura: true'))
+        .map((riga) => riga.match(/'\/(\w+)'/)?.[1])
+        .filter(Boolean);
+
+    const dichiarate = Object.entries(RISORSE_DEL_LETTURISTA)
+        .filter(([, permesso]) => permesso.scrittura)
+        .map(([nome]) => nome);
+
+    assert.deepEqual(conScrittura.sort(), dichiarate.sort());
+});
+
+test('gli allegati delle fatture restano fuori dalla portata del letturista', () => {
+    // La regola e che un allegato vale quanto il documento a cui e attaccato.
+    ['fatture', 'consegne', 'scadenze', 'listini', 'servizi', 'articoli'].forEach((risorsa) => {
+        assert.equal(RISORSE_DEL_LETTURISTA[risorsa], undefined, `${risorsa} non deve essergli aperta`);
+    });
 });
