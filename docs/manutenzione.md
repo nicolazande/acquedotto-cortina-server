@@ -101,6 +101,22 @@ elimina la scadenza **solo se nessun'altra la richiama**
 (`services/invoiceDeletionService.js`). E un dato da chiarire con chi teneva la
 contabilita prima di toccarlo: sono 3 casi su 2.702, tutti anteriori al 2026.
 
+### Tre contatori collegati a un edificio con un altro nome
+
+Su tre contatori il nome scritto e l'edificio collegato non coincidono, e in
+tutti e tre i casi i due edifici sono unita vicine dello stesso complesso:
+
+| contatore | nome scritto | collegato a | dove |
+|---|---|---|---|
+| 16292009 | CASA B | CASA D | Acquabona |
+| 202923 | CONDOMINIO SAN MARCO B | CONDOMINIO SAN MARCO A | Zuel di Sotto |
+| 9612864fisso4 | CAPANNONE F.LLI PIZZOLOTTO | CAPANNONE  PIZZOLOTTO | Pian da Lago |
+
+Il terzo e quasi certamente lo stesso capannone scritto in due modi. Gli altri
+due sono unita diverse: uno dei due dati e sbagliato, ma quale lo sa solo chi
+conosce gli immobili. Il codice non li tocca; `report:integrita` non li segnala
+perche il collegamento e valido - punta a un edificio che esiste.
+
 ### La penale per il ritardo si addebita una volta sola
 
 I 6 euro di mora scattano guardando la scadenza precedente del cliente, e la
@@ -235,7 +251,7 @@ numerava le fatture per cliente e non globalmente.
 
 ## Deploy
 
-### Prima di mandare in produzione: due passaggi obbligatori
+### Prima di mandare in produzione: i passaggi obbligatori
 
 **1. Scrivere il ruolo sugli account che non ce l'hanno.**
 
@@ -269,7 +285,22 @@ non funziona: su 138 coppie dichiarate da Gesco ne indovinava 117, ne sbagliava
 collegamento lo mette una persona, perche un legame sbagliato racconta una
 storia falsa, che e peggio di una storia mancante.
 
-**3. Rimettere il punto decimale alle coordinate.**
+**3. Collegare i contatori al loro edificio.**
+
+Nell'archivio il nome dell'edificio arriva come testo (`nome_edificio`) e per 151
+contatori **attivi** il collegamento vero non era mai stato scritto: sulla scheda
+si leggeva "CASA DIMAI.FLORO", ma la relazione Edificio restava vuota e il
+contatore non compariva sulla mappa. Chi va a leggere non lo trovava.
+
+Lo stesso comando ne collega 149. Il criterio e stretto e verificabile: un solo
+edificio con quel nome, e gli altri contatori con lo stesso nome - gia collegati
+- puntano tutti li. Ognuno dei 149 ha quindi una seconda conferma indipendente.
+
+I 2 rimasti sono elencati e vanno decisi a mano, perche il nome da solo non
+basta: `161064558A` ("CASA B") e `9612864fisso3` ("CAPANNONE F.LLI PIZZOLOTTO").
+Indovinare manderebbe l'operatore all'indirizzo sbagliato.
+
+**4. Rimettere il punto decimale alle coordinate.**
 
 Lo stesso comando corregge un edificio importato con la longitudine `12142838`
 invece di `12.142838`. Finche non lo si esegue quell'edificio resta fuori dalla
@@ -277,7 +308,7 @@ mappa, contato fra quelli senza posizione: e cio che era gia successo in
 produzione, dove la mappa mostrava il mondo intero perche doveva inquadrare
 anche un punto dall'altra parte del pianeta.
 
-**4. Controllare `JWT_SECRET` sul servizio.**
+**5. Controllare `JWT_SECRET` sul servizio.**
 
 E il segreto con cui si firmano i token di accesso: chi lo conosce puo firmarsi
 un accesso da amministratore. Il server ora **rifiuta di partire** se manca o se

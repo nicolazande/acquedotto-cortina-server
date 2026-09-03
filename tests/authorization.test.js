@@ -19,10 +19,10 @@ const rispostaFinta = () => {
     return risposta;
 };
 
-const esegui = (guardia, user, metodo = 'GET') => {
+const esegui = (guardia, user, metodo = 'GET', percorso = '/') => {
     const res = rispostaFinta();
     let passato = false;
-    guardia({ user, method: metodo }, res, () => { passato = true; });
+    guardia({ user, method: metodo, path: percorso }, res, () => { passato = true; });
     return { passato, stato: res.stato };
 };
 
@@ -60,14 +60,14 @@ test('il letturista guarda le anagrafiche e scrive solo dove gli e concesso', ()
     const amministratore = { role: 'admin' };
 
     // Una risorsa aperta in sola lettura: puo consultarla, non cambiarla.
-    const soloLettura = anchePerLetturista();
+    const soloLettura = anchePerLetturista('clienti');
     assert.deepEqual(esegui(soloLettura, letturista, 'GET'), { passato: true, stato: null });
     ['POST', 'PUT', 'DELETE'].forEach((metodo) => {
         assert.deepEqual(esegui(soloLettura, letturista, metodo), { passato: false, stato: 403 });
     });
 
     // Le letture invece le registra: e il suo lavoro.
-    const conScrittura = anchePerLetturista({ scrittura: true });
+    const conScrittura = anchePerLetturista('letture');
     ['GET', 'POST', 'PUT'].forEach((metodo) => {
         assert.deepEqual(esegui(conScrittura, letturista, metodo), { passato: true, stato: null });
     });
@@ -85,8 +85,49 @@ test('il letturista non entra dalle porte degli altri', () => {
     assert.deepEqual(esegui(requireCustomer, { role: 'letturista' }), { passato: false, stato: 403 });
 
     // E un ruolo assente non diventa letturista per distrazione.
-    assert.deepEqual(esegui(anchePerLetturista(), undefined), { passato: false, stato: 403 });
-    assert.deepEqual(esegui(anchePerLetturista({ scrittura: true }), { role: null }), { passato: false, stato: 403 });
+    assert.deepEqual(esegui(anchePerLetturista('clienti'), undefined), { passato: false, stato: 403 });
+    assert.deepEqual(esegui(anchePerLetturista('letture'), { role: null }), { passato: false, stato: 403 });
+});
+
+test('dentro una risorsa aperta, le sotto-rotte non dichiarate restano chiuse', () => {
+    const letturista = { role: 'letturista' };
+    const clienti = anchePerLetturista('clienti');
+
+    // L'elenco, la scheda e le relazioni dichiarate.
+    assert.equal(esegui(clienti, letturista, 'GET', '/').passato, true);
+    assert.equal(esegui(clienti, letturista, 'GET', '/507f1f77bcf86cd799439011').passato, true);
+    assert.equal(esegui(clienti, letturista, 'GET', '/507f1f77bcf86cd799439011/contatori').passato, true);
+
+    // Sotto `/clienti` vivono anche le fatture del cliente, l'anteprima di
+    // fatturazione e il suo accesso al portale: soldi e credenziali, non letture.
+    ['/507f1f77bcf86cd799439011/fatture',
+        '/507f1f77bcf86cd799439011/fatturazione',
+        '/507f1f77bcf86cd799439011/portal-user'].forEach((percorso) => {
+        assert.deepEqual(esegui(clienti, letturista, 'GET', percorso), { passato: false, stato: 403 }, percorso);
+    });
+
+    // Lo stesso sotto le letture: le righe di fattura e il calcolo sono importi.
+    const letture = anchePerLetturista('letture');
+    assert.equal(esegui(letture, letturista, 'GET', '/507f1f77bcf86cd799439011/contatore').passato, true);
+    ['/507f1f77bcf86cd799439011/servizi', '/507f1f77bcf86cd799439011/calcolo'].forEach((percorso) => {
+        assert.deepEqual(esegui(letture, letturista, 'GET', percorso), { passato: false, stato: 403 }, percorso);
+    });
+
+    // E niente listini dalla scheda del contatore.
+    const contatori = anchePerLetturista('contatori');
+    assert.equal(esegui(contatori, letturista, 'GET', '/507f1f77bcf86cd799439011/edificio').passato, true);
+    assert.deepEqual(esegui(contatori, letturista, 'GET', '/507f1f77bcf86cd799439011/listino'), { passato: false, stato: 403 });
+
+    // L'amministratore passa da tutte, che siano dichiarate o no.
+    ['/507f1f77bcf86cd799439011/fatture', '/507f1f77bcf86cd799439011/portal-user'].forEach((percorso) => {
+        assert.equal(esegui(clienti, { role: 'admin' }, 'GET', percorso).passato, true, percorso);
+    });
+});
+
+test('una risorsa non prevista non si puo nemmeno montare', () => {
+    // Meglio un server che non parte di uno che apre le fatture per un refuso.
+    assert.throws(() => anchePerLetturista('fatture'), /non prevista/);
+    assert.throws(() => anchePerLetturista('contatore'), /non prevista/);
 });
 
 test('di un cliente il letturista vede come trovarlo, non come pagarlo', () => {
@@ -119,19 +160,29 @@ test('le risorse del letturista sono le stesse che le rotte gli aprono', () => {
         .filter(Boolean);
 
     assert.deepEqual(montate.sort(), Object.keys(RISORSE_DEL_LETTURISTA).sort());
+});
 
-    // E la scrittura e concessa solo dove le rotte la concedono.
-    const conScrittura = fs.readFileSync(path.join(__dirname, '..', 'routes', 'index.js'), 'utf8')
-        .split('\n')
-        .filter((riga) => riga.includes('scrittura: true'))
-        .map((riga) => riga.match(/'\/(\w+)'/)?.[1])
-        .filter(Boolean);
+test('le relazioni concesse al letturista esistono davvero fra le rotte', () => {
+    // Un nome sbagliato nell'elenco non darebbe un errore: chiuderebbe in
+    // silenzio una relazione che al letturista serve, e se ne accorgerebbe lui
+    // davanti a un contatore, in mezzo alla neve.
+    const fileDellaRisorsa = {
+        edifici: 'edificioRoutes.js',
+        contatori: 'contatoreRoutes.js',
+        clienti: 'clienteRoutes.js',
+        letture: 'letturaRoutes.js',
+    };
 
-    const dichiarate = Object.entries(RISORSE_DEL_LETTURISTA)
-        .filter(([, permesso]) => permesso.scrittura)
-        .map(([nome]) => nome);
-
-    assert.deepEqual(conScrittura.sort(), dichiarate.sort());
+    Object.entries(RISORSE_DEL_LETTURISTA).forEach(([risorsa, { relazioni }]) => {
+        const file = fs.readFileSync(path.join(__dirname, '..', 'routes', fileDellaRisorsa[risorsa]), 'utf8');
+        relazioni.forEach((relazione) => {
+            // Il nome del parametro cambia da un file all'altro (`:id`,
+            // `:edificioId`): quel che conta e che sia una rotta di lettura con
+            // un solo parametro davanti alla relazione.
+            const rotta = new RegExp(`router\\.get\\('/:\\w+/${relazione}'`);
+            assert.ok(rotta.test(file), `${risorsa}: manca la rotta di lettura per ${relazione}`);
+        });
+    });
 });
 
 test('gli allegati delle fatture restano fuori dalla portata del letturista', () => {

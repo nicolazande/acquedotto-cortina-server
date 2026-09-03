@@ -33,10 +33,10 @@ router.use('/portale-cliente', AuthMiddleware, requireCustomer, customerPortalRo
 // aperte al letturista stanno sopra, elencate una per una.
 router.use(AuthMiddleware);
 
-router.use('/edifici', anchePerLetturista(), edificioRoutes);
-router.use('/contatori', anchePerLetturista(), contatoreRoutes);
-router.use('/clienti', anchePerLetturista(), clienteRoutes);
-router.use('/letture', anchePerLetturista({ scrittura: true }), letturaRoutes);
+router.use('/edifici', anchePerLetturista('edifici'), edificioRoutes);
+router.use('/contatori', anchePerLetturista('contatori'), contatoreRoutes);
+router.use('/clienti', anchePerLetturista('clienti'), clienteRoutes);
+router.use('/letture', anchePerLetturista('letture'), letturaRoutes);
 // Gli allegati servono tutte le risorse con una rotta sola: il permesso lo
 // decide il controller, guardando a cosa e attaccata la nota.
 router.use('/attachments', attachmentRoutes);

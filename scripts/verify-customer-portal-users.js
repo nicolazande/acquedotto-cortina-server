@@ -1,6 +1,9 @@
-// Stato degli account del portale clienti: quanti, attivi, senza email.
+// Verifica il ciclo di vita di un account del portale clienti: creazione,
+// password troppo corta rifiutata, modifica, disattivazione e riattivazione.
 //
-// E un rapporto, non un test: stampa cio che trova e non fa fallire nulla.
+// E un test, non un rapporto: lavora su un cliente finto che crea e cancella, e
+// fallisce se qualcosa non torna. Lo stato degli account veri lo racconta
+// `report:integrita`, che segnala anche gli accessi rimasti senza cliente.
 const { runScript } = require('./utils/runScript');
 const { callController, withSilencedErrors } = require('./utils/callController');
 const assert = require('assert');

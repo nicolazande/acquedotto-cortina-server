@@ -283,6 +283,67 @@ const collegaContatoriSostituiti = async () => {
     console.log(`  collegati: ${dichiarati.length}`);
 };
 
+// Il nome dell'edificio arriva dall'archivio come testo (`nome_edificio`), e per
+// una parte dei contatori il collegamento vero non e mai stato scritto: sulla
+// scheda si legge "CASA DIMAI.FLORO" ma la relazione Edificio resta vuota, e chi
+// va a leggere i contatori non li trova sulla mappa. Si collega solo quando la
+// risposta e certa: un unico edificio con quel nome, e gli altri contatori con
+// lo stesso nome - gia collegati - puntano tutti li. Gli ambigui restano fuori e
+// vengono elencati, perche indovinare l'edificio sbagliato manda l'operatore in
+// un altro posto.
+const senzaAccenti = (testo) => String(testo || '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+
+const collegaContatoriAlLoroEdificio = async () => {
+    const edifici = await Edificio.find().select('descrizione').lean();
+    const perNome = new Map();
+    edifici.forEach((e) => {
+        const nome = senzaAccenti(e.descrizione);
+        if (!nome) return;
+        if (!perNome.has(nome)) perNome.set(nome, []);
+        perNome.get(nome).push(e);
+    });
+
+    const contatori = await Contatore.find().select('seriale codice nome_edificio edificio').lean();
+
+    // Come sono gia collegati i contatori che portano lo stesso nome.
+    const gia = new Map();
+    contatori.forEach((c) => {
+        if (!c.edificio) return;
+        const nome = senzaAccenti(c.nome_edificio);
+        if (!nome) return;
+        if (!gia.has(nome)) gia.set(nome, new Set());
+        gia.get(nome).add(String(c.edificio));
+    });
+
+    const daCollegare = [];
+    const ambigui = [];
+    contatori
+        .filter((c) => !c.edificio && senzaAccenti(c.nome_edificio))
+        .forEach((c) => {
+            const nome = senzaAccenti(c.nome_edificio);
+            const candidati = perNome.get(nome) || [];
+            const conferme = gia.get(nome);
+            const concorde = !conferme || (conferme.size === 1 && candidati.length === 1 && conferme.has(String(candidati[0]._id)));
+            if (candidati.length === 1 && concorde) daCollegare.push({ c, edificio: candidati[0] });
+            else ambigui.push({ c, candidati, conferme });
+        });
+
+    console.log('Contatori senza edificio collegato:');
+    console.log(`  da collegare (nome univoco e concorde): ${daCollegare.length}`);
+    console.log(`  da sistemare a mano: ${ambigui.length}`);
+    ambigui.forEach(({ c, candidati, conferme }) =>
+        console.log(`    ${c.seriale || c.codice} "${c.nome_edificio}": ${candidati.length} edifici con quel nome, ${conferme ? conferme.size : 0} destinazioni fra i gia collegati`));
+
+    if (!applica || daCollegare.length === 0) {
+        return;
+    }
+
+    for (const { c, edificio } of daCollegare) {
+        await Contatore.collection.updateOne({ _id: c._id }, { $set: { edificio: edificio._id } });
+    }
+    console.log(`  collegati: ${daCollegare.length}`);
+};
+
 const main = async () => {
     console.log(applica ? '== APPLICO LE CORREZIONI ==\n' : '== SOLA LETTURA (usa --fix per applicare) ==\n');
 
@@ -301,6 +362,8 @@ const main = async () => {
     await correggiCoordinateEdifici();
     console.log('');
     await collegaContatoriSostituiti();
+    console.log('');
+    await collegaContatoriAlLoroEdificio();
 };
 
 runScript(main);

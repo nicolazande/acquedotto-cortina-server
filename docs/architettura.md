@@ -186,26 +186,55 @@ Il permesso si decide in `routes/index.js`, e **l'ordine e la protezione**:
 ```
 router.use(AuthMiddleware);                                   da qui serve l'accesso
 
-router.use('/edifici',   anchePerLetturista(),  ...)          sola lettura
-router.use('/contatori', anchePerLetturista(),  ...)
-router.use('/clienti',   anchePerLetturista(),  ...)
-router.use('/letture',   anchePerLetturista({ scrittura: true }), ...)
+router.use('/edifici',   anchePerLetturista('edifici'),   ...)
+router.use('/contatori', anchePerLetturista('contatori'), ...)
+router.use('/clienti',   anchePerLetturista('clienti'),   ...)
+router.use('/letture',   anchePerLetturista('letture'),   ...)
 
 router.use(requireAdmin);                                     sotto questa riga, tutto chiuso
 router.use('/fatture',   ...)                                 e chi aggiunge una rotta
 router.use('/consegne',  ...)                                 la trova gia protetta
 ```
 
-Non c'e una tabella di permessi: con tre ruoli e quattro risorse aperte costerebbe
-piu di quanto renda, e sarebbe generalizzazione prematura. Se un giorno i ruoli
-saranno sei, quello sara il momento di estrarla.
+Il montaggio dice **quale** risorsa; cosa se ne puo fare lo dice
+`RISORSE_DEL_LETTURISTA` in `middlewares/AuthorizationMiddleware.js`, in un posto
+solo:
 
-Il profilo (`GET /api/auth/profile`) restituisce anche `risorse`, cioe cosa quel
-ruolo puo aprire. Il client ci disegna il menu e i riquadri delle relazioni:
-**l'elenco e uno solo**, deciso dal server che concede i permessi, e il client
-non tiene una propria idea di chi vede cosa che col tempo direbbe altro. Un
-riquadro verso una risorsa non concessa - Fatture sulla scheda cliente, Listino
-su quella di un contatore - semplicemente non compare.
+| risorsa | scrittura | relazioni raggiungibili |
+|---|---|---|
+| `edifici` | no | `contatori` |
+| `contatori` | no | `cliente`, `edificio`, `letture`, `storia` |
+| `clienti` | no | `contatori` |
+| `letture` | **si** | `contatore` |
+
+Le relazioni contano quanto la risorsa. Sotto `/clienti` vivono anche
+`/:id/fatture`, `/:id/fatturazione` e `/:id/portal-user`; sotto `/letture`,
+`/:id/servizi` e `/:id/calcolo`. Aprire la risorsa senza dire quali sotto-rotte
+apre dava al letturista fatture, importi e credenziali del portale: nascosti nel
+menu, ma raggiungibili scrivendo l'indirizzo. Ora tutto cio che non e dichiarato
+e chiuso, quindi anche una sotto-rotta aggiunta domani nasce chiusa, come le
+risorse nuove sotto `requireAdmin`. Montare una risorsa non prevista solleva un
+errore all'avvio: meglio un server che non parte di uno che apre le fatture per
+un refuso.
+
+Non c'e un sistema di permessi generale: con tre ruoli e quattro risorse aperte
+costerebbe piu di quanto renda, e sarebbe generalizzazione prematura. Se un
+giorno i ruoli saranno sei, quello sara il momento di estrarlo.
+
+Il profilo (`GET /api/auth/profile`) restituisce anche `risorse` (cosa quel ruolo
+puo aprire) e `scrivibili` (cosa puo anche cambiare). Il client ci disegna il
+menu, i riquadri delle relazioni e i pulsanti: **l'elenco e uno solo**, deciso
+dal server che concede i permessi, e il client non tiene una propria idea di chi
+vede cosa che col tempo direbbe altro. Un riquadro verso una risorsa non
+concessa - Fatture sulla scheda cliente, Listino su quella di un contatore - non
+compare, e su cio che si puo solo consultare spariscono "Nuovo", "Modifica",
+"Elimina" e "Associa": un pulsante che risponde 403 e peggio di un pulsante
+assente.
+
+Restano fuori da questo conto i pannelli che non appartengono a nessuna risorsa -
+accesso al portale di un cliente, anteprima di fatturazione, calcolo di una
+lettura. Sono lavoro d'ufficio e si dichiarano tali (`soloAmministratore`), cosi
+non vengono disegnati su schede che il letturista apre legittimamente.
 
 Gli allegati hanno una rotta sola per tutte le risorse
 (`/attachments/:resource/:id`), quindi il permesso non puo stare sul montaggio:
