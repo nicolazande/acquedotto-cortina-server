@@ -118,6 +118,7 @@ classDiagram
         String causale
         String note
         String foto
+        Ref precedente
         Ref listino
         Ref cliente
         Ref edificio
@@ -267,6 +268,7 @@ classDiagram
     User "1" ..> "*" AuditLog : actor (conserva)
     Fattura "1" --> "*" Consegna : fattura (cascata)
     Cliente "1" ..> "*" Consegna : cliente (blocca)
+    Contatore "1" ..> "*" Contatore : precedente (blocca)
     Listino "1" ..> "*" Contatore : listino (blocca)
     Cliente "1" ..> "*" Contatore : cliente (blocca)
     Edificio "1" ..> "*" Contatore : edificio (blocca)

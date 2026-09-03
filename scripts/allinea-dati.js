@@ -12,8 +12,10 @@
 //   - utenti: scrive il ruolo dove manca, perche un ruolo assente non deve
 //     dipendere da un valore di ripiego nel codice
 //   - edifici: rimette il punto decimale nelle coordinate che l'hanno perso
+//   - contatori: collega ogni contatore a quello che ha sostituito
 const { runScript } = require('./utils/runScript');
 const Cliente = require('../models/Cliente');
+const Contatore = require('../models/Contatore');
 const Edificio = require('../models/Edificio');
 const User = require('../models/User');
 const Fattura = require('../models/Fattura');
@@ -230,6 +232,57 @@ const correggiCoordinateEdifici = async () => {
     console.log(`  corretti: ${correggibili.length}`);
 };
 
+// La storia di un punto di fornitura: quale contatore ha preso il posto di quale.
+//
+// Nell'archivio importato il legame esiste in una sola forma verificabile: il
+// contatore che sostituisce un altro porta nel seriale interno il codice del
+// predecessore, scritto "<codice>_2". Quella e una dichiarazione del gestionale
+// precedente, non una deduzione, e si ricostruisce senza margine di errore.
+//
+// I subentri - stessa matricola, intestatario diverso - non hanno un legame
+// scritto da nessuna parte: ricavarli dall'ordine delle date sembra funzionare e
+// non funziona. Provato: su 138 coppie dichiarate da Gesco ne indovinava 117,
+// ne sbagliava 21 e ne inventava altre 46. Un collegamento sbagliato racconta
+// una storia falsa, che e peggio di una storia mancante, quindi qui non si
+// indovina: si elencano i candidati e li conferma una persona.
+const collegaContatoriSostituiti = async () => {
+    const contatori = await Contatore.find().select('codice seriale seriale_interno cliente precedente').lean();
+    const perCodice = new Map(contatori.map((c) => [String(c.codice), c]));
+
+    const dichiarati = contatori
+        .map((c) => {
+            const corrisponde = String(c.seriale_interno || '').match(/^(\d+)_\d+$/);
+            const vecchio = corrisponde && perCodice.get(corrisponde[1]);
+            return vecchio && String(vecchio._id) !== String(c._id) ? { c, vecchio } : null;
+        })
+        .filter(Boolean)
+        .filter(({ c, vecchio }) => String(c.precedente || '') !== String(vecchio._id));
+
+    console.log('Contatori che dichiarano di aver sostituito un altro:');
+    console.log(`  da collegare: ${dichiarati.length}`);
+    dichiarati.forEach(({ c, vecchio }) => console.log(`    ${c.codice} ha sostituito ${vecchio.codice}`));
+
+    // I subentri restano da confermare a mano: si contano soltanto.
+    const perSeriale = new Map();
+    contatori.forEach((c) => {
+        const seriale = String(c.seriale || '').trim();
+        if (!seriale) return;
+        if (!perSeriale.has(seriale)) perSeriale.set(seriale, []);
+        perSeriale.get(seriale).push(c);
+    });
+    const daConfermare = [...perSeriale.values()].filter((gruppo) => gruppo.length > 1).length;
+    console.log(`  matricole condivise da piu contatori (subentri da confermare a mano): ${daConfermare}`);
+
+    if (!applica || dichiarati.length === 0) {
+        return;
+    }
+
+    for (const { c, vecchio } of dichiarati) {
+        await Contatore.collection.updateOne({ _id: c._id }, { $set: { precedente: vecchio._id } });
+    }
+    console.log(`  collegati: ${dichiarati.length}`);
+};
+
 const main = async () => {
     console.log(applica ? '== APPLICO LE CORREZIONI ==\n' : '== SOLA LETTURA (usa --fix per applicare) ==\n');
 
@@ -246,6 +299,8 @@ const main = async () => {
     await scriviRuoloUtenti();
     console.log('');
     await correggiCoordinateEdifici();
+    console.log('');
+    await collegaContatoriSostituiti();
 };
 
 runScript(main);

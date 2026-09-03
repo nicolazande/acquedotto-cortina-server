@@ -1098,6 +1098,67 @@ const testManualInvoiceLines = async () => {
     }
 };
 
+// La storia di un punto di fornitura. Un contatore e solo il pezzo montato in
+// un certo periodo: quando viene sostituito ne compare uno nuovo, e senza il
+// legame fra i due la storia si spezza a ogni cambio.
+const testCounterHistory = async () => {
+    if (skipMutation) {
+        console.log('skipped');
+        return;
+    }
+
+    const createdRecords = [];
+
+    try {
+        const cliente = await createTrackedRecord(createdRecords, 'clienti', {
+            cognome: 'Smoke', nome: 'Storia', ragione_sociale: 'Smoke Storia',
+        });
+        const vecchio = await createTrackedRecord(createdRecords, 'contatori', {
+            codice: 'SMOKE-VECCHIO', seriale: 'SMOKE-SER-1', cliente: cliente._id,
+        });
+        const nuovo = await createTrackedRecord(createdRecords, 'contatori', {
+            codice: 'SMOKE-NUOVO', seriale: 'SMOKE-SER-2', cliente: cliente._id,
+            precedente: vecchio._id,
+        });
+
+        await createTrackedRecord(createdRecords, 'letture', {
+            data_lettura: INIZIO_ANNO, consumo: 500, unita_misura: 'mc', contatore: vecchio._id,
+        });
+        await createTrackedRecord(createdRecords, 'letture', {
+            data_lettura: OGGI, consumo: 20, unita_misura: 'mc', contatore: nuovo._id,
+        });
+
+        // La catena si ricostruisce da qualunque anello, anche dal piu recente.
+        const storia = await request(`/contatori/${nuovo._id}/storia`);
+        assert(storia.body.quanti === 2, `the chain should hold both meters, got ${storia.body.quanti}`);
+
+        const codici = storia.body.catena.map((anello) => anello.codice);
+        assert(
+            codici.join(' -> ') === 'SMOKE-VECCHIO -> SMOKE-NUOVO',
+            `the chain should run oldest first, got ${codici.join(' -> ')}`
+        );
+
+        // Ed e la lettura di chiusura del vecchio a dire dove si e fermato.
+        assert(
+            storia.body.catena[0].ultima_lettura?.indice === 500,
+            `the replaced meter should carry its closing index, got ${JSON.stringify(storia.body.catena[0].ultima_lettura)}`
+        );
+
+        // Anche partendo dal vecchio si vede chi lo ha sostituito.
+        const daVecchio = await request(`/contatori/${vecchio._id}/storia`);
+        assert(daVecchio.body.quanti === 2, 'the chain should be the same seen from either end');
+
+        // Un contatore che ne ha sostituito un altro non lo lascia cancellare:
+        // la storia si spezzerebbe a meta.
+        const rifiutato = await request(`/contatori/${vecchio._id}`, { method: 'DELETE' })
+            .then(() => null)
+            .catch((errore) => errore);
+        assert(rifiutato, 'deleting a meter that another one replaced must be refused');
+    } finally {
+        await deleteCreatedRecords(createdRecords);
+    }
+};
+
 const main = async () => {
     console.log(`Smoke API target: ${apiUrl}`);
     await step('health endpoint', testHealth);
@@ -1112,6 +1173,7 @@ const main = async () => {
     await step('referential integrity', testReferentialIntegrity);
     await step('late fee charged once', testDelayFeeChargedOnce);
     await step('manual invoice lines and totals', testManualInvoiceLines);
+    await step('counter history across a replacement', testCounterHistory);
     await step('note attachments create/list/file/delete', testAttachments);
 
     if (residui.length > 0) {

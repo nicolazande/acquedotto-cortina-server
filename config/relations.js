@@ -43,6 +43,9 @@ const DIPENDENZE = {
     ],
     Contatore: [
         { modello: 'Lettura', campo: 'contatore', politica: 'blocca', descrizione: 'letture' },
+        // Cancellare un contatore che un altro ha sostituito spezzerebbe la
+        // storia del punto di fornitura a meta.
+        { modello: 'Contatore', campo: 'precedente', politica: 'blocca', descrizione: 'contatori che lo hanno sostituito' },
     ],
     Edificio: [
         { modello: 'Contatore', campo: 'edificio', politica: 'blocca', descrizione: 'contatori' },

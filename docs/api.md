@@ -129,6 +129,11 @@ GET    /api/portale-cliente                                 getPortalData
 GET    /api/portale-cliente/fatture/:id/pdf                 downloadInvoicePdf
 ```
 
+`GET /api/contatori/:id/storia` ricostruisce la storia del punto di fornitura
+seguendo `precedente`: la catena dei contatori che si sono succeduti, ciascuno con
+matricola, intestatario, periodo, numero di letture e indice di apertura e chiusura.
+Si ottiene la stessa catena partendo da qualunque anello.
+
 ### /api/edifici
 ```text
 POST   /api/edifici                                         createEdificio

@@ -4,6 +4,7 @@ const Edificio = require('../models/Edificio');
 const Listino = require('../models/Listino');
 const Lettura = require('../models/Lettura');
 const { sendPaginated } = require('./utils/paginatedQuery');
+const { storiaContatore } = require('../services/counterHistoryService');
 const {
     associateRecords,
     createRecord,
@@ -11,6 +12,7 @@ const {
     getManyByField,
     getPopulatedRelation,
     getRecord,
+    sendServiceError,
     updateRecord,
 } = require('./utils/controllerActions');
 
@@ -18,7 +20,16 @@ const { contatoreViews } = require('../config/listViews');
 
 const populate = 'edificio listino cliente';
 
+const getStoria = async (req, res) => {
+    try {
+        res.status(200).json(await storiaContatore(req.params.id));
+    } catch (error) {
+        sendServiceError(res, error, 'Error fetching storia contatore', error.status || 400);
+    }
+};
+
 module.exports = {
+    getStoria,
     createContatore: createRecord(Contatore, { name: 'Contatore' }),
     getContatori: (req, res) => sendPaginated(Contatore, req, res, {
         views: contatoreViews,

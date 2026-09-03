@@ -238,7 +238,21 @@ server**, altrimenti non entrano piu. Chi ha un cliente collegato diventa
 Il server lo ricorda da solo: all'avvio, se trova account senza ruolo, li elenca
 in console.
 
-**2. Rimettere il punto decimale alle coordinate.**
+**2. Collegare i contatori sostituiti.**
+
+Lo stesso comando collega ogni contatore a quello che ha sostituito, leggendo la
+dichiarazione che il gestionale precedente lasciava nel seriale interno
+("<codice del vecchio>_2"). Sono 13 sostituzioni, e si ricostruiscono senza
+margine di errore: verificate una per una contro il report di Gesco.
+
+I **subentri** - stessa matricola, intestatario diverso - non hanno un legame
+scritto da nessuna parte. Ricavarli dall'ordine delle date era stato provato e
+non funziona: su 138 coppie dichiarate da Gesco ne indovinava 117, ne sbagliava
+21 e ne inventava 46. Il comando li conta e basta (125 matricole condivise): il
+collegamento lo mette una persona, perche un legame sbagliato racconta una
+storia falsa, che e peggio di una storia mancante.
+
+**3. Rimettere il punto decimale alle coordinate.**
 
 Lo stesso comando corregge un edificio importato con la longitudine `12142838`
 invece di `12.142838`. Finche non lo si esegue quell'edificio resta fuori dalla
@@ -246,7 +260,7 @@ mappa, contato fra quelli senza posizione: e cio che era gia successo in
 produzione, dove la mappa mostrava il mondo intero perche doveva inquadrare
 anche un punto dall'altra parte del pianeta.
 
-**3. Controllare `JWT_SECRET` sul servizio.**
+**4. Controllare `JWT_SECRET` sul servizio.**
 
 E il segreto con cui si firmano i token di accesso: chi lo conosce puo firmarsi
 un accesso da amministratore. Il server ora **rifiuta di partire** se manca o se

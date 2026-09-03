@@ -4,6 +4,7 @@ const ContatoreController = require('../controllers/ContatoreController');
 
 router.post('/', ContatoreController.createContatore);
 router.get('/', ContatoreController.getContatori);
+router.get('/:id/storia', ContatoreController.getStoria);
 router.get('/:id', ContatoreController.getContatore);
 router.put('/:id', ContatoreController.updateContatore);
 router.delete('/:id', ContatoreController.deleteContatore);
