@@ -187,6 +187,35 @@ db.letture.find({fatturata:true}).toArray()
 | Tracciamento | Sono registrate le modifiche a fatture, righe servizio, listini, fasce e articoli. Restano fuori clienti, contatori, edifici e letture. |
 | react-scripts 3 | Il client dipende da una versione del 2019 che richiede `--openssl-legacy-provider`. Funziona, ma e il debito tecnico piu rilevante del progetto. |
 
+## Trasmettere le fatture elettroniche
+
+Il gestionale prepara i file; **come escono** lo decide `CANALE_TRASMISSIONE_SDI`:
+
+| valore | cosa succede |
+|--------|--------------|
+| `intermediario` (predefinito) | il file resta in coda e si scarica con **XML** dalla pagina Consegne, per consegnarlo a chi trasmette |
+| `pec` | il file parte da solo verso la PEC dello SdI |
+
+**Il nome del file deve essere unico per sempre.** Lo SdI rifiuta un file il cui
+nome ha gia visto, quindi ogni trasmissione si prende un progressivo nuovo da un
+contatore dedicato (`trasmissioni`), che non riparte mai - nemmeno a inizio anno -
+e viene scritto sulla consegna. Anche un secondo tentativo sulla stessa fattura
+riceve un nome nuovo, altrimenti non si potrebbe rispedire una fattura scartata.
+
+Il progressivo **non** si ricava dal numero della fattura: nell'archivio storico
+un valore cosi ottenuto si ripeterebbe 499 volte, perche il gestionale precedente
+numerava le fatture per cliente e non globalmente.
+
+**Cosa manca ancora per l'invio davvero automatico**, in ordine di necessita:
+
+1. **le ricevute dello SdI** (consegnata, scartata, mancata consegna): oggi nessuno
+   le legge, quindi una fattura scartata resterebbe "inviata" senza che nessuno lo
+   sappia. E il pezzo piu importante;
+2. la **conservazione sostitutiva** a norma, dieci anni: di solito si affida a un
+   servizio esterno;
+3. i **recapiti**: 145 clienti su 900 hanno un codice SdI vero e 35 una PEC; per gli
+   altri 720 la fattura va nel cassetto fiscale con `0000000`, che e corretto.
+
 ## Deploy
 
 ### Prima di mandare in produzione: due passaggi obbligatori

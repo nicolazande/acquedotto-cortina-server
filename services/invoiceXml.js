@@ -48,8 +48,13 @@ const progressivoInvio = (fattura) => (
     `${fattura.anno || ''}${String(fattura.numero || '0').padStart(5, '0')}`.slice(-10)
 );
 
-const nomeFile = (fattura) => (
-    `IT${CEDENTE.partitaIva}_${progressivoInvio(fattura)}.xml`
+// Il nome del file trasmesso deve essere unico per sempre presso lo SdI. Il
+// progressivo lo assegna chi trasmette (services/counters.js) e viene passato
+// qui; quello ricavato da anno e numero resta solo per l'anteprima e per lo
+// scarico manuale, dove non si sta trasmettendo nulla - e non basterebbe
+// comunque, perche nell'archivio storico si ripete 499 volte.
+const nomeFile = (fattura, progressivo) => (
+    `IT${CEDENTE.partitaIva}_${progressivo || progressivoInvio(fattura)}.xml`
 );
 
 const anagraficaCliente = (cliente, fattura) => {
@@ -150,7 +155,7 @@ const riepilogoPerAliquota = (servizi) => {
     return { righe, imponibileCents, impostaCents };
 };
 
-const buildInvoiceXml = ({ cliente, fattura, servizi }) => {
+const buildInvoiceXml = ({ cliente, fattura, progressivo, servizi }) => {
     if (!servizi?.length) {
         throw unprocessable('La fattura non ha righe: impossibile emettere la fattura elettronica.');
     }
@@ -268,7 +273,7 @@ ${riepilogo.righe.join('\n')}
 `;
 
     // Righe vuote lasciate dai campi facoltativi assenti.
-    return { filename: nomeFile(fattura), xml: xml.replace(/^\s*\n/gm, '') };
+    return { filename: nomeFile(fattura, progressivo), xml: xml.replace(/^\s*\n/gm, '') };
 };
 
 module.exports = {

@@ -84,6 +84,7 @@ classDiagram
         String tipo
         String canale
         String destinatario
+        String progressivo
         String documento
         String intestatario
         String stato

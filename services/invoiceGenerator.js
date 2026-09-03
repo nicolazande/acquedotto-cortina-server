@@ -32,6 +32,7 @@ const {
 } = require('./billingCalculator');
 const { assertInvoiceEditable } = require('./invoiceLockService');
 const { INVOICE_SERIES, invoiceCode } = require('../config/invoicing');
+const { prossimoNumero } = require('./counters');
 const { runWithOptionalTransaction } = require('./transaction');
 const { righeConOrigine, righeDellaFattura } = require('./righeFattura');
 const { createError, unprocessable } = require('../utils/errors');
@@ -93,18 +94,7 @@ const reserveInvoiceNumber = async (year, session, serie = INVOICE_SERIES) => {
         { upsert: true, session }
     );
 
-    const counter = await InvoiceCounter.findOneAndUpdate(
-        { scope, year },
-        { $inc: { value: 1 } },
-        {
-            new: true,
-            session,
-            upsert: true,
-            setDefaultsOnInsert: true,
-        }
-    ).lean();
-
-    return counter.value;
+    return prossimoNumero({ scope, year, session });
 };
 
 const getPreviousReading = (lettura, session) => {

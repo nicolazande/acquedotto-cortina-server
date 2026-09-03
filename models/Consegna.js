@@ -24,6 +24,10 @@ const consegnaSchema = new Schema(
             required: true,
         },
         destinatario: { type: String },
+        // Il progressivo con cui il file e stato trasmesso allo SdI. Cambia a
+        // ogni tentativo: il nome del file deve essere nuovo, altrimenti la
+        // rispedizione viene rifiutata come gia inviata.
+        progressivo: { type: String },
         documento: { type: String },
         intestatario: { type: String },
         stato: {

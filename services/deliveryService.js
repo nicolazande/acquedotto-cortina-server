@@ -18,6 +18,7 @@ const { CANALE_TRASMISSIONE_SDI, testoEmailCortesia } = require('../config/deliv
 const { pianoConsegne } = require('./deliveryPlan');
 const { generateInvoicePdf, generateInvoicesPdf } = require('./invoicePdf');
 const { buildInvoiceXml } = require('./invoiceXml');
+const { riservaProgressivoInvio } = require('./counters');
 const { inviaEmail, statoTrasporto } = require('./mailer');
 const { badRequest, notFound, unprocessable } = require('../utils/errors');
 const { formatItalianDate } = require('../utils/dates');
@@ -176,9 +177,15 @@ const allegatoPdf = async (fatturaId) => {
     return { nome: filename, contenuto: buffer, tipo: 'application/pdf' };
 };
 
-const allegatoXml = async (fattura) => {
+// Ogni trasmissione si prende un progressivo nuovo, anche quando e un secondo
+// tentativo sulla stessa fattura: lo SdI rifiuta un file il cui nome ha gia
+// visto, quindi rispedire lo stesso nome vorrebbe dire non poter rispedire.
+const allegatoXml = async (consegna, fattura) => {
     const servizi = await righeDellaFattura(fattura._id);
-    const { filename, xml } = buildInvoiceXml({ cliente: fattura.cliente, fattura, servizi });
+    const progressivo = await riservaProgressivoInvio();
+    const { filename, xml } = buildInvoiceXml({ cliente: fattura.cliente, fattura, progressivo, servizi });
+
+    await Consegna.updateOne({ _id: consegna._id }, { $set: { progressivo } });
 
     return { nome: filename, contenuto: Buffer.from(xml, 'utf8'), tipo: 'application/xml' };
 };
@@ -218,7 +225,7 @@ const trasmettiFatturaElettronica = async ({ consegna, fattura }) => {
         );
     }
 
-    const allegato = await allegatoXml(fattura);
+    const allegato = await allegatoXml(consegna, fattura);
     const esito = await inviaEmail({
         a: SDI_PEC,
         oggetto: `Invio fattura ${consegna.documento}`,
@@ -407,7 +414,9 @@ const xmlDaTrasmettere = async ({ limite } = {}) => {
         }
 
         const servizi = await righeDellaFattura(fattura._id);
-        const { filename, xml } = buildInvoiceXml({ cliente: fattura.cliente, fattura, servizi });
+        const progressivo = await riservaProgressivoInvio();
+        const { filename, xml } = buildInvoiceXml({ cliente: fattura.cliente, fattura, progressivo, servizi });
+        await Consegna.updateOne({ _id: consegna._id }, { $set: { progressivo } });
         file.push({ nome: filename, contenuto: xml });
     }
 
