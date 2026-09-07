@@ -41,6 +41,35 @@ npm run maintenance:password -- mario passwordsegreta letturista
 Indicando il ruolo l'account viene creato se non esiste, o cambia ruolo se c'e
 gia. Senza ruolo il comando reimposta soltanto la password.
 
+### Lavorare sul database di produzione
+
+Tutti gli script di manutenzione accettano `--remoto`: prendono l'indirizzo da
+`REMOTE_MONGODB_URI` nel `.env`, annunciano che stanno lavorando sulla produzione
+e scrivono il nome del database prima di toccare qualsiasi cosa.
+
+```bash
+npm run maintenance:password -- brunodonaz Piandl64 letturista --remoto
+npm run maintenance:password -- --remoto      # elenca gli utenti di produzione
+```
+
+Serve un'opzione apposta perche l'alternativa - passare l'indirizzo a mano sulla
+riga di comando - e il modo piu facile di lavorare sul database sbagliato: basta
+che la variabile non sia esportata nella shell e il comando punta altrove senza
+dirlo.
+
+> **Prima di creare un account in produzione**, se non e mai stato fatto:
+>
+> ```bash
+> npm run maintenance:user-indexes -- --remoto
+> ```
+>
+> Gli indici unici su `email` e `numero_telefono` sono nati prima che lo schema
+> li dichiarasse *sparsi*. Con la vecchia forma, il secondo account senza email
+> viene rifiutato con `E11000 duplicate key ... { email: null }`: due account che
+> non hanno l'indirizzo risultano due volte lo stesso valore. Il comando li
+> ricrea nella forma giusta, dove chi non ha il campo semplicemente non entra
+> nell'indice. E successo davvero, creando il primo letturista.
+
 ## Password dimenticata
 
 Le password sono cifrate con bcrypt: non si leggono e non si recuperano, si
