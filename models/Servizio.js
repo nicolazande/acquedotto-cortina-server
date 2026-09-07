@@ -32,5 +32,9 @@ const servizioSchema = new Schema(
 
 servizioSchema.index({ fattura: 1, riga: 1 });
 servizioSchema.index({ lettura: 1, fattura: 1 });
+// Le righe di un articolo: la scheda dell'articolo le elenca. Senza indice la
+// ricerca leggeva tutte le righe esistenti - diecimila per trovarne tre - e il
+// numero cresce a ogni fattura emessa.
+servizioSchema.index({ articolo: 1 });
 
 module.exports = mongoose.model('Servizio', servizioSchema);

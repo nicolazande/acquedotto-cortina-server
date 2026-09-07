@@ -36,6 +36,10 @@ const contatoreSchema = new Schema(
 contatoreSchema.index({ cliente: 1 });
 contatoreSchema.index({ edificio: 1 });
 contatoreSchema.index({ listino: 1 });
+// La storia di un punto di fornitura si percorre in avanti chiedendo "chi ha
+// sostituito questo?", una volta per ogni anello della catena: senza indice ogni
+// passo rileggeva tutti i contatori.
+contatoreSchema.index({ precedente: 1 });
 contatoreSchema.index({ nome_cliente: 1 });
 
 module.exports = mongoose.model('Contatore', contatoreSchema);
