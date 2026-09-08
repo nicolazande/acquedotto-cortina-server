@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const { getResourceModel } = require('../config/resources');
 const NoteAttachment = require('../models/NoteAttachment');
 const { getUserRole, puoUsareRisorsa } = require('../config/permessi');
+const { dimentica, leggi, riponi } = require('../services/archivioFile');
 
 // Un allegato vale quanto il documento a cui e attaccato: le note su un
 // contatore le puo leggere chi puo leggere quel contatore, quelle su una fattura
@@ -169,14 +170,18 @@ class NoteAttachmentController {
                 return res.status(413).json({ error: `Attachment exceeds ${maxBytes} bytes` });
             }
 
+            const filename = safeFilename(req.body.filename, contentType);
+            // I byte vanno riposti prima: se l'archivio non risponde non deve
+            // restare una scheda che punta a un file che non esiste.
+            const contenuto = await riponi({ buffer, contentType, filename });
             const attachment = await NoteAttachment.create({
                 resource,
                 recordId: recordFilter._id,
                 field: 'note',
-                filename: safeFilename(req.body.filename, contentType),
+                filename,
                 contentType,
                 size: buffer.length,
-                data: buffer,
+                ...contenuto,
             });
 
             return res.status(201).json(serializeAttachment(attachment));
@@ -197,12 +202,17 @@ class NoteAttachmentController {
                 return permessiInsufficienti(res);
             }
 
+            // Il file lo serve sempre il gestionale, anche quando i byte stanno
+            // fuori: cosi il controllo dei permessi qui sopra continua a valere e
+            // l'archivio resta privato, senza indirizzi pubblici indovinabili.
+            const byte = await leggi(attachment);
+
             res.set('Content-Type', attachment.contentType);
-            res.set('Content-Length', String(attachment.size));
+            res.set('Content-Length', String(byte.length));
             res.set('Cache-Control', 'private, max-age=3600');
             res.set('Content-Disposition', `inline; filename="${attachment.filename}"`);
             res.set('X-Content-Type-Options', 'nosniff');
-            return res.send(attachment.data);
+            return res.send(byte);
         } catch (error) {
             console.error(error);
             return res.status(500).json({ error: 'Error fetching attachment file' });
@@ -223,6 +233,10 @@ class NoteAttachmentController {
             }
 
             await NoteAttachment.deleteOne({ _id: attachment._id });
+            // Il file dopo la scheda, e senza far fallire la cancellazione: un
+            // byte rimasto nell'archivio costa un millesimo, una scheda che non
+            // si cancella e un difetto che l'utente vede.
+            await dimentica(attachment);
             return res.status(204).send();
         } catch (error) {
             console.error(error);

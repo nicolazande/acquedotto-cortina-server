@@ -84,6 +84,47 @@ npm run maintenance:password -- mario passwordsegreta letturista   # crea l'acco
 Vale per gli amministratori e per gli account del portale clienti. Richiede
 accesso diretto al database, quindi non concede nulla in piu a chi lo esegue.
 
+## Dove finiscono i file allegati
+
+Di suo il gestionale tiene i byte dentro MongoDB, nel documento dell'allegato:
+non c'e niente da configurare e un backup del database porta con se anche i file.
+Va bene finche i file sono pochi.
+
+Con una foto per lettura si arriva a circa **300 MB il primo anno** e **2,7 GB in
+dieci** (900 letture l'anno, foto ridotte dal client a ~300 KB). Su un database
+quello spazio costa caro e appesantisce ogni copia: il ripristino passa da
+secondi a minuti, e ogni backup si porta dietro tutte le fotografie.
+
+Percio i byte possono andare in un archivio a oggetti - **Cloudflare R2** ha 10 GB
+gratuiti permanenti e non fa pagare il traffico in uscita, che e la voce che
+altrove cresce senza farsi notare. Va bene qualunque servizio che parli il
+protocollo S3.
+
+Si accende mettendo quattro variabili nell'ambiente del server:
+
+```
+R2_ACCOUNT_ID=...
+R2_BUCKET=allegati
+R2_ACCESS_KEY_ID=...
+R2_SECRET_ACCESS_KEY=...
+```
+
+Senza di esse **non cambia niente**: si continua a salvare nel database come
+prima. Metterne solo alcune invece ferma il server all'avvio, perche una
+configurazione a meta si scoprirebbe al primo allegato caricato.
+
+Due cose da sapere:
+
+- **I vecchi allegati restano dove sono.** Non serve nessuna migrazione: chi ha i
+  byte nel documento continua a leggersi da li, i nuovi vanno nell'archivio.
+  Convivono senza che l'utente noti la differenza.
+- **I file restano privati.** Li serve sempre il gestionale, che prima controlla
+  chi sta chiedendo - il letturista vede gli allegati di un contatore, non quelli
+  di una fattura. Nel secchio non va aperto nessun accesso pubblico.
+
+Conviene attivare il *versioning* sul bucket: l'archivio custodisce i file, ma
+non protegge da una cancellazione sbagliata piu di quanto facesse il database.
+
 ## Backup
 
 Prima di qualunque operazione che modifica i dati:

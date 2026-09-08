@@ -8,7 +8,12 @@ const noteAttachmentSchema = new mongoose.Schema(
         filename: { type: String, required: true },
         contentType: { type: String, required: true },
         size: { type: Number, required: true },
-        data: { type: Buffer, required: true },
+        // I byte stanno qui oppure in un archivio a oggetti, mai in tutti e due:
+        // `data` per quelli salvati nel database, `chiave` per quelli riposti
+        // fuori. Vecchi e nuovi convivono senza migrazioni - un allegato caricato
+        // prima di accendere l'archivio continua a leggersi da qui.
+        data: { type: Buffer, required: false },
+        chiave: { type: String, required: false },
     },
     {
         collection: 'note_attachments',

@@ -210,6 +210,7 @@ classDiagram
         String contentType
         Number size
         Buffer data
+        String chiave
         Ref _id
         Date createdAt
         Date updatedAt
