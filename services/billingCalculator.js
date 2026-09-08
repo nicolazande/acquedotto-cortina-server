@@ -24,6 +24,18 @@ const DEFAULT_CONDOMINIUM_FIXED_ARTICLE_CODE = 'CONDF';
 const DEFAULT_DELAY_ARTICLE_CODE = 'GG_DELAY';
 const DEFAULT_FIXED_QUOTA = 'Q.Fissa';
 
+// Gli articoli che il calcolo di una lettura puo mettere in fattura. Elencarli
+// dove servono voleva dire ricopiarli, e le copie avevano gia smesso di
+// coincidere: lo script di verifica ne cercava quattro, il calcolo cinque, e la
+// mora restava fuori senza che niente lo segnalasse.
+const CODICI_ARTICOLO_DEL_CALCOLO = [
+    DEFAULT_WATER_ARTICLE_CODE,
+    DEFAULT_FIXED_ARTICLE_CODE,
+    DEFAULT_CONDOMINIUM_ARTICLE_CODE,
+    DEFAULT_CONDOMINIUM_FIXED_ARTICLE_CODE,
+    DEFAULT_DELAY_ARTICLE_CODE,
+];
+
 const createCalculationError = (message) => unprocessable(message);
 
 const pickSnapshotFields = (record, fields) => {
@@ -415,6 +427,7 @@ const calculateReadingInvoice = ({
 };
 
 module.exports = {
+    CODICI_ARTICOLO_DEL_CALCOLO,
     DEFAULT_CONDOMINIUM_ARTICLE_CODE,
     DEFAULT_CONDOMINIUM_FIXED_ARTICLE_CODE,
     DEFAULT_DELAY_ARTICLE_CODE,

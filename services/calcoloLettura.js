@@ -16,11 +16,7 @@ const {
     hasPreviousAnnualFixedCharge,
 } = require('./annualFixedChargeService');
 const {
-    DEFAULT_CONDOMINIUM_ARTICLE_CODE,
-    DEFAULT_CONDOMINIUM_FIXED_ARTICLE_CODE,
-    DEFAULT_DELAY_ARTICLE_CODE,
-    DEFAULT_FIXED_ARTICLE_CODE,
-    DEFAULT_WATER_ARTICLE_CODE,
+    CODICI_ARTICOLO_DEL_CALCOLO,
     calculateReadingInvoice,
     numberOrZero,
 } = require('./billingCalculator');
@@ -83,15 +79,7 @@ const getPreviousReading = (lettura, session) => {
 
 const getArticlesByCode = async (session) => {
     const articles = await withSession(Articolo.find({
-        codice: {
-            $in: [
-                DEFAULT_WATER_ARTICLE_CODE,
-                DEFAULT_FIXED_ARTICLE_CODE,
-                DEFAULT_CONDOMINIUM_ARTICLE_CODE,
-                DEFAULT_CONDOMINIUM_FIXED_ARTICLE_CODE,
-                DEFAULT_DELAY_ARTICLE_CODE,
-            ],
-        },
+        codice: { $in: CODICI_ARTICOLO_DEL_CALCOLO },
     }), session).lean();
 
     return Object.fromEntries(articles.map((article) => [article.codice, article]));
