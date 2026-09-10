@@ -14,6 +14,7 @@ const {
     toCents,
 } = require('../utils/money');
 const { toDate } = require('../utils/dates');
+const { rateoQuotaFissa } = require('./rateoQuotaFissa');
 const { recordId } = require('../utils/mongo');
 const { unprocessable } = require('../utils/errors');
 
@@ -237,11 +238,14 @@ const getLineTaxRate = (line) => {
 
 // La quota fissa vale il prezzo della fascia a prescindere dalla quantita;
 // le righe a consumo moltiplicano i metri cubi per il prezzo unitario.
-const getLineTotal = ({ quantity, type, unitPrice }) => {
+const getLineTotal = ({ quantity, type, unitPrice, rateo = 1 }) => {
     const prezzoCents = toCents(unitPrice);
 
     if (type === 'fixed') {
-        return fromCents(prezzoCents);
+        // La quota fissa copre l'anno solare: chi e stato in servizio solo una
+        // parte dell'anno ne paga la parte proporzionale ai giorni. Per chi c'e
+        // stato tutto l'anno il rateo vale 1, e il conto e quello di prima.
+        return fromCents(multiplyCents(prezzoCents, rateo));
     }
 
     return fromCents(multiplyCents(prezzoCents, quantity));
@@ -255,10 +259,11 @@ const createLine = ({
     lettura,
     previousValue,
     quantity,
+    rateo = 1,
     type,
 }) => {
     const unitPrice = numberOrZero(band.prezzo);
-    const total = getLineTotal({ quantity, type, unitPrice });
+    const total = getLineTotal({ quantity, type, unitPrice, rateo });
     const taxRate = getTaxRate(article);
     const listinoLabel = contatore?.listino?.categoria || contatore?.listino?.descrizione || '';
     const listino = contatore?.listino;
@@ -271,6 +276,10 @@ const createLine = ({
         prezzo: unitPrice,
         valore_unitario: total,
         tipo_quota: type === 'fixed' ? DEFAULT_FIXED_QUOTA : undefined,
+        // Quanta parte dell'anno copre questa quota fissa. Resta sulla riga
+        // perche la fattura e la verifica possano dire perche l'importo non e
+        // quello di listino, invece di farlo sembrare uno sbaglio.
+        rateo_quota: type === 'fixed' && rateo !== 1 ? rateo : undefined,
         lettura_precedente: String(previousValue),
         lettura_fatturazione: String(currentValue),
         data_lettura: lettura?.data_lettura,
@@ -294,6 +303,7 @@ const createLine = ({
                 valore_attuale: currentValue,
             },
             quantita: quantity,
+            rateo_quota: type === 'fixed' ? rateo : undefined,
             prezzo_unitario: unitPrice,
             totale_riga: total,
             quota: type,
@@ -390,6 +400,14 @@ const calculateReadingInvoice = ({
         }));
     });
 
+    // La quota fissa copre l'anno solare della lettura: se il contatore e stato
+    // attivato o cessato in corso d'anno se ne paga la parte proporzionale ai
+    // giorni di servizio. Chi c'e stato tutto l'anno paga intero, come sempre.
+    const rateo = rateoQuotaFissa({
+        contatore,
+        anno: toDate(lettura?.data_lettura)?.getFullYear(),
+    });
+
     fixedBands.forEach((band) => {
         lines.push(createLine({
             article: fixedArticle,
@@ -399,6 +417,7 @@ const calculateReadingInvoice = ({
             lettura,
             previousValue: startValue,
             quantity: 1,
+            rateo,
             type: 'fixed',
         }));
     });

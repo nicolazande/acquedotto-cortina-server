@@ -3,6 +3,35 @@
 Questo documento descrive il percorso che porta da una lettura del contatore alla
 riga di fattura, con i punti in cui il calcolo puo fermarsi e il perche.
 
+## La quota fissa e rapportata ai giorni di servizio
+
+La quota fissa copre l'anno solare della lettura. Un contatore in servizio tutto
+l'anno la paga intera; uno attivato o cessato in corso d'anno ne paga la parte
+proporzionale ai **giorni** effettivi.
+
+Si contano i giorni e non i mesi perche il rapporto sia esatto: un contatore
+cessato il 10 settembre ha avuto acqua per 253 giorni su 365, e chi cessa il 1
+del mese non paga come chi cessa il 30.
+
+```
+quota di listino 99,00, cessato il 10/09/2026
+  253 giorni su 365  ->  69,3%  ->  68,62
+```
+
+Le date sono `inizio` e `scadenza` del contatore. Il valore `31/12/2099` che il
+gestionale precedente scriveva per dire "ancora in servizio" viene riconosciuto e
+non riduce niente.
+
+La riduzione resta scritta sulla riga (`rateo_quota`) e nello snapshot del
+calcolo, cosi la fattura e la verifica possono dire **perche** l'importo non e
+quello di listino, invece di farlo sembrare uno sbaglio.
+
+**Vale da qui in avanti.** Lo storico e stato fatturato a quota intera - 4.236
+righe, nessuna ridotta, nemmeno per i 95 contatori cessati a meta anno - e resta
+com'e: la verifica delle fatture vecchie continua a confrontarle con quello che
+fu davvero applicato.
+
+
 ## I dati coinvolti
 
 ```
