@@ -15,21 +15,29 @@ require('../models/Edificio');
 const { creaZip } = require('../utils/zip');
 const { formatItalianDate, toDate } = require('../utils/dates');
 const { customerLabel } = require('../utils/customer');
-const { PdfDocument } = require('./invoicePdf');
+const { PdfDocument, larghezzaDelTesto } = require('./invoicePdf');
 
+// Le larghezze sono pesi, non punti: `creaPdf` li scala sulla pagina.
+//
+// Sono misurate, non stimate a occhio: per ognuna si e preso quanto occupa
+// davvero il testo che ci finisce dentro nell'archivio di oggi (il 95 per cento
+// piu corto), piu lo spazio ai lati, e lo spazio avanzato e andato alle due
+// colonne che troncavano ancora. I titoli sono corti apposta: su una colonna di
+// numeri "Lett. att." dice quanto "Lettura Attuale" e lascia la larghezza al
+// dato invece che all'intestazione.
 const COLONNE = [
-    { titolo: 'Cod. Utente', campo: 'codiceUtente', larghezza: 12 },
-    { titolo: 'Denominazione', campo: 'denominazione', larghezza: 34 },
-    { titolo: 'Codice Fiscale', campo: 'codiceFiscale', larghezza: 18 },
-    { titolo: 'Partita IVA', campo: 'partitaIva', larghezza: 14 },
-    { titolo: 'Seriale', campo: 'seriale', larghezza: 16 },
-    { titolo: 'Indirizzo', campo: 'indirizzo', larghezza: 28 },
-    { titolo: 'Lettura Attuale', campo: 'letturaAttuale', larghezza: 15, numero: true },
-    { titolo: 'Lettura Precedente', campo: 'letturaPrecedente', larghezza: 18, numero: true },
-    { titolo: '%', campo: 'percentuale', larghezza: 5, numero: true },
-    { titolo: 'Data Lettura', campo: 'dataLettura', larghezza: 13 },
-    { titolo: 'Consumi m3', campo: 'consumi', larghezza: 12, numero: true },
-    { titolo: 'Tipo Fornitura', campo: 'tipoFornitura', larghezza: 26 },
+    { titolo: 'Codice', campo: 'codiceUtente', larghezza: 33 },
+    { titolo: 'Denominazione', campo: 'denominazione', larghezza: 166 },
+    { titolo: 'Cod. fiscale', campo: 'codiceFiscale', larghezza: 79 },
+    { titolo: 'Partita IVA', campo: 'partitaIva', larghezza: 50 },
+    { titolo: 'Seriale', campo: 'seriale', larghezza: 65 },
+    { titolo: 'Indirizzo', campo: 'indirizzo', larghezza: 84 },
+    { titolo: 'Lett. att.', campo: 'letturaAttuale', larghezza: 36, numero: true },
+    { titolo: 'Lett. prec.', campo: 'letturaPrecedente', larghezza: 39, numero: true },
+    { titolo: 'Quota', campo: 'percentuale', larghezza: 28, numero: true },
+    { titolo: 'Data', campo: 'dataLettura', larghezza: 43 },
+    { titolo: 'Consumi', campo: 'consumi', larghezza: 36, numero: true },
+    { titolo: 'Tipo fornitura', campo: 'tipoFornitura', larghezza: 135 },
 ];
 
 const testo = (valore) => (valore === null || valore === undefined ? '' : String(valore));
@@ -140,19 +148,42 @@ const MARGINE = 24;
 const LARGHEZZA = 842;
 const ALTEZZA = 595;
 
+// Lo spazio lasciato libero ai due lati della cella. Serve tutto e due: senza
+// quello a destra il testo finisce appoggiato alla colonna successiva.
+const GRONDA = 10;
+
+// Novecento righe tutte uguali si leggono male: la riga sotto l'intestazione
+// stacca i titoli dai dati, e la campitura ogni due righe aiuta l'occhio a non
+// cambiare riga a meta strada. Grigi chiari, che devono restare leggibili anche
+// stampati in bianco e nero.
+const RIGA_INTESTAZIONE = [0.62, 0.62, 0.62];
+const FONDO_ALTERNATO = [0.955, 0.955, 0.955];
+
 // Le celle del PDF non mandano a capo: un testo piu largo della colonna
 // sborderebbe sopra quella accanto, e in un elenco di 900 righe basta una
 // ragione sociale lunga per rendere illeggibile la riga. Meglio troncarlo, che
-// e anche come lo stampava il gestionale precedente. Il fattore 0.48 e la
-// larghezza media di un carattere della Helvetica usata qui. I puntini sono
-// tre punti e non il carattere unico, che il PDF scrive in ASCII e scarterebbe.
-const LARGHEZZA_CARATTERE = 0.48;
-
+// e anche come lo stampava il gestionale precedente.
+//
+// Quanto ci sta si chiede al font, non si stima sul numero di caratteri: un
+// codice fiscale e tutto maiuscole e cifre e a parita di lunghezza occupa un
+// terzo in piu di un nome scritto normalmente. Contandolo a caratteri usciva
+// dalla colonna e finiva appoggiato alla partita IVA.
 const perLaCella = (valore, larghezza, corpo) => {
     const testoIntero = String(valore ?? '');
-    const massimo = Math.max(Math.floor((larghezza - 6) / (corpo * LARGHEZZA_CARATTERE)), 1);
-    if (testoIntero.length <= massimo) return testoIntero;
-    return `${testoIntero.slice(0, Math.max(massimo - 3, 1))}...`;
+    const disponibile = larghezza - GRONDA;
+
+    if (larghezzaDelTesto(testoIntero, corpo) <= disponibile) {
+        return testoIntero;
+    }
+
+    const puntini = larghezzaDelTesto('...', corpo);
+    let tagliato = testoIntero;
+
+    while (tagliato && larghezzaDelTesto(tagliato, corpo) + puntini > disponibile) {
+        tagliato = tagliato.slice(0, -1);
+    }
+
+    return `${tagliato}...`;
 };
 
 const creaPdf = (righe, { anno, ente }) => {
@@ -173,21 +204,34 @@ const creaPdf = (righe, { anno, ente }) => {
         y += 22;
         let x = MARGINE;
         COLONNE.forEach((c, i) => {
-            pdf.cellText(perLaCella(c.titolo, larghezze[i], 6.5), x, y, larghezze[i], 14, { size: 6.5, font: 'bold' });
+            pdf.cellText(perLaCella(c.titolo, larghezze[i], 6.5), x, y, larghezze[i], 14, {
+                size: 6.5,
+                font: 'bold',
+                align: c.numero ? 'right' : 'left',
+                padding: GRONDA / 2,
+            });
             x += larghezze[i];
         });
         y += 14;
+        pdf.line(MARGINE, y, LARGHEZZA - MARGINE, y, { color: RIGA_INTESTAZIONE, lineWidth: 0.5 });
+        y += 2;
     };
 
     intestazione();
 
-    righe.forEach((riga) => {
+    righe.forEach((riga, n) => {
         if (y > ALTEZZA - MARGINE - 14) intestazione();
+
+        if (n % 2 === 1) {
+            pdf.rect(MARGINE, y, LARGHEZZA - MARGINE * 2, 12, { fill: FONDO_ALTERNATO, stroke: null });
+        }
+
         let x = MARGINE;
         COLONNE.forEach((c, i) => {
             pdf.cellText(perLaCella(riga[c.campo], larghezze[i], 6.5), x, y, larghezze[i], 12, {
                 size: 6.5,
                 align: c.numero ? 'right' : 'left',
+                padding: GRONDA / 2,
             });
             x += larghezze[i];
         });
@@ -203,8 +247,16 @@ const creaPdf = (righe, { anno, ente }) => {
 // Una cella deve dichiarare la propria larghezza: senza `tcW` il documento e
 // XML valido ma nessun programma lo apre - "impossibile caricare il file", senza
 // altre spiegazioni.
+// Word misura in twentieths of a point: la pagina orizzontale ne ha 16838, meno
+// i margini restano quelli qui sotto. La scala si ricava dai pesi delle colonne
+// invece di essere un numero fisso, altrimenti basta ritoccare una larghezza
+// perche la tabella esca dal foglio - e a differenza del PDF, Word non lo dice.
+const PAGINA_WORD = { larghezza: 16838, altezza: 11906, margine: 567 };
+const LARGHEZZA_UTILE_WORD = PAGINA_WORD.larghezza - PAGINA_WORD.margine * 2;
+const SCALA_WORD = LARGHEZZA_UTILE_WORD / COLONNE.reduce((somma, c) => somma + c.larghezza, 0);
+
 const cellaWord = (valore, larghezza) => '<w:tc><w:tcPr>'
-    + `<w:tcW w:w="${Math.round(larghezza * 45)}" w:type="dxa"/></w:tcPr>`
+    + `<w:tcW w:w="${Math.round(larghezza * SCALA_WORD)}" w:type="dxa"/></w:tcPr>`
     + `<w:p><w:r><w:t xml:space="preserve">${xmlSicuro(valore)}</w:t></w:r></w:p></w:tc>`;
 
 const creaWord = (righe, { anno, ente }) => {
@@ -221,8 +273,9 @@ const creaWord = (righe, { anno, ente }) => {
         + ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']
             .map((lato) => `<w:${lato} w:val="single" w:sz="4" w:color="999999"/>`).join('')
         + '</w:tblBorders></w:tblPr>';
-    const foglio = '<w:sectPr><w:pgSz w:w="16838" w:h="11906" w:orient="landscape"/>'
-        + '<w:pgMar w:top="567" w:right="567" w:bottom="567" w:left="567"/></w:sectPr>';
+    const foglio = `<w:sectPr><w:pgSz w:w="${PAGINA_WORD.larghezza}" w:h="${PAGINA_WORD.altezza}" w:orient="landscape"/>`
+        + `<w:pgMar w:top="${PAGINA_WORD.margine}" w:right="${PAGINA_WORD.margine}"`
+        + ` w:bottom="${PAGINA_WORD.margine}" w:left="${PAGINA_WORD.margine}"/></w:sectPr>`;
 
     const documento = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         + '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
@@ -351,6 +404,7 @@ module.exports = {
     creaExcel,
     creaPdf,
     creaWord,
+    perLaCella,
     rigaDaLettura,
     riepilogoDelleRighe,
     riepilogoDellAnno,

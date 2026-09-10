@@ -3,9 +3,11 @@ const assert = require('node:assert/strict');
 const zlib = require('node:zlib');
 
 const {
-    COLONNE, abbinaLettureAllePrecedenti, creaExcel, creaPdf, creaWord, riepilogoDelleRighe, rigaDaLettura,
+    COLONNE, abbinaLettureAllePrecedenti, creaExcel, creaPdf, creaWord, perLaCella,
+    riepilogoDelleRighe, rigaDaLettura,
 } = require('../services/elencoBim');
 const { formatItalianDate } = require('../utils/dates');
+const { larghezzaDelTesto } = require('../services/invoicePdf');
 
 // Legge le parti di un pacchetto Office (xlsx e docx sono zip) senza librerie:
 // basta scorrere le intestazioni locali, che `creaZip` scrive senza comprimere.
@@ -96,6 +98,25 @@ test('il documento Word dichiara tabella e larghezze', () => {
     assert.match(documento, /<w:tcW w:w="\d+" w:type="dxa"\/>/);
     assert.match(documento, /landscape/);
     assert.equal((documento.match(/<w:tr>/g) || []).length, 2, 'una riga di intestazione e una di dati');
+});
+
+test('la tabella Word sta dentro il foglio', () => {
+    // Word non avvisa: una tabella piu larga della pagina la stampa tagliata, e
+    // le ultime colonne semplicemente non si vedono. Le larghezze sono le stesse
+    // del PDF, quindi basta ritoccarne una perche qui non torni piu.
+    const documento = partiDelPacchetto(creaWord([riga], opzioni)).get('word/document.xml');
+
+    const pagina = Number(documento.match(/<w:pgSz w:w="(\d+)"/)[1]);
+    const margine = Number(documento.match(/<w:pgMar w:top="(\d+)"/)[1]);
+    const celle = [...documento.matchAll(/<w:tcW w:w="(\d+)"/g)].map((m) => Number(m[1]));
+    const primaRiga = celle.slice(0, COLONNE.length);
+    const somma = primaRiga.reduce((totale, larghezza) => totale + larghezza, 0);
+
+    assert.equal(primaRiga.length, COLONNE.length);
+    assert.ok(
+        somma <= pagina - margine * 2,
+        `la tabella misura ${somma} twips, il foglio ne ha ${pagina - margine * 2}`
+    );
 });
 
 test('il PDF si apre e contiene i dati', () => {
@@ -278,4 +299,64 @@ test('un anno senza letture non inventa un periodo', () => {
     assert.equal(riepilogo.consumi, 0);
     assert.equal(riepilogo.dallaLettura, '');
     assert.equal(riepilogo.allaLettura, '');
+});
+
+
+test('nessun testo esce dalla colonna che gli spetta', () => {
+    // Il difetto che si vedeva sul PDF vero: il codice fiscale, tutto maiuscole
+    // e cifre, occupa un terzo in piu di un nome della stessa lunghezza. Contato
+    // a caratteri stava dentro, misurato no, e finiva appoggiato alla partita
+    // IVA della colonna accanto.
+    const CORPO = 6.5;
+    const GRONDA = 10;
+    const LARGHEZZA = 842;
+    const MARGINE = 24;
+    const scala = (LARGHEZZA - MARGINE * 2) / COLONNE.reduce((somma, c) => somma + c.larghezza, 0);
+
+    const riga = rigaDaLettura({
+        lettura: { consumo: 100, data_lettura: '2025-11-04' },
+        letturaPrecedente: { consumo: 60 },
+        contatore: { seriale: 'AC00265407fisso2', tipo_attivita: 'DOMESTICO NON RESIDENTE' },
+        edificio: { indirizzo: "Localita' Acquabona" },
+        cliente: {
+            ragione_sociale: 'Pompanin geom. Enrico Studio tecnico',
+            codice_fiscale: 'PMPNRC73T19A266T',
+            partita_iva: '00874840259',
+            codice_cliente_erp: '1238',
+        },
+    });
+
+    COLONNE.forEach((colonna, indice) => {
+        const disponibile = (colonna.larghezza * scala) - GRONDA;
+
+        assert.ok(
+            larghezzaDelTesto(colonna.titolo, CORPO) <= disponibile,
+            `il titolo "${colonna.titolo}" non entra nella sua colonna`
+        );
+
+        const scritto = perLaCella(riga[colonna.campo], colonna.larghezza * scala, CORPO);
+        assert.ok(
+            larghezzaDelTesto(scritto, CORPO) <= disponibile,
+            `"${scritto}" esce dalla colonna ${colonna.titolo} (indice ${indice})`
+        );
+
+        // E non deve nemmeno aver bisogno di troncare: un dato normale ci sta
+        // per intero. Senza questa, il troncamento nasconderebbe una colonna
+        // troppo stretta e il test passerebbe lo stesso.
+        assert.equal(
+            scritto,
+            String(riga[colonna.campo] ?? ''),
+            `la colonna ${colonna.titolo} e troppo stretta per un valore normale`
+        );
+    });
+});
+
+test('un codice fiscale non entra dove entrerebbe un nome della stessa lunghezza', () => {
+    // La prova che il conteggio a caratteri non basta: stessa lunghezza,
+    // larghezza diversa di un terzo.
+    const codice = larghezzaDelTesto('PMPNRC73T19A266T', 6.5);
+    const nome = larghezzaDelTesto('Pompanin geom. E', 6.5);
+
+    assert.equal('PMPNRC73T19A266T'.length, 'Pompanin geom. E'.length);
+    assert.ok(codice > nome * 1.15, `il codice misura ${codice.toFixed(1)}pt, il nome ${nome.toFixed(1)}pt`);
 });
