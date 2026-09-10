@@ -154,4 +154,16 @@ test('formatItalianDate: giorno/mese/anno, e stringa vuota se non e una data', (
     assert.equal(formatItalianDate(''), '');
     assert.equal(formatItalianDate(null), '');
     assert.equal(formatItalianDate('non una data'), '');
+
+    // Le date del gestionale sono mezzanotte UTC. Lette col fuso della macchina,
+    // su un server a ovest di Greenwich mezzanotte del 25 e ancora il 24 sera:
+    // le fatture stampavano il giorno prima. Render gira in UTC, ma il giorno di
+    // una fattura non puo dipendere da dove sta il server.
+    const fuso = process.env.TZ;
+    try {
+        process.env.TZ = 'America/Los_Angeles';
+        assert.equal(formatItalianDate(new Date('2026-08-25T00:00:00.000Z')), '25/08/2026');
+    } finally {
+        process.env.TZ = fuso;
+    }
 });
