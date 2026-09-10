@@ -1,9 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const zlib = require('node:zlib');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
 
 const {
-    COLONNE, abbinaLettureAllePrecedenti, riepilogoDelleRighe, rigaDaLettura,
+    COLONNE, abbinaLettureAllePrecedenti, ordinaPerSubentro, riepilogoDelleRighe, rigaDaLettura,
 } = require('../services/elencoBim');
 const { creaExcel, creaPdf, creaWord, perLaCella } = require('../services/tabellaStampabile');
 const { formatItalianDate } = require('../utils/dates');
@@ -359,4 +361,128 @@ test('un codice fiscale non entra dove entrerebbe un nome della stessa lunghezza
 
     assert.equal('PMPNRC73T19A266T'.length, 'Pompanin geom. E'.length);
     assert.ok(codice > nome * 1.15, `il codice misura ${codice.toFixed(1)}pt, il nome ${nome.toFixed(1)}pt`);
+});
+
+
+// Il giorno del subentro l'apparecchio e letto due volte con lo stesso indice:
+// una per chi esce, una per chi entra. E il caso vero dell'apparecchio 03961107
+// di Acquabona: Dimai cessa il 09/03/2025, Baldin subentra il giorno dopo, e
+// l'11/03 entrambi hanno lettura 1622.
+const giornoDelSubentro = () => ([
+    {
+        _id: 'l-entra', consumo: 1622, data_lettura: '2025-03-11',
+        contatore: { _id: 'c-entra', seriale: '03961107', scadenza: '2099-12-31', cliente: { cognome: 'Baldin' } },
+    },
+    {
+        _id: 'l-esce', consumo: 1622, data_lettura: '2025-03-11',
+        contatore: { _id: 'c-esce', seriale: '03961107', scadenza: '2025-03-09', cliente: { cognome: 'Dimai' } },
+    },
+]);
+
+test('il giorno del subentro viene prima chi cessa', () => {
+    // Con la sola data le due righe sono a pari merito e l'ordine lo decideva
+    // l'`_id`, che non c'entra niente: capitando prima il subentrante, il
+    // consumo del periodo precedente veniva addebitato a lui.
+    const letture = giornoDelSubentro();
+    ordinaPerSubentro(letture);
+
+    assert.deepEqual(letture.map((l) => l._id), ['l-esce', 'l-entra']);
+});
+
+test('il consumo del periodo va a chi lo ha consumato, non a chi subentra', () => {
+    const letture = giornoDelSubentro();
+    ordinaPerSubentro(letture);
+
+    const righe = abbinaLettureAllePrecedenti({
+        letture,
+        anteriori: [{ contatore: 'c-esce', consumo: 1596, data_lettura: '2024-11-11' }],
+        apparecchioDelContatore: new Map([
+            ['c-esce', 'seriale:03961107'],
+            ['c-entra', 'seriale:03961107'],
+        ]),
+    });
+
+    const uscente = righe.find((r) => r.denominazione.includes('Dimai'));
+    const subentrante = righe.find((r) => r.denominazione.includes('Baldin'));
+
+    assert.equal(uscente.consumi, 26, 'i 26 mc sono di chi ha avuto l acqua fino al 9 marzo');
+    assert.equal(subentrante.consumi, 0, 'chi entra parte dall indice trovato');
+});
+
+test('un contatore ancora in servizio va per ultimo, comunque sia scritta la fine', () => {
+    // Il gestionale precedente scriveva 31/12/2099 invece di lasciare vuoto:
+    // vanno trattati uguale, altrimenti l'ordine dipende da come e stato
+    // importato il record.
+    const letture = [
+        { _id: 'sentinella', data_lettura: '2025-03-11', contatore: { scadenza: '2099-12-31' } },
+        { _id: 'senza-fine', data_lettura: '2025-03-11', contatore: {} },
+        { _id: 'cessato', data_lettura: '2025-03-11', contatore: { scadenza: '2025-03-09' } },
+    ];
+    ordinaPerSubentro(letture);
+
+    assert.equal(letture[0]._id, 'cessato', 'chi cessa viene prima');
+    // Fra i due ancora in servizio l'ordine non conta - e giusto che non conti -
+    // ma nessuno dei due deve precedere il cessato.
+    assert.deepEqual(
+        [...letture.slice(1)].map((l) => l._id).sort(),
+        ['senza-fine', 'sentinella'].sort()
+    );
+});
+
+test('le date diverse restano in ordine di calendario', () => {
+    const letture = [
+        { _id: 'nov', data_lettura: '2025-11-14', contatore: { scadenza: '2025-03-09' } },
+        { _id: 'mar', data_lettura: '2025-03-11', contatore: {} },
+    ];
+    ordinaPerSubentro(letture);
+
+    assert.deepEqual(letture.map((l) => l._id), ['mar', 'nov'], 'la data viene prima della scadenza');
+});
+
+test('il riepilogo segnala i condominiali senza quote di riparto', () => {
+    // Piu intestatari ancora attivi sullo stesso apparecchio: il consumo
+    // andrebbe diviso fra loro, e senza le quote finisce tutto sul primo. Il
+    // totale dell'elenco resta giusto, ma il BIM fatturerebbe a una persona
+    // sola quello che hanno consumato in cinque.
+    const condominiale = (cognome, consumo) => rigaDaLettura({
+        lettura: { consumo, data_lettura: '2025-10-31' },
+        letturaPrecedente: { consumo: 0 },
+        contatore: { seriale: '00720207', scadenza: '2099-12-31' },
+        edificio: {},
+        cliente: { cognome, nome: '', codice_fiscale: 'AAAAAA00A00A000A' },
+    });
+
+    const riepilogo = riepilogoDelleRighe(2025, [condominiale('Pompanin', 97), condominiale('Huber', 97)]);
+    assert.equal(riepilogo.daRipartire, 1);
+});
+
+test('un subentro non viene scambiato per un condominiale', () => {
+    // La differenza e che uno dei due e cessato: li il consumo non si divide,
+    // si passa di mano.
+    const riga = (cognome, scadenza) => rigaDaLettura({
+        lettura: { consumo: 1622, data_lettura: '2025-03-11' },
+        letturaPrecedente: { consumo: 1596 },
+        contatore: { seriale: '03961107', scadenza },
+        edificio: {},
+        cliente: { cognome, nome: '', codice_fiscale: 'AAAAAA00A00A000A' },
+    });
+
+    const riepilogo = riepilogoDelleRighe(2025, [riga('Dimai', '2025-03-09'), riga('Baldin', '2099-12-31')]);
+    assert.equal(riepilogo.daRipartire, 0);
+});
+
+
+test('chi produce le righe dell anno mette in ordine i subentri', () => {
+    // I test qui sopra provano `ordinaPerSubentro`, non che qualcuno la chiami:
+    // togliendo la chiamata restavano tutti verdi mentre sull'archivio vero i
+    // 26 mc tornavano al cliente sbagliato. Qui si legge il sorgente, perche il
+    // resto di `righeDellAnno` sono tre query al database.
+    const sorgente = readFileSync(join(__dirname, '..', 'services', 'elencoBim.js'), 'utf8');
+    const corpo = sorgente.slice(sorgente.indexOf('const righeDellAnno'));
+
+    assert.match(
+        corpo.slice(0, corpo.indexOf('abbinaLettureAllePrecedenti')),
+        /^\s*ordinaPerSubentro\(letture\);/m,
+        'le letture vanno ordinate prima di abbinarle alle precedenti'
+    );
 });

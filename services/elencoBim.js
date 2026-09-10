@@ -40,6 +40,10 @@ const COLONNE = [
     { titolo: 'Tipo fornitura', campo: 'tipoFornitura', larghezza: 135 },
 ];
 
+// Il gestionale precedente non lasciava vuota la data di fine: ci scriveva
+// 31/12/2099 per dire "ancora in servizio".
+const ANNO_SENTINELLA = 2090;
+
 const testo = (valore) => (valore === null || valore === undefined ? '' : String(valore));
 
 
@@ -67,6 +71,12 @@ const rigaDaLettura = ({ lettura, contatore, cliente, edificio, letturaPrecedent
         // La data cosi com'e, per ordinare e confrontare: `dataLettura` e gia
         // scritta in giorno/mese/anno e come testo si ordina sbagliata.
         data: toDate(lettura?.data_lettura),
+        // Un contatore senza scadenza, o con la data-sentinella del gestionale
+        // precedente, e ancora in servizio. Serve a distinguere un subentro -
+        // dove uno dei due e cessato - da un condominiale, dove sono attivi
+        // entrambi e il consumo andrebbe ripartito.
+        inServizio: !toDate(contatore?.scadenza)
+            || toDate(contatore?.scadenza).getUTCFullYear() >= ANNO_SENTINELLA,
     };
 };
 
@@ -85,6 +95,29 @@ const rigaDaLettura = ({ lettura, contatore, cliente, edificio, letturaPrecedent
 // come consumo dell'anno tutto lo storico dell'apparecchio. Sull'archivio di
 // oggi sono 125 seriali con piu intestatari, e sul solo 2025 farebbero 76.987
 // mc inesistenti.
+// Fra due letture dello stesso giorno viene prima quella del contatore che
+// cessa: e la sua, il subentrante parte da li. Un contatore ancora in servizio
+// non ha scadenza, o ha la data-sentinella del gestionale precedente, e in
+// entrambi i casi va per ultimo.
+const ordinaPerSubentro = (letture) => {
+    // Una scadenza assente e la data-sentinella del gestionale precedente
+    // dicono la stessa cosa - "ancora in servizio" - e devono pesare uguale,
+    // altrimenti l'ordine dipenderebbe da come e stato importato il record.
+    const fine = (lettura) => {
+        const scadenza = toDate(lettura.contatore?.scadenza);
+        if (!scadenza || scadenza.getUTCFullYear() >= ANNO_SENTINELLA) {
+            return Number.MAX_SAFE_INTEGER;
+        }
+
+        return scadenza.getTime();
+    };
+
+    letture.sort((a, b) => {
+        const giorno = toDate(a.data_lettura)?.getTime() - toDate(b.data_lettura)?.getTime();
+        return giorno || fine(a) - fine(b);
+    });
+};
+
 const chiaveApparecchio = (contatore) => (
     contatore?.seriale ? `seriale:${contatore.seriale}` : `contatore:${contatore?._id}`
 );
@@ -125,6 +158,15 @@ const righeDellAnno = async (anno) => {
         .sort({ data_lettura: 1, _id: 1 })
         .lean();
 
+    // Il giorno del subentro l'apparecchio viene letto due volte con lo stesso
+    // indice: una per chi esce e una per chi entra. Con la sola data le due
+    // righe sono a pari merito e l'ordine lo decide l'`_id`, che non c'entra
+    // niente: capitando prima il subentrante, il consumo del periodo precedente
+    // veniva addebitato a lui e l'uscente restava a zero.
+    //
+    // Prima chi cessa, poi chi resta: la scadenza del contatore lo dice.
+    ordinaPerSubentro(letture);
+
     // Tutti i record che leggono gli stessi apparecchi, non solo quelli con una
     // lettura quest'anno: il predecessore in genere e cessato da un pezzo.
     const seriali = [...new Set(letture.map((l) => l.contatore?.seriale).filter(Boolean))];
@@ -148,6 +190,23 @@ const righeDellAnno = async (anno) => {
 // del file, cosi l'anteprima non puo dire una cosa e il documento un'altra.
 // I conti sulle righe, separati da chi le va a prendere: e la parte che si puo
 // sbagliare, e cosi si verifica senza database.
+// Gli apparecchi letti da piu intestatari ancora in servizio: sono
+// condominiali, e senza le quote di riparto il consumo non e diviso.
+const contatoriDaRipartire = (righe) => {
+    const perApparecchio = new Map();
+
+    righe.forEach((riga) => {
+        if (!riga.seriale) return;
+        if (!perApparecchio.has(riga.seriale)) perApparecchio.set(riga.seriale, []);
+        perApparecchio.get(riga.seriale).push(riga);
+    });
+
+    return [...perApparecchio.values()].filter((gruppo) => {
+        const attivi = new Set(gruppo.filter((r) => r.inServizio).map((r) => r.denominazione));
+        return attivi.size > 1;
+    }).length;
+};
+
 const riepilogoDelleRighe = (anno, righe) => {
     // Ordinate come date, non come testo: "01/11" e "31/10" scritte in
     // giorno/mese/anno si ordinano alfabeticamente al contrario del calendario.
@@ -163,6 +222,12 @@ const riepilogoDelleRighe = (anno, righe) => {
         // Un consumo che riparte da zero e o un contatore nuovo o un subentro
         // che ha perso il predecessore: vale la pena guardarlo prima di mandare.
         primaLettura: righe.filter((riga) => riga.letturaPrecedente === 0 && riga.letturaAttuale > 0).length,
+        // Piu intestatari attivi sullo stesso apparecchio: e un condominiale, e
+        // il consumo andrebbe ripartito fra loro. Senza le quote finisce tutto
+        // sul primo e gli altri risultano a zero - il totale dell'elenco resta
+        // giusto, ma il BIM fatturerebbe a una persona sola quello che hanno
+        // consumato in cinque.
+        daRipartire: contatoriDaRipartire(righe),
         dallaLettura: formatItalianDate(date[0]),
         allaLettura: formatItalianDate(date[date.length - 1]),
     };
@@ -173,6 +238,7 @@ const riepilogoDellAnno = async (anno) => riepilogoDelleRighe(anno, await righeD
 module.exports = {
     COLONNE,
     abbinaLettureAllePrecedenti,
+    ordinaPerSubentro,
     rigaDaLettura,
     riepilogoDelleRighe,
     riepilogoDellAnno,
