@@ -160,6 +160,52 @@ const registerInvoiceAssets = (pdf) => {
     });
 };
 
+// Quanto e larga una stringa in Helvetica, in millesimi di em: sono le misure
+// del font, non una media.
+//
+// Prima si moltiplicava il numero di caratteri per 0.48, e su testo misto ci
+// prende: "Pompanin geom. Enrico Studio tecnico" sta davvero a 0.479 per
+// carattere. Ma un codice fiscale e tutto maiuscole e cifre e sta a 0.63 - il
+// trenta per cento in piu - quindi usciva dalla sua colonna e finiva appoggiato
+// a quella accanto. Lo stesso vale per l'allineamento a destra, che sposta il
+// testo di quanto crede sia largo.
+const LARGHEZZE_HELVETICA = (() => {
+    const larghezze = new Map();
+    const aggiungi = (caratteri, valori) => [...caratteri].forEach((c, i) => {
+        larghezze.set(c, typeof valori === 'number' ? valori : valori[i]);
+    });
+
+    aggiungi('0123456789', 556);
+    aggiungi('ABCDEFGHIJKLMNOPQRSTUVWXYZ', [
+        667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833,
+        722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611,
+    ]);
+    aggiungi('abcdefghijklmnopqrstuvwxyz', [
+        556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833,
+        556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500,
+    ]);
+    aggiungi(' .,:;!|', [278, 278, 278, 278, 278, 278, 260]);
+    aggiungi("'`", 191);
+    aggiungi('"', 355);
+    aggiungi('-', 333);
+    aggiungi('()[]{}', [333, 333, 278, 278, 334, 334]);
+    aggiungi('/\\', [278, 278]);
+    aggiungi('&%#@*+=<>?$_^~', [667, 889, 556, 1015, 389, 584, 584, 584, 584, 556, 556, 556, 469, 584]);
+
+    return larghezze;
+})();
+
+// I caratteri che non sono in tabella prendono la larghezza di una cifra: sono
+// rari e quasi tutti larghi cosi.
+const LARGHEZZA_IGNOTA = 556;
+
+const larghezzaDelTesto = (testo, size) => (
+    [...String(testo ?? '')].reduce(
+        (somma, c) => somma + (LARGHEZZE_HELVETICA.get(c) ?? LARGHEZZA_IGNOTA),
+        0
+    ) * size / 1000
+);
+
 class PdfDocument {
     // Il formato di default e l'A4 verticale delle fatture. Un elenco a molte
     // colonne lo chiede orizzontale: passando larghezza e altezza scambiate si
@@ -256,7 +302,7 @@ class PdfDocument {
     } = {}) {
         const fontName = font === 'bold' ? 'F2' : font === 'italic' ? 'F3' : 'F1';
         const content = asciiText(value);
-        const estimatedWidth = content.length * size * 0.48;
+        const estimatedWidth = larghezzaDelTesto(content, size);
         const offset = align === 'right' && width ? Math.max(width - estimatedWidth, 0)
             : align === 'center' && width ? Math.max((width - estimatedWidth) / 2, 0)
                 : 0;
@@ -307,6 +353,8 @@ class PdfDocument {
         size = 8,
     } = {}) {
         const words = String(value || '').split(/\s+/).filter(Boolean);
+        // Il testo a capo lavora ancora a caratteri: qui la media ci sta,
+        // perche sono frasi, non codici.
         const maxChars = Math.max(Math.floor(width / (size * 0.52)), 1);
         const lines = [];
         let line = '';
@@ -705,6 +753,8 @@ module.exports = {
     // rettangoli, immagini. Serve anche agli elenchi annuali, che non sono
     // fatture ma hanno lo stesso bisogno di produrre un documento stampabile.
     PdfDocument,
+    // Serve a chi deve decidere se un testo entra nello spazio che ha.
+    larghezzaDelTesto,
     generateInvoicePdf,
     generateInvoicesPdf,
 };
