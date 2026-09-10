@@ -2,8 +2,8 @@ const express = require('express');
 const router = express.Router();
 const ElencoController = require('../controllers/ElencoController');
 
-// Prima di `/bim/:formato`, altrimenti "riepilogo" verrebbe letto come un formato.
-router.get('/bim/riepilogo', ElencoController.riepilogoElencoBim);
-router.get('/bim/:formato', ElencoController.scaricaElencoBim);
+// Prima di `/:formato`, altrimenti "riepilogo" verrebbe letto come un formato.
+router.get('/:elenco/riepilogo', ElencoController.riepilogoElenco);
+router.get('/:elenco/:formato', ElencoController.scaricaElenco);
 
 module.exports = router;
