@@ -169,7 +169,6 @@ const dimentica = async (allegato) => {
 module.exports = {
     dimentica,
     leggi,
-    nuovaChiave,
     riponi,
     suArchivioEsterno,
 };
