@@ -161,10 +161,15 @@ const registerInvoiceAssets = (pdf) => {
 };
 
 class PdfDocument {
-    constructor() {
+    // Il formato di default e l'A4 verticale delle fatture. Un elenco a molte
+    // colonne lo chiede orizzontale: passando larghezza e altezza scambiate si
+    // ottiene, e il resto del disegno non cambia perche tutto passa da `y()`.
+    constructor({ larghezza = PAGE_WIDTH, altezza = PAGE_HEIGHT } = {}) {
         this.pages = [[]];
         this.page = this.pages[0];
         this.images = new Map();
+        this.larghezza = larghezza;
+        this.altezza = altezza;
     }
 
     addPage() {
@@ -181,7 +186,7 @@ class PdfDocument {
     }
 
     y(topY) {
-        return PAGE_HEIGHT - topY;
+        return this.altezza - topY;
     }
 
     color([r, g, b], stroke = false) {
@@ -345,7 +350,7 @@ class PdfDocument {
             objects.push([
                 '<< /Type /Page',
                 '/Parent 2 0 R',
-                `/MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}]`,
+                `/MediaBox [0 0 ${this.larghezza} ${this.altezza}]`,
                 '/Resources << /Font <<',
                 '/F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
                 '/F2 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>',
@@ -696,6 +701,10 @@ const generateInvoicesPdf = async (fatturaIds) => {
 };
 
 module.exports = {
+    // `PdfDocument` scrive un PDF senza dipendenze esterne: pagine, testo,
+    // rettangoli, immagini. Serve anche agli elenchi annuali, che non sono
+    // fatture ma hanno lo stesso bisogno di produrre un documento stampabile.
+    PdfDocument,
     generateInvoicePdf,
     generateInvoicesPdf,
 };

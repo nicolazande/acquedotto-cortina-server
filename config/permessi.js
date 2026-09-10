@@ -38,11 +38,11 @@ const RISORSE_DEL_LETTURISTA = {
     letture: { scrittura: true, relazioni: ['contatore'] },
 };
 
-// Due aree di lavoro non sono risorse con elenco e scheda - non hanno un
+// Alcune aree di lavoro non sono risorse con elenco e scheda - non hanno un
 // modello - ma sono pagine che si aprono, e vanno nell'elenco insieme alle
 // altre: altrimenti il client, che da quell'elenco disegna menu e rotte, non
 // saprebbe che esistono.
-const CRUSCOTTI_DELL_AMMINISTRATORE = ['panoramica', 'consegne'];
+const CRUSCOTTI_DELL_AMMINISTRATORE = ['panoramica', 'consegne', 'elenchi'];
 
 // L'area del cliente, che non e una risorsa del gestionale ma il suo portale.
 const AREA_DEL_CLIENTE = 'portale-cliente';
