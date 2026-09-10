@@ -13,6 +13,7 @@ const Contatore = require('../models/Contatore');
 require('../models/Cliente');
 require('../models/Edificio');
 const { creaZip } = require('../utils/zip');
+const { formatItalianDate, toDate } = require('../utils/dates');
 const { customerLabel } = require('../utils/customer');
 const { PdfDocument } = require('./invoicePdf');
 
@@ -33,13 +34,6 @@ const COLONNE = [
 
 const testo = (valore) => (valore === null || valore === undefined ? '' : String(valore));
 
-const dataItaliana = (data) => {
-    if (!data) return '';
-    const d = data instanceof Date ? data : new Date(data);
-    if (Number.isNaN(d.getTime())) return '';
-    const due = (n) => String(n).padStart(2, '0');
-    return `${due(d.getUTCDate())}/${due(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
-};
 
 // Da una lettura alla riga dell'elenco. La quota di riparto conta: su un
 // contatore condominiale il consumo che il BIM fattura a ciascuno e la sua
@@ -59,9 +53,12 @@ const rigaDaLettura = ({ lettura, contatore, cliente, edificio, letturaPrecedent
         letturaAttuale: attuale,
         letturaPrecedente: precedente,
         percentuale: quota,
-        dataLettura: dataItaliana(lettura?.data_lettura),
+        dataLettura: formatItalianDate(lettura?.data_lettura),
         consumi: Math.max(0, attuale - precedente),
         tipoFornitura: testo(contatore?.tipo_attivita),
+        // La data cosi com'e, per ordinare e confrontare: `dataLettura` e gia
+        // scritta in giorno/mese/anno e come testo si ordina sbagliata.
+        data: toDate(lettura?.data_lettura),
     };
 };
 
@@ -320,14 +317,42 @@ const righeDellAnno = async (anno) => {
     });
 };
 
+// Cosa contiene l'elenco, senza produrlo. Serve a chi lo deve mandare: prima di
+// scaricare novecento righe conviene sapere quante sono, di quanti metri cubi
+// si parla e se c'e qualcosa che non torna. I numeri escono dalle stesse righe
+// del file, cosi l'anteprima non puo dire una cosa e il documento un'altra.
+// I conti sulle righe, separati da chi le va a prendere: e la parte che si puo
+// sbagliare, e cosi si verifica senza database.
+const riepilogoDelleRighe = (anno, righe) => {
+    // Ordinate come date, non come testo: "01/11" e "31/10" scritte in
+    // giorno/mese/anno si ordinano alfabeticamente al contrario del calendario.
+    const date = righe.map((riga) => riga.data).filter(Boolean).sort((a, b) => a - b);
+
+    return {
+        anno,
+        utenze: righe.length,
+        consumi: righe.reduce((somma, riga) => somma + riga.consumi, 0),
+        // Le tre cose che rendono un elenco da guardare prima di mandarlo.
+        senzaCodiceFiscale: righe.filter((riga) => !riga.codiceFiscale && !riga.partitaIva).length,
+        senzaConsumo: righe.filter((riga) => riga.consumi === 0).length,
+        // Un consumo che riparte da zero e o un contatore nuovo o un subentro
+        // che ha perso il predecessore: vale la pena guardarlo prima di mandare.
+        primaLettura: righe.filter((riga) => riga.letturaPrecedente === 0 && riga.letturaAttuale > 0).length,
+        dallaLettura: formatItalianDate(date[0]),
+        allaLettura: formatItalianDate(date[date.length - 1]),
+    };
+};
+
+const riepilogoDellAnno = async (anno) => riepilogoDelleRighe(anno, await righeDellAnno(anno));
+
 module.exports = {
     COLONNE,
+    abbinaLettureAllePrecedenti,
     creaExcel,
     creaPdf,
     creaWord,
-    dataItaliana,
-    abbinaLettureAllePrecedenti,
-    righeDellAnno,
     rigaDaLettura,
-    xmlSicuro,
+    riepilogoDelleRighe,
+    riepilogoDellAnno,
+    righeDellAnno,
 };

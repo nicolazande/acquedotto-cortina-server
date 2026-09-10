@@ -4,7 +4,7 @@
 // Chi li riceve li vuole in tre formati diversi, ma sono lo stesso elenco: le
 // righe si preparano una volta sola e il formato decide solo l'impaginazione.
 
-const { creaExcel, creaPdf, creaWord, righeDellAnno } = require('../services/elencoBim');
+const { creaExcel, creaPdf, creaWord, riepilogoDellAnno, righeDellAnno } = require('../services/elencoBim');
 const { sendServiceError } = require('./utils/controllerActions');
 const anagrafe = require('../config/anagrafeTributaria');
 
@@ -55,4 +55,14 @@ const scaricaElencoBim = async (req, res) => {
     }
 };
 
-module.exports = { scaricaElencoBim };
+// Cosa c'e dentro l'elenco, prima di scaricarlo: quante utenze, quanti metri
+// cubi, e le poche cose che vale la pena guardare prima di mandarlo fuori.
+const riepilogoElencoBim = async (req, res) => {
+    try {
+        return res.status(200).json(await riepilogoDellAnno(annoRichiesto(req.query.anno)));
+    } catch (error) {
+        return sendServiceError(res, error, 'Error reading elenco BIM summary');
+    }
+};
+
+module.exports = { riepilogoElencoBim, scaricaElencoBim };

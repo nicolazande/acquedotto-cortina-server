@@ -3,8 +3,9 @@ const assert = require('node:assert/strict');
 const zlib = require('node:zlib');
 
 const {
-    COLONNE, abbinaLettureAllePrecedenti, creaExcel, creaPdf, creaWord, dataItaliana, rigaDaLettura,
+    COLONNE, abbinaLettureAllePrecedenti, creaExcel, creaPdf, creaWord, riepilogoDelleRighe, rigaDaLettura,
 } = require('../services/elencoBim');
+const { formatItalianDate } = require('../utils/dates');
 
 // Legge le parti di un pacchetto Office (xlsx e docx sono zip) senza librerie:
 // basta scorrere le intestazioni locali, che `creaZip` scrive senza comprimere.
@@ -64,9 +65,9 @@ test('la quota di riparto segue il contatore condominiale', () => {
 });
 
 test('le date si scrivono come le legge chi riceve l elenco', () => {
-    assert.equal(dataItaliana('2026-08-25'), '25/08/2026');
-    assert.equal(dataItaliana(null), '');
-    assert.equal(dataItaliana('non una data'), '');
+    assert.equal(formatItalianDate('2026-08-25'), '25/08/2026');
+    assert.equal(formatItalianDate(null), '');
+    assert.equal(formatItalianDate('non una data'), '');
 });
 
 test('il foglio di calcolo e un pacchetto Office completo', () => {
@@ -221,4 +222,60 @@ test('nel PDF un testo lungo viene troncato, non lasciato sbordare', () => {
 
     assert.ok(!testo.includes('con altre parole ancora'), 'la coda va tagliata');
     assert.match(testo, /Bigontina[^)]*\.\.\./, 'e sostituita da puntini di sospensione');
+});
+
+
+// Il riepilogo mostrato prima di scaricare l'elenco.
+const righeDiProva = [
+    rigaDaLettura({
+        lettura: { consumo: 100, data_lettura: '2025-11-04' }, letturaPrecedente: { consumo: 60 },
+        contatore: { seriale: 'A' }, edificio: {},
+        cliente: { cognome: 'Rossi', nome: 'Mario', codice_fiscale: 'RSSMRA80A01H501U' },
+    }),
+    rigaDaLettura({
+        lettura: { consumo: 40, data_lettura: '2025-01-09' }, letturaPrecedente: { consumo: 40 },
+        contatore: { seriale: 'B' }, edificio: {},
+        cliente: { ragione_sociale: 'Impresa srl', partita_iva: '01241220258' },
+    }),
+    rigaDaLettura({
+        lettura: { consumo: 25, data_lettura: '2025-06-30' }, letturaPrecedente: undefined,
+        contatore: { seriale: 'C' }, edificio: {},
+        cliente: { cognome: 'Senza', nome: 'Codice' },
+    }),
+];
+
+test('il riepilogo conta le utenze e somma i metri cubi', () => {
+    const riepilogo = riepilogoDelleRighe(2025, righeDiProva);
+
+    assert.equal(riepilogo.anno, 2025);
+    assert.equal(riepilogo.utenze, 3);
+    assert.equal(riepilogo.consumi, 65, '40 + 0 + 25');
+});
+
+test('il periodo va dalla lettura piu vecchia alla piu recente', () => {
+    // Le date scritte in giorno/mese/anno, ordinate come testo, danno il
+    // contrario del calendario: "01/11" verrebbe prima di "31/10".
+    const riepilogo = riepilogoDelleRighe(2025, righeDiProva);
+
+    assert.equal(riepilogo.dallaLettura, '09/01/2025');
+    assert.equal(riepilogo.allaLettura, '04/11/2025');
+});
+
+test('il riepilogo segnala cosa guardare prima di mandare l elenco', () => {
+    const riepilogo = riepilogoDelleRighe(2025, righeDiProva);
+
+    assert.equal(riepilogo.senzaCodiceFiscale, 1, 'la partita IVA basta, la sua assenza no');
+    assert.equal(riepilogo.senzaConsumo, 1);
+    assert.equal(riepilogo.primaLettura, 1, 'chi non ha una lettura precedente');
+});
+
+test('un anno senza letture non inventa un periodo', () => {
+    // La pagina ci si appoggia per dire "non c'e niente da mandare": una data
+    // inventata o un "Invalid Date" la farebbero sembrare piena.
+    const riepilogo = riepilogoDelleRighe(2019, []);
+
+    assert.equal(riepilogo.utenze, 0);
+    assert.equal(riepilogo.consumi, 0);
+    assert.equal(riepilogo.dallaLettura, '');
+    assert.equal(riepilogo.allaLettura, '');
 });
