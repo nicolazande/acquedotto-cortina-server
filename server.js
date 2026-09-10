@@ -38,6 +38,13 @@ const corsOptions = {
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    // Di un'altra origine il browser lascia leggere solo poche intestazioni, e
+    // queste non sono fra quelle: senza dichiararle, il nome che il server da a
+    // una fattura o a un elenco non arriva a chi lo scarica, e il file finisce
+    // sul disco col nome che si inventa il browser. `X-Consegne-Rimaste` dice
+    // quante fatture restano fuori dalla stampa, e la pagina delle consegne la
+    // legge per sapere se ripetere.
+    exposedHeaders: ['Content-Disposition', 'X-Consegne-Rimaste'],
     credentials: !allowAnyOrigin,
 };
 

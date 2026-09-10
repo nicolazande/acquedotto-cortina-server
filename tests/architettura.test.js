@@ -93,3 +93,33 @@ test('nessun modulo torna a essere un monolite', () => {
 
     assert.deepEqual(troppoGrandi.map(({ f, righe }) => `${f} (${righe} righe)`), []);
 });
+
+// Di un'altra origine il browser lascia leggere solo sei intestazioni: tutte le
+// altre le nasconde a chi ha fatto la richiesta, senza dare errore. E il tipo di
+// difetto che non si vede nei test - il file arriva, e solo il nome a mancare -
+// e infatti le fatture, gli allegati e gli elenchi si scaricavano tutti col nome
+// inventato dal browser invece di quello mandato dal server.
+test('le intestazioni che il client legge sono dichiarate a CORS', () => {
+    const server = fs.readFileSync(path.join(RADICE, 'server.js'), 'utf8');
+    const esposte = server.match(/exposedHeaders:\s*\[([^\]]*)\]/)?.[1] || '';
+
+    // Chi manda un nome di file lo manda con questa intestazione.
+    const mandaNomiDiFile = file
+        .filter((f) => f.startsWith('controllers/'))
+        .some((f) => fs.readFileSync(path.join(RADICE, f), 'utf8').includes('Content-Disposition'));
+
+    if (mandaNomiDiFile) {
+        assert.match(esposte, /Content-Disposition/, 'i nomi dei file non arriverebbero al client');
+    }
+
+    // Ogni intestazione nostra (X-...) che un controller manda deve essere
+    // dichiarata, altrimenti il client la legge sempre come assente.
+    const nostre = new Set();
+    file.filter((f) => f.startsWith('controllers/')).forEach((f) => {
+        const testo = fs.readFileSync(path.join(RADICE, f), 'utf8');
+        [...testo.matchAll(/setHeader\('(X-[^']+)'/g)].forEach((m) => nostre.add(m[1]));
+    });
+
+    const dimenticate = [...nostre].filter((nome) => !esposte.includes(nome));
+    assert.deepEqual(dimenticate, [], 'intestazioni mandate ma non esposte: il client le vedrebbe vuote');
+});
