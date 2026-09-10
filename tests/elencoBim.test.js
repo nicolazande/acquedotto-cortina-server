@@ -3,9 +3,9 @@ const assert = require('node:assert/strict');
 const zlib = require('node:zlib');
 
 const {
-    COLONNE, abbinaLettureAllePrecedenti, creaExcel, creaPdf, creaWord, perLaCella,
-    riepilogoDelleRighe, rigaDaLettura,
+    COLONNE, abbinaLettureAllePrecedenti, riepilogoDelleRighe, rigaDaLettura,
 } = require('../services/elencoBim');
+const { creaExcel, creaPdf, creaWord, perLaCella } = require('../services/tabellaStampabile');
 const { formatItalianDate } = require('../utils/dates');
 const { larghezzaDelTesto } = require('../services/invoicePdf');
 
@@ -73,7 +73,7 @@ test('le date si scrivono come le legge chi riceve l elenco', () => {
 });
 
 test('il foglio di calcolo e un pacchetto Office completo', () => {
-    const parti = partiDelPacchetto(creaExcel([riga], 'Consumi 2026'));
+    const parti = partiDelPacchetto(creaExcel(COLONNE, [riga], 'Consumi 2026'));
 
     ['[Content_Types].xml', '_rels/.rels', 'xl/workbook.xml', 'xl/worksheets/sheet1.xml']
         .forEach((nome) => assert.ok(parti.has(nome), `manca ${nome}`));
@@ -82,7 +82,7 @@ test('il foglio di calcolo e un pacchetto Office completo', () => {
 test('nel foglio i numeri restano numeri, non testo', () => {
     // Chi riceve l'elenco ci fa le somme: un consumo scritto come testo non si
     // somma, e l'errore non si vede finche il totale non torna.
-    const foglio = partiDelPacchetto(creaExcel([riga], 'Consumi')).get('xl/worksheets/sheet1.xml');
+    const foglio = partiDelPacchetto(creaExcel(COLONNE, [riga], 'Consumi')).get('xl/worksheets/sheet1.xml');
 
     assert.match(foglio, /<v>2148<\/v>/);
     assert.match(foglio, /<v>45<\/v>/);
@@ -92,7 +92,7 @@ test('nel foglio i numeri restano numeri, non testo', () => {
 test('il documento Word dichiara tabella e larghezze', () => {
     // Senza le larghezze delle celle il file e XML valido ma nessun programma
     // lo apre, e l'errore non dice perche.
-    const documento = partiDelPacchetto(creaWord([riga], opzioni)).get('word/document.xml');
+    const documento = partiDelPacchetto(creaWord(COLONNE, [riga], opzioni)).get('word/document.xml');
 
     assert.match(documento, /<w:tbl>/);
     assert.match(documento, /<w:tcW w:w="\d+" w:type="dxa"\/>/);
@@ -104,7 +104,7 @@ test('la tabella Word sta dentro il foglio', () => {
     // Word non avvisa: una tabella piu larga della pagina la stampa tagliata, e
     // le ultime colonne semplicemente non si vedono. Le larghezze sono le stesse
     // del PDF, quindi basta ritoccarne una perche qui non torni piu.
-    const documento = partiDelPacchetto(creaWord([riga], opzioni)).get('word/document.xml');
+    const documento = partiDelPacchetto(creaWord(COLONNE, [riga], opzioni)).get('word/document.xml');
 
     const pagina = Number(documento.match(/<w:pgSz w:w="(\d+)"/)[1]);
     const margine = Number(documento.match(/<w:pgMar w:top="(\d+)"/)[1]);
@@ -120,7 +120,7 @@ test('la tabella Word sta dentro il foglio', () => {
 });
 
 test('il PDF si apre e contiene i dati', () => {
-    const pdf = creaPdf([riga], opzioni);
+    const pdf = creaPdf(COLONNE, [riga], opzioni);
 
     assert.equal(pdf.slice(0, 5).toString(), '%PDF-');
     // Orizzontale: dodici colonne su un A4 verticale finirebbero fuori pagina,
@@ -138,8 +138,8 @@ test('il PDF si apre e contiene i dati', () => {
 test('i tre formati mostrano le stesse colonne', () => {
     // Sono lo stesso elenco: se le colonne divergessero, chi confronta il PDF
     // col foglio di calcolo troverebbe due documenti diversi.
-    const foglio = partiDelPacchetto(creaExcel([riga], 'x')).get('xl/worksheets/sheet1.xml');
-    const documento = partiDelPacchetto(creaWord([riga], opzioni)).get('word/document.xml');
+    const foglio = partiDelPacchetto(creaExcel(COLONNE, [riga], 'x')).get('xl/worksheets/sheet1.xml');
+    const documento = partiDelPacchetto(creaWord(COLONNE, [riga], opzioni)).get('word/document.xml');
 
     COLONNE.forEach(({ titolo }) => {
         const atteso = titolo.replace(/&/g, '&amp;');
@@ -239,7 +239,7 @@ test('nel PDF un testo lungo viene troncato, non lasciato sbordare', () => {
         contatore: {}, edificio: {},
         cliente: { ragione_sociale: 'Bar Al Trampolino di Bigontina Carmen & C. Snc con altre parole ancora' },
     });
-    const testo = creaPdf([lunga], opzioni).toString('latin1');
+    const testo = creaPdf(COLONNE, [lunga], opzioni).toString('latin1');
 
     assert.ok(!testo.includes('con altre parole ancora'), 'la coda va tagliata');
     assert.match(testo, /Bigontina[^)]*\.\.\./, 'e sostituita da puntini di sospensione');
