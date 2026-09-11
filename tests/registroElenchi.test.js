@@ -19,9 +19,7 @@ test('ogni elenco dichiara tutto quello che serve a produrlo', () => {
     NOMI_ELENCHI.forEach((nome) => {
         const elenco = getElenco(nome);
 
-        assert.equal(typeof elenco.etichetta, 'string', `${nome}: manca l'etichetta`);
         assert.equal(typeof elenco.nomeFile, 'function', `${nome}: manca il nome del file`);
-        assert.equal(typeof elenco.titolo, 'function', `${nome}: manca il titolo`);
         assert.equal(typeof elenco.riepilogo, 'function', `${nome}: manca il riepilogo`);
 
         // O l'uno o l'altro, mai tutti e due e mai nessuno: il controller
@@ -35,6 +33,8 @@ test('ogni elenco dichiara tutto quello che serve a produrlo', () => {
 
         if (eTabella) {
             assert.equal(typeof elenco.righe, 'function', `${nome}: manca chi produce le righe`);
+            // Il titolo e quello del foglio dentro l'Excel: serve solo a una tabella.
+            assert.equal(typeof elenco.titolo, 'function', `${nome}: manca il titolo`);
         }
     });
 });
@@ -60,7 +60,9 @@ test('il nome del file e il titolo portano dentro l anno', () => {
 
         assert.match(elenco.nomeFile(2025), /2025/, `${nome}: il nome del file non dice l'anno`);
         assert.notEqual(elenco.nomeFile(2025), elenco.nomeFile(2024));
-        assert.match(elenco.titolo(2025), /2025/, `${nome}: il titolo non dice l'anno`);
+        if (elenco.titolo) {
+            assert.match(elenco.titolo(2025), /2025/, `${nome}: il titolo non dice l'anno`);
+        }
     });
 });
 

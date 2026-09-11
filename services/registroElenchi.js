@@ -13,7 +13,6 @@ const elencoUfficioEntrate = require('../services/elencoUfficioEntrate');
 
 const ELENCHI = {
     bim: {
-        etichetta: 'Consumi per il BIM',
         // Il nome del file che arriva a chi lo scarica, anno compreso.
         nomeFile: (anno) => `Elenco_BIM_${anno}`,
         // Il titolo del foglio dentro l'Excel, che non e il nome del file.
@@ -25,9 +24,7 @@ const ELENCHI = {
     // L'Anagrafe Tributaria non vuole una tabella ma un file a larghezza fissa,
     // con un tracciato deciso da loro: non ha colonne, ha `testo`.
     'anagrafe-tributaria': {
-        etichetta: 'Elenco per l\'Anagrafe Tributaria',
         nomeFile: (anno) => `Anagrafe_Tributaria_${anno}`,
-        titolo: (anno) => `Utenze ${anno}`,
         testo: elencoUfficioEntrate.fileDellAnno,
         riepilogo: elencoUfficioEntrate.riepilogoDellAnno,
     },
