@@ -17,6 +17,11 @@ const InvoiceCounter = require('../models/InvoiceCounter');
 // (scope, anno) e vuole comunque un valore.
 const SENZA_ANNO = 0;
 
+// Il contatore dei numeri di fattura di una serie. Lo usano chi assegna un numero
+// e chi lo libera cancellando l'ultima fattura: scritto due volte, basterebbe
+// cambiarne una perche i due non si parlino piu.
+const scopeDellaSerie = (serie) => `fatture:${serie}`;
+
 const prossimoNumero = async ({ scope, year = SENZA_ANNO, session }) => {
     const counter = await InvoiceCounter.findOneAndUpdate(
         { scope, year },
@@ -41,6 +46,7 @@ const riservaProgressivoInvio = async (session) => {
 };
 
 module.exports = {
+    scopeDellaSerie,
     prossimoNumero,
     riservaProgressivoInvio,
 };

@@ -221,6 +221,7 @@ const deleteFattura = async (req, res) => {
                 scadenzaCancellata: result.scadenzaCancellata,
                 consegneCancellate: result.consegneCancellate || undefined,
                 documentoEmesso: result.eraConfermata || undefined,
+                numeroLiberato: result.numeroLiberato || undefined,
             },
         });
         return res.status(204).send();

@@ -19,7 +19,7 @@ const {
     roundMoney,
 } = require('./billingCalculator');
 const { INVOICE_SERIES, invoiceCode } = require('../config/invoicing');
-const { prossimoNumero } = require('./counters');
+const { prossimoNumero, scopeDellaSerie } = require('./counters');
 const { runWithOptionalTransaction } = require('./transaction');
 const { righeDellaFattura } = require('./righeFattura');
 const {
@@ -38,7 +38,7 @@ const { customerLabel } = require('../utils/customer');
 const DEFAULT_DELAY_FEE = Number.parseFloat(process.env.INVOICE_DELAY_FEE || '6');
 
 const reserveInvoiceNumber = async (year, session, serie = INVOICE_SERIES) => {
-    const scope = `fatture:${serie}`;
+    const scope = scopeDellaSerie(serie);
     const highestFattura = await withSession(Fattura.findOne({ anno: year, serie }), session)
         .sort({ numero: -1 })
         .limit(1)

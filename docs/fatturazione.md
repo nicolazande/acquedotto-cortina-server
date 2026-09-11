@@ -287,6 +287,12 @@ Con la serie dedicata:
   E parziale perche sullo storico, privo di serie, non sarebbe applicabile;
 - le fatture importate restano com'erano e non entrano in conflitto: hanno
   numeri uguali ma serie assente, quindi sono distinguibili.
+- cancellare l'ultima fattura della serie ne **libera il numero**: il contatore
+  torna al numero piu alto rimasto e la prossima fattura riprende da li. Vale solo
+  per un documento che non e mai uscito - nessuna consegna evasa davvero, nessun
+  file XML prodotto, nessuna data di invio - e solo per l'ultimo: una fattura
+  cancellata in mezzo lascia un buco, che non si chiude senza rinumerare quelle
+  dopo.
 
 > La lettera della serie va concordata con chi tiene la contabilita: e una scelta
 > fiscale, non tecnica. Si cambia con `INVOICE_SERIES` e vale dalla fattura

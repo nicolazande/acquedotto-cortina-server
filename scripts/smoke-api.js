@@ -573,7 +573,25 @@ const testInvoiceDeletionCascade = async () => {
             body: JSON.stringify({ letture: [lettura._id], data_fattura: OGGI }),
         });
         assert(rigenerata.fattura?._id, 'reading should be billable again');
+        // Cancellare l'ultima fattura ne libera il numero: la prossima non lo salta.
+        // Prima il contatore andava solo avanti, e due fatture di prova cancellate
+        // facevano partire la prima vera dal numero 3.
+        assert(
+            Number(rigenerata.fattura.numero) <= Number(fattura.numero),
+            `deleting the last invoice should free its number (${fattura.numero} -> ${rigenerata.fattura.numero})`
+        );
         await request(`/fatture/${rigenerata.fattura._id}`, { method: 'DELETE' });
+
+        const { body: terza } = await request('/fatture/genera-da-letture', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ letture: [lettura._id], data_fattura: OGGI }),
+        });
+        assert(
+            Number(terza.fattura?.numero) === Number(rigenerata.fattura.numero),
+            `a freed number should be reused (${rigenerata.fattura.numero} -> ${terza.fattura?.numero})`
+        );
+        await request(`/fatture/${terza.fattura._id}`, { method: 'DELETE' });
     } finally {
         await deleteCreatedRecords(createdRecords);
     }
