@@ -3,24 +3,27 @@
 Questo documento descrive il percorso che porta da una lettura del contatore alla
 riga di fattura, con i punti in cui il calcolo puo fermarsi e il perche.
 
-## La quota fissa e rapportata ai giorni di servizio
+## La quota fissa e rapportata ai mesi di servizio
 
-La quota fissa copre l'anno solare della lettura. Un contatore in servizio tutto
-l'anno la paga intera; uno attivato o cessato in corso d'anno ne paga la parte
-proporzionale ai **giorni** effettivi.
+La quota fissa copre l'anno solare della lettura, dal 1 gennaio al 31 dicembre,
+a prescindere da quando la lettura e stata fatta. Un contatore in servizio tutto
+l'anno la paga intera; uno attivato o cessato in corso d'anno ne paga i **mesi**
+di servizio, in dodicesimi.
 
-Si contano i giorni e non i mesi perche il rapporto sia esatto: un contatore
-cessato il 10 settembre ha avuto acqua per 253 giorni su 365, e chi cessa il 1
-del mese non paga come chi cessa il 30.
+Il mese in cui si comincia e quello in cui si cessa contano interi, e il giorno
+del mese non conta. E la regola chiesta dall'acquedotto, ed e la stessa con cui
+il gestionale precedente contava i mesi delle utenze nuove nell'elenco per
+l'Anagrafe Tributaria.
 
 ```
 quota di listino 99,00, cessato il 10/09/2026
-  253 giorni su 365  ->  69,3%  ->  68,62
+  da gennaio a settembre, 9 mesi su 12  ->  74,25
 ```
 
-Le date sono `inizio` e `scadenza` del contatore. Il valore `31/12/2099` che il
-gestionale precedente scriveva per dire "ancora in servizio" viene riconosciuto e
-non riduce niente.
+Su un subentro il mese del cambio lo pagano sia chi esce sia chi entra.
+
+Un contatore senza date di inizio e fine, o con la data-sentinella 31/12/2099 del
+gestionale precedente, paga la quota intera.
 
 La riduzione resta scritta sulla riga (`rateo_quota`) e nello snapshot del
 calcolo, cosi la fattura e la verifica possono dire **perche** l'importo non e

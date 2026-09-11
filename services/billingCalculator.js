@@ -243,7 +243,7 @@ const getLineTotal = ({ quantity, type, unitPrice, rateo = 1 }) => {
 
     if (type === 'fixed') {
         // La quota fissa copre l'anno solare: chi e stato in servizio solo una
-        // parte dell'anno ne paga la parte proporzionale ai giorni. Per chi c'e
+        // parte dell'anno ne paga i mesi di servizio, in dodicesimi. Per chi c'e
         // stato tutto l'anno il rateo vale 1, e il conto e quello di prima.
         return fromCents(multiplyCents(prezzoCents, rateo));
     }
@@ -401,8 +401,8 @@ const calculateReadingInvoice = ({
     });
 
     // La quota fissa copre l'anno solare della lettura: se il contatore e stato
-    // attivato o cessato in corso d'anno se ne paga la parte proporzionale ai
-    // giorni di servizio. Chi c'e stato tutto l'anno paga intero, come sempre.
+    // attivato o cessato in corso d'anno se ne pagano i mesi di servizio. Chi
+    // c'e stato tutto l'anno paga intero, come sempre.
     const rateo = rateoQuotaFissa({
         contatore,
         anno: toDate(lettura?.data_lettura)?.getFullYear(),
