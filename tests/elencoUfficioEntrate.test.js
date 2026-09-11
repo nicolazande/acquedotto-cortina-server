@@ -4,8 +4,9 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 
 const {
-    CAMPI, LUNGHEZZA_RIGA, componiRiga, rigaUtenza,
+    CAMPI, LUNGHEZZA_RIGA, componiRiga, eRigaAConsumo, intestazione, rigaUtenza, subentriDaDichiarare,
 } = require('../services/elencoUfficioEntrate');
+const ente = require('../config/anagrafeTributaria');
 
 // Il file vero prodotto dal gestionale precedente: quindici righe da 1798
 // caratteri piu il separatore. E il riferimento su cui il tracciato e stato
@@ -30,7 +31,15 @@ test('ogni riga del tracciato e lunga esattamente quanto deve', () => {
     });
 });
 
-// Un'utenza qualsiasi, su cui cambiare una cosa per volta.
+test('testa e coda del file sono identiche a quelle del gestionale precedente', () => {
+    // I codici dell'ente sono quelli del file vero: se uno cambia per errore, il
+    // file viene rifiutato prima ancora di leggere le utenze.
+    assert.equal(intestazione('0', ente, 2026), RIGHE_DI_GESCO[0]);
+    assert.equal(intestazione('9', ente, 2026), RIGHE_DI_GESCO[RIGHE_DI_GESCO.length - 1]);
+});
+
+// Un'utenza qualsiasi, su cui cambiare una cosa per volta. I dati sono quelli di
+// Siorpaes nel 2026: 16 mc fatturati per 5,28 euro.
 const utenza = (modifiche = {}) => ({
     cliente: {
         cognome: 'Siorpaes', nome: 'Monica', codice_fiscale: 'SRPMNC64D45G642J',
@@ -41,7 +50,7 @@ const utenza = (modifiche = {}) => ({
     edificio: { indirizzo: 'PIAN DA LAGO', catasto: 'A266', foglio: '91', ped: '2451', estensione: '0' },
     nuova: false,
     consumo: 16,
-    consumoPrecedente: 5,
+    importoConsumi: 5.28,
     ...modifiche,
 });
 
@@ -99,14 +108,61 @@ test('i dati catastali accompagnano solo le utenze nuove', () => {
     assert.equal(campo(nuova, 'subalterno').trim(), '0');
 });
 
-test('un utenza nuova non dichiara consumi', () => {
-    // Il primo anno non ha una lettura precedente da confrontare: il gestionale
-    // precedente ci scriveva zero in entrambi i campi.
-    const nuova = rigaUtenza(utenza({ nuova: true, consumo: 999, consumoPrecedente: 888 }));
+test('un subentro appena cominciato porta zero e la sua data di inizio', () => {
+    // Nel file vero i subentranti non hanno ancora niente di fatturato: lo zero
+    // e quello che risulta, non una regola che azzera i numeri.
+    const nuova = rigaUtenza(utenza({ nuova: true, consumo: 0, importoConsumi: 0 }));
 
     assert.equal(Number(campo(nuova, 'consumo')), 0);
-    assert.equal(Number(campo(nuova, 'consumoPrecedente')), 0);
-    assert.equal(campo(nuova, 'dataLettura').trim(), '17032023', 'e porta la data di inizio');
+    assert.equal(Number(campo(nuova, 'importoConsumi')), 0);
+    assert.equal(campo(nuova, 'dataLettura').trim(), '17032023');
+});
+
+test('si dichiara come nuovo solo chi subentra a un utenza fatturata nell anno', () => {
+    // La regola del file vero, verificata sui dieci contratti nuovi del 2026:
+    // Guaitani subentra a Siorpaes, fatturata nel 2026, e c'e; Bernardi subentra
+    // ad Alberti, fatturato l'anno prima, e non c'e; TIEMME e un primo impianto,
+    // e non c'e nemmeno lui.
+    const fratelli = [
+        { _id: 'siorpaes', seriale: '08036108', scadenza: '2026-04-26' },
+        { _id: 'guaitani', seriale: '08036108', scadenza: '2099-12-31' },
+        { _id: 'alberti', seriale: 'A-854', scadenza: '2025-12-31' },
+        { _id: 'bernardi', seriale: 'A-854', scadenza: '2099-12-31' },
+    ];
+    const nuovi = [
+        { _id: 'guaitani', seriale: '08036108', inizio: '2026-04-27' },
+        { _id: 'bernardi', seriale: 'A-854', inizio: '2026-01-01' },
+        { _id: 'tiemme', seriale: 'CE-M252213', inizio: '2026-03-17' },
+    ];
+
+    const dichiarati = subentriDaDichiarare({ nuovi, fratelli, fatturati: new Set(['siorpaes']) });
+    assert.deepEqual(dichiarati.map((c) => c._id), ['guaitani']);
+});
+
+test('il secondo campo numerico e l importo dei consumi, in euro senza decimali', () => {
+    // Sembrava la lettura precedente, e invece e l'importo: nel file vero
+    // Siorpaes porta 16 e 5 (16 mc per 5,28 euro), RP Management 3949 e 5128
+    // (3949 mc per 5127,64 euro). Scriverci la lettura precedente avrebbe
+    // dichiarato cifre senza senso.
+    const importo = (euro) => Number(campo(rigaUtenza(utenza({ importoConsumi: euro })), 'importoConsumi'));
+
+    assert.equal(importo(5.28), 5);
+    assert.equal(importo(5127.64), 5128);
+    assert.equal(importo(13.5), 14, 'a meta si arrotonda per eccesso');
+    assert.equal(importo(3239.96), 3240);
+    assert.equal(importo(0), 0);
+});
+
+test('solo le fasce a consumo entrano nei metri cubi e nell importo', () => {
+    assert.equal(eRigaAConsumo({ tipo_tariffa: 'Tariffa Base' }), true);
+    assert.equal(eRigaAConsumo({ tipo_tariffa: '2° Supero' }), true);
+    // La quota fissa, comunque sia scritta, non e consumo.
+    assert.equal(eRigaAConsumo({ tipo_tariffa: 'Fisso', tipo_quota: 'Q.Fissa' }), false);
+    assert.equal(eRigaAConsumo({ tipo_tariffa: 'Tariffa Base', tipo_quota: 'Q.Fissa' }), false);
+    // La mora per il ritardo nemmeno.
+    assert.equal(eRigaAConsumo({ tipo_tariffa: 'Tariffa Base', calcolo_snapshot: { quota: 'delay' } }), false);
+    // Una riga scritta a mano, senza fascia, non si sa cosa sia.
+    assert.equal(eRigaAConsumo({ tipo_tariffa: '' }), false);
 });
 
 test('una societa mette la ragione sociale dove la persona ha il cognome', () => {
@@ -128,15 +184,14 @@ test('il codice utenza e "1" seguito dal codice del contatore', () => {
 });
 
 test('le righe generate combaciano con quelle del gestionale precedente', () => {
-    // Si ricostruisce una riga vera partendo dai suoi stessi dati: se il
-    // tracciato e letto bene, i campi che dipendono dal tracciato - non dai dati
-    // in archivio - devono tornare identici.
+    // Si ricostruisce una riga vera partendo dai dati di Siorpaes: i campi che
+    // dipendono dal tracciato devono tornare identici, importo compreso.
     const vera = RIGHE_DI_GESCO.find((r) => r.slice(1, 17).trim() === 'SRPMNC64D45G642J');
     const mia = rigaUtenza(utenza());
 
     ['tipoRecord', 'codiceFiscale', 'cognome', 'nome', 'sesso', 'codiceUtenza',
         'tipoUtenza', 'indirizzo', 'codiceCatastale', 'tipoFornitura', 'mesi',
-        'consumo', 'consumoPrecedente', 'fine'].forEach((nome) => {
+        'consumo', 'importoConsumi', 'fine'].forEach((nome) => {
         assert.equal(campo(mia, nome), campo(vera, nome), `il campo ${nome}`);
     });
 });

@@ -1,4 +1,4 @@
-// L'elenco dei consumi che una volta l'anno va all'anagrafe tributaria.
+// L'elenco delle utenze che una volta l'anno va all'Anagrafe Tributaria.
 //
 // E un file a larghezza fissa: ogni riga e lunga 1798 caratteri e ogni campo
 // occupa una posizione precisa, riempita di spazi. Non e un formato che si possa
@@ -10,11 +10,19 @@
 // Tre tipi di riga: una di testa (0), una per utenza (1), una di coda (9).
 // Testa e coda sono identiche a meno del primo carattere.
 
-const { siglaProvincia } = require('../utils/province');
 const Contatore = require('../models/Contatore');
-const Lettura = require('../models/Lettura');
+const Fattura = require('../models/Fattura');
+const Servizio = require('../models/Servizio');
+// Serviti dalle populate qui sotto: chiesti per nome, vanno registrati.
+require('../models/Cliente');
+require('../models/Edificio');
+require('../models/Lettura');
 const anagrafe = require('../config/anagrafeTributaria');
-const { righeDellAnno } = require('./elencoBim');
+const { dataReale, formatItalianDate, toDate } = require('../utils/dates');
+const { fromCents, toCents } = require('../utils/money');
+const { siglaProvincia } = require('../utils/province');
+const { senzaAccenti } = require('../utils/values');
+const { MESI_DELL_ANNO, mesiDiServizio } = require('./rateoQuotaFissa');
 
 const LUNGHEZZA_RIGA = 1798;
 
@@ -43,17 +51,19 @@ const CAMPI = {
     particella: [306, 313],
     subalterno: [313, 319],
     mesi: [322, 325],
+    // I metri cubi fatturati nell'anno e quanto sono costati, in euro senza
+    // decimali: la sola quota a consumo, senza quota fissa e senza IVA. Il
+    // secondo campo sembrava la lettura precedente, e invece e l'importo: nel
+    // file del gestionale precedente Siorpaes, 16 mc per 5,28 euro, porta 16 e 5,
+    // e RP Management, 3949 mc per 5127,64 euro, porta 3949 e 5128.
     consumo: [325, 334],
-    consumoPrecedente: [334, 343],
+    importoConsumi: [334, 343],
     fine: [1797, 1798],
 };
 
 // Il file e destinato a un sistema che non conosce accenti ne lettere
 // minuscole: si scrive tutto in maiuscolo e senza segni.
-const soloLettere = (testo) => String(testo ?? '')
-    .toUpperCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+const soloLettere = (testo) => senzaAccenti(String(testo ?? '').toUpperCase())
     .replace(/[^A-Z0-9'\- .]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -65,13 +75,24 @@ const dueLettere = (valore) => String(siglaProvincia(valore) || '').slice(0, 2).
 const aSinistra = (valore, quanti) => soloLettere(valore).slice(0, quanti).padEnd(quanti, ' ');
 const aDestra = (valore, quanti) => String(valore ?? '').slice(-quanti).padStart(quanti, ' ');
 
-const dataCompatta = (data) => {
-    if (!data) return '';
-    const d = data instanceof Date ? data : new Date(data);
-    if (Number.isNaN(d.getTime())) return '';
-    const due = (n) => String(n).padStart(2, '0');
-    return `${due(d.getUTCDate())}${due(d.getUTCMonth() + 1)}${d.getUTCFullYear()}`;
+// La data come la vuole il tracciato: giorno, mese e anno di seguito, 27042026.
+const dataCompatta = (data) => formatItalianDate(data).replace(/\//g, '');
+
+// Euro senza decimali, arrotondati a meta per eccesso: 13,50 diventa 14. Si
+// passa dai centesimi, cosi una somma di righe non porta con se gli errori della
+// virgola mobile.
+const euroInteri = (valore) => {
+    const centesimi = toCents(valore);
+    return centesimi >= 0 ? Math.round(centesimi / 100) : -Math.round(-centesimi / 100);
 };
+
+// Una persona fisica si identifica col codice fiscale, una societa con la
+// partita IVA. `ragione_sociale` non distingue: l'archivio la valorizza anche per
+// le persone, col nome e cognome dentro.
+const eSocieta = (cliente) => Boolean(cliente?.partita_iva);
+const identificativoFiscale = (cliente) => (
+    eSocieta(cliente) ? cliente.partita_iva : (cliente?.codice_fiscale || '')
+);
 
 // Una riga si costruisce partendo da 1798 spazi e scrivendo dentro i campi: cosi
 // una posizione dimenticata resta vuota invece di spostare tutto quello che segue.
@@ -142,30 +163,23 @@ const tipoUtenza = ({ contatore, nuova }) => `${cifraDellUso(contatore)}${nuova 
 
 // I mesi di fornitura scritti nel tracciato. Un'utenza che c'e stata tutto
 // l'anno ne ha dodici; una nuova ne ha quanti ne restano da quando e cominciata,
-// col mese d'inizio contato intero - chi subentra il 27 aprile ne ha nove, da
-// aprile a dicembre - e la "E" davanti che marca la posizione come nuova.
-const MESI_DELL_ANNO = 12;
-
+// con la "E" davanti che marca la posizione come nuova. Si contano come la quota
+// fissa, col mese d'inizio intero: chi subentra il 27 aprile ne ha nove.
 const mesiDiFornitura = ({ nuova, inizio }) => {
-    if (!nuova || !inizio) {
+    const attivazione = toDate(inizio);
+    if (!nuova || !attivazione) {
         return String(MESI_DELL_ANNO).padStart(3);
     }
 
-    const mese = (inizio instanceof Date ? inizio : new Date(inizio)).getUTCMonth() + 1;
-    return `E${String(MESI_DELL_ANNO + 1 - mese).padStart(2)}`;
+    const mesi = mesiDiServizio({ inizio: attivazione, fine: null, anno: attivazione.getUTCFullYear() });
+    return `E${String(mesi).padStart(2)}`;
 };
 
 // Una utenza. Persone fisiche e societa occupano posizioni diverse: la persona
 // ha cognome, nome, sesso, data e comune di nascita; la societa ha la ragione
 // sociale in un campo che parte dove la persona metterebbe la provincia.
-const rigaUtenza = ({ cliente, contatore, edificio, nuova, consumo, consumoPrecedente }) => {
-    // Una persona fisica ha il codice fiscale di sedici caratteri; una societa ha
-    // la partita IVA. `ragione_sociale` non distingue: l'archivio la valorizza
-    // anche per le persone, col nome e cognome dentro.
-    const eSocieta = Boolean(cliente?.partita_iva);
-    const identificativo = eSocieta ? cliente.partita_iva : (cliente?.codice_fiscale || '');
-
-    const comuni = eSocieta
+const rigaUtenza = ({ cliente, contatore, edificio, nuova, consumo, importoConsumi }) => {
+    const comuni = eSocieta(cliente)
         ? {
             // La ragione sociale comincia due caratteri piu in la: cosi la
             // scriveva il gestionale precedente, e il tracciato lo accetta.
@@ -194,7 +208,7 @@ const rigaUtenza = ({ cliente, contatore, edificio, nuova, consumo, consumoPrece
 
     return componiRiga({
         tipoRecord: '1',
-        codiceFiscale: aSinistra(identificativo, 16),
+        codiceFiscale: aSinistra(identificativoFiscale(cliente), 16),
         ...comuni,
         // Il codice dell'utenza e "1" seguito dal codice del contatore: cosi
         // lo scriveva il gestionale precedente, e lo si e verificato su tutte
@@ -208,10 +222,10 @@ const rigaUtenza = ({ cliente, contatore, edificio, nuova, consumo, consumoPrece
         tipoFornitura: 'F',
         ...catasto,
         mesi: mesiDiFornitura({ nuova, inizio: contatore?.inizio }),
-        // Su un'utenza nuova il gestionale precedente scriveva zero in entrambi
-        // i consumi: il primo anno non ha ancora una lettura da confrontare.
-        consumo: aDestra(nuova ? 0 : Math.round(consumo ?? 0), 9),
-        consumoPrecedente: aDestra(nuova ? 0 : Math.round(consumoPrecedente ?? 0), 9),
+        // Quello che e stato fatturato nell'anno. Un subentro appena cominciato non
+        // ha ancora niente, e porta zero come nel file del gestionale precedente.
+        consumo: aDestra(Math.round(consumo ?? 0), 9),
+        importoConsumi: aDestra(euroInteri(importoConsumi ?? 0), 9),
         fine: 'A',
     });
 };
@@ -222,90 +236,145 @@ const componiFile = ({ ente, anno, utenze }) => [
     intestazione('9', ente, anno),
 ].join('\r\n') + '\r\n';
 
-// Le utenze da mandare all'Anagrafe per un anno.
+// Le righe di fattura che dicono quanta acqua e passata da un contatore e quanto
+// e costata: le fasce a consumo. Restano fuori la quota fissa, la mora per il
+// ritardo e le righe scritte a mano senza una fascia.
+const TARIFFA_FISSA = /fiss/i;
+
+const eRigaAConsumo = (riga) => (
+    Boolean(riga?.tipo_tariffa)
+    && !TARIFFA_FISSA.test(String(riga.tipo_tariffa))
+    && !TARIFFA_FISSA.test(String(riga.tipo_quota || ''))
+    && riga.calcolo_snapshot?.quota !== 'delay'
+);
+
+// I contratti cominciati nell'anno da dichiarare come nuovi: i subentri a
+// un'utenza fatturata nello stesso anno. Quando cambia l'intestatario si
+// dichiarano in due, chi esce con i suoi consumi e chi entra con i dati catastali.
 //
-// Ci vanno tutte quelle che hanno avuto un consumo, piu quelle nate nell'anno -
-// un subentro o un primo impianto - che portano anche i dati catastali. Le
-// vecchie hanno i soli consumi: e la regola che l'acquedotto applica da sempre.
+// E la regola del file del gestionale precedente, verificata sui dieci contratti
+// nuovi del 2026: dichiara Guaitani, subentrato a Siorpaes fatturata nel 2026, e
+// non Bernardi, subentrato ad Alberti fatturato l'anno prima. Un primo impianto
+// non si dichiara come nuovo: compare l'anno in cui viene fatturato.
+const subentriDaDichiarare = ({ nuovi, fratelli, fatturati }) => nuovi.filter((nuovo) => {
+    const attivazione = toDate(nuovo.inizio);
+    if (!nuovo.seriale || !attivazione) return false;
+
+    const predecessore = fratelli
+        .filter((f) => f.seriale === nuovo.seriale && String(f._id) !== String(nuovo._id))
+        .map((f) => ({ contatore: f, fine: dataReale(f.scadenza) }))
+        .filter(({ fine }) => fine && fine < attivazione)
+        .sort((a, b) => b.fine - a.fine)[0]?.contatore;
+
+    return Boolean(predecessore) && fatturati.has(String(predecessore._id));
+});
+
+// Le utenze da mandare all'Anagrafe per un anno, e quanto non si e riusciti ad
+// attribuire.
 //
-// I consumi arrivano dalle stesse righe che vanno al BIM, cosi i due elenchi non
-// possono raccontare due storie diverse dello stesso anno. Li si trova per
-// seriale, che e l'unica cosa che la riga del BIM porta con se del contatore.
-const utenzeDellAnno = async (anno) => {
+// Ci vanno le utenze fatturate nell'anno, con i metri cubi e l'importo delle loro
+// righe a consumo; un'utenza con la sola quota fissa e fatturata anche lei, e ci
+// va con zero. Una riga si attribuisce al contatore della lettura che l'ha
+// generata: una riga a consumo senza lettura non si sa di chi sia, resta fuori
+// dal file e finisce nel riepilogo, perche qualcuno la guardi. Poi i subentri.
+const datiDellAnno = async (anno) => {
     const inizio = new Date(Date.UTC(anno, 0, 1));
     const dopo = new Date(Date.UTC(anno + 1, 0, 1));
 
-    const consumiPerSeriale = new Map();
-    (await righeDellAnno(anno)).forEach((riga) => {
-        if (!riga.seriale) return;
-        const gia = consumiPerSeriale.get(riga.seriale);
-        consumiPerSeriale.set(riga.seriale, {
-            consumo: (gia?.consumo ?? 0) + riga.consumi,
-            consumoPrecedente: gia?.consumoPrecedente ?? riga.letturaPrecedente,
-        });
-    });
-
-    // I contatori con una lettura nell'anno: sono le utenze da dichiarare.
-    const lettiQuestAnno = await Lettura.find({ data_lettura: { $gte: inizio, $lt: dopo } })
-        .distinct('contatore');
-
-    const contatori = await Contatore.find({ _id: { $in: lettiQuestAnno } })
-        .populate(['cliente', 'edificio'])
-        .sort({ inizio: 1, codice: 1 })
+    const fatture = await Fattura.find({ anno }).distinct('_id');
+    const righe = await Servizio.find({ fattura: { $in: fatture } })
+        .select('lettura tipo_tariffa tipo_quota metri_cubi valore_unitario calcolo_snapshot.quota')
+        .populate({ path: 'lettura', select: 'contatore' })
         .lean();
 
-    return contatori.map((contatore) => {
-        // Nuova e l'utenza cominciata quest'anno: solo quelle portano i dati
-        // catastali, e solo per quelle l'Anagrafe vuole la data di inizio.
-        const nuova = Boolean(contatore.inizio) && contatore.inizio >= inizio && contatore.inizio < dopo;
-        const consumi = consumiPerSeriale.get(contatore.seriale);
+    const fatturati = new Map();
+    let righeSenzaContatore = 0;
+
+    righe.forEach((riga) => {
+        const aConsumo = eRigaAConsumo(riga);
+        const contatore = riga.lettura?.contatore;
+
+        if (!contatore) {
+            if (aConsumo) righeSenzaContatore += 1;
+            return;
+        }
+
+        const chiave = String(contatore);
+        const gia = fatturati.get(chiave) || { consumo: 0, centesimi: 0 };
+        if (aConsumo) {
+            gia.consumo += Number(riga.metri_cubi) || 0;
+            gia.centesimi += toCents(riga.valore_unitario);
+        }
+        fatturati.set(chiave, gia);
+    });
+
+    const nuovi = await Contatore.find({ inizio: { $gte: inizio, $lt: dopo } }).select('seriale inizio').lean();
+    const seriali = [...new Set(nuovi.map((c) => c.seriale).filter(Boolean))];
+    const fratelli = await Contatore.find({ seriale: { $in: seriali } }).select('seriale scadenza').lean();
+    const subentri = new Set(
+        subentriDaDichiarare({ nuovi, fratelli, fatturati: new Set(fatturati.keys()) }).map((c) => String(c._id))
+    );
+
+    const contatori = await Contatore.find({ _id: { $in: [...fatturati.keys(), ...subentri] } })
+        .populate(['cliente', 'edificio'])
+        .lean();
+
+    const utenze = contatori.map((contatore) => {
+        const fatturato = fatturati.get(String(contatore._id));
 
         return {
             cliente: contatore.cliente,
             contatore,
             edificio: contatore.edificio,
-            nuova,
-            consumo: consumi?.consumo ?? 0,
-            consumoPrecedente: consumi?.consumoPrecedente ?? 0,
+            // Nuova e la riga di chi subentra: porta i dati catastali, la data di
+            // inizio e i mesi che restano dell'anno.
+            nuova: subentri.has(String(contatore._id)),
+            consumo: fatturato?.consumo ?? 0,
+            importoConsumi: fromCents(fatturato?.centesimi ?? 0),
         };
     });
+
+    // In ordine di codice fiscale, poi di contatore: e l'ordine del file del
+    // gestionale precedente, e rende due invii dello stesso anno confrontabili.
+    const chiaveOrdine = (u) => `${identificativoFiscale(u.cliente)}|${String(u.contatore.codice ?? '').padStart(10, '0')}`;
+    utenze.sort((a, b) => (chiaveOrdine(a) < chiaveOrdine(b) ? -1 : 1));
+
+    return { utenze, righeSenzaContatore };
 };
 
 // Il file completo per un anno, intestazione e piede compresi.
 const fileDellAnno = async (anno) => componiFile({
     ente: anagrafe,
     anno,
-    utenze: await utenzeDellAnno(anno),
+    utenze: (await datiDellAnno(anno)).utenze,
 });
 
-// Cosa contiene il file, senza produrlo: quante utenze, quante nuove, e quante
-// di quelle nuove non hanno i dati catastali - che per l'Anagrafe e il dato che
-// conta, e l'unico che va chiesto a chi firma il contratto.
+// Cosa contiene il file, senza produrlo: quante utenze, quante nuove, e le cose
+// da guardare prima di mandarlo.
 const riepilogoDellAnno = async (anno) => {
-    const utenze = await utenzeDellAnno(anno);
-    const nuove = utenze.filter((u) => u.nuova);
+    const { utenze, righeSenzaContatore } = await datiDellAnno(anno);
+    const subentri = utenze.filter((u) => u.nuova);
 
     return {
         anno,
         utenze: utenze.length,
-        nuove: nuove.length,
-        senzaCatasto: nuove.filter((u) => !u.edificio?.foglio || !(u.edificio?.particella ?? u.edificio?.ped)).length,
-        senzaCodiceFiscale: utenze.filter((u) => !u.cliente?.codice_fiscale && !u.cliente?.partita_iva).length,
+        subentri: subentri.length,
+        // Senza foglio e particella un subentro parte incompleto, ed e il dato che
+        // va chiesto a chi firma il contratto.
+        senzaCatasto: subentri.filter((u) => !u.edificio?.foglio || !(u.edificio?.particella ?? u.edificio?.ped)).length,
+        senzaCodiceFiscale: utenze.filter((u) => !identificativoFiscale(u.cliente)).length,
+        righeSenzaContatore,
     };
 };
 
 module.exports = {
     CAMPI,
-    fileDellAnno,
-    riepilogoDellAnno,
-    utenzeDellAnno,
     LUNGHEZZA_RIGA,
-    aDestra,
-    aSinistra,
-    componiFile,
     componiRiga,
-    dataCompatta,
+    eRigaAConsumo,
+    fileDellAnno,
     intestazione,
+    riepilogoDellAnno,
     rigaUtenza,
-    soloLettere,
+    subentriDaDichiarare,
 };
