@@ -21,7 +21,7 @@ const User = require('../models/User');
 const Fattura = require('../models/Fattura');
 const Scadenza = require('../models/Scadenza');
 const { MODALITA_CONSEGNA, normalizzaModalita } = require('../config/delivery');
-const { DATA_IMPLAUSIBILE } = require('../services/deadlineService');
+const { DATA_IMPLAUSIBILE } = require('../utils/dates');
 
 const applica = process.argv.includes('--fix');
 

@@ -38,10 +38,14 @@ const parsePositiveInteger = (value, fallback) => {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
-const normalizeText = (value) => String(value || '')
-    .toLowerCase()
+// Toglie accenti e segni diacritici lasciando la lettera: "Alverà" diventa
+// "Alvera". Serve dove un testo finisce in un tracciato o in un confronto che gli
+// accenti non li conosce: la fattura elettronica, il PDF, l'Anagrafe Tributaria.
+const senzaAccenti = (value) => String(value ?? '')
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u0300-\u036f]/g, '');
+
+const normalizeText = (value) => senzaAccenti(String(value || '').toLowerCase())
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -57,5 +61,6 @@ module.exports = {
     parseOptionalBoolean,
     parsePositiveInteger,
     roundMoney,
+    senzaAccenti,
     sumMoneyBy,
 };

@@ -16,13 +16,12 @@ const { getTaxRate } = require('./billingCalculator');
 const { applyRate, fromCents, toCents } = require('../utils/money');
 const { unprocessable } = require('../utils/errors');
 const { siglaProvincia } = require('../utils/province');
+const { senzaAccenti } = require('../utils/values');
 
 const FORMATO_PRIVATI = 'FPR12';
 
 // Il tracciato accetta solo alcuni caratteri: niente accenti nei campi liberi.
-const testoXml = (valore) => String(valore ?? '')
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+const testoXml = (valore) => senzaAccenti(valore)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

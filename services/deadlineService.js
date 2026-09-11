@@ -1,7 +1,7 @@
 const Scadenza = require('../models/Scadenza');
 const { saldataExpression } = require('../models/Scadenza');
 const { numberOrZero } = require('../utils/values');
-const { addDays, daysBetween, startOfDay, toDate } = require('../utils/dates');
+const { addDays, daysBetween, startOfDay, toDate, DATA_IMPLAUSIBILE, dataReale } = require('../utils/dates');
 const { customerLabel } = require('../utils/customer');
 
 const DEFAULT_DUE_DAYS = Number.parseInt(process.env.INVOICE_DUE_DAYS || '30', 10);
@@ -28,18 +28,11 @@ const momentoDiRiferimento = (valore) => {
 };
 
 // Il gestionale precedente non lasciava vuota la data di pagamento: ci scriveva
-// 31/12/2099, che era il suo modo di dire "non ancora pagata". Nel nuovo modello
-// quel significato lo porta gia `saldo`, quindi la sentinella non e una data ma
-// un buco, e va letta come tale: comparirebbe a schermo come "Pagamento:
-// 31/12/2099" e, sulle scadenze saldate, produrrebbe un ritardo di ventimila
-// giorni. Il controllo e su una soglia e non sul valore esatto perche un nuovo
-// import puo riportarla con un'ora diversa.
-const DATA_IMPLAUSIBILE = new Date('2090-01-01T00:00:00.000Z');
-
-const dataPagamento = (valore) => {
-    const data = toDate(valore);
-    return data && data < DATA_IMPLAUSIBILE ? data : null;
-};
+// 31/12/2099 per dire "non ancora pagata". Nel nuovo modello quel significato lo
+// porta gia `saldo`, quindi la sentinella va letta come un buco: a schermo
+// comparirebbe "Pagamento: 31/12/2099" e, sulle scadenze saldate, produrrebbe un
+// ritardo di ventimila giorni.
+const dataPagamento = dataReale;
 
 const calculateDelay = (deadline, now) => {
     const dueDate = startOfDay(deadline?.scadenza);
@@ -190,7 +183,6 @@ const delayAggregation = () => ({
 });
 
 module.exports = {
-    DATA_IMPLAUSIBILE,
     dataPagamento,
     buildDeadlinePayload,
     delayAggregation,

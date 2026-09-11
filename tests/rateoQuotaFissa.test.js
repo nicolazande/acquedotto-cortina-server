@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { frazioneDiAnno, rateoQuotaFissa } = require('../services/rateoQuotaFissa');
+const { frazioneDiAnno, mesiDiServizio, rateoQuotaFissa } = require('../services/rateoQuotaFissa');
 
 // La frazione e in dodicesimi: riportarla ai mesi rende i test leggibili.
 const mesi = (frazione) => Math.round(frazione * 12);
@@ -76,4 +76,11 @@ test('senza un anno di riferimento non si riduce niente', () => {
 
 test('il rateo arriva al calcolo dalle date del contatore', () => {
     assert.equal(mesi(rateoQuotaFissa({ contatore: { scadenza: '2026-09-10' }, anno: 2026 })), 9);
+});
+
+test('i mesi di servizio sono interi, da zero a dodici', () => {
+    // E lo stesso numero che l'Anagrafe Tributaria scrive nel tracciato.
+    assert.equal(mesiDiServizio({ inizio: '2026-04-27', fine: null, anno: 2026 }), 9);
+    assert.equal(mesiDiServizio({ inizio: '2020-01-01', fine: '2099-12-31', anno: 2026 }), 12);
+    assert.equal(mesiDiServizio({ inizio: '2027-01-01', fine: null, anno: 2026 }), 0);
 });

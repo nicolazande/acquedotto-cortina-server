@@ -38,15 +38,13 @@ const invoiceAssets = {
     numeroVerdeEmergenza: path.join(__dirname, '..', 'assets', 'invoice', 'numero-verde-emergenza.ppm'),
 };
 
-const { isEmptyValue: isEmpty, numberOrZero } = require('../utils/values');
+const { isEmptyValue: isEmpty, numberOrZero, senzaAccenti } = require('../utils/values');
 const { unprocessable } = require('../utils/errors');
 const { formatItalianDate } = require('../utils/dates');
 const { customerLabel } = require('../utils/customer');
 const { invoiceCode: documentCode } = require('../config/invoicing');
 
-const asciiText = (value) => String(value ?? '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+const asciiText = (value) => senzaAccenti(value)
     .replace(/€/g, 'EUR')
     .replace(/[^\x20-\x7E]/g, '')
     .replace(/[\\()]/g, '\\$&');

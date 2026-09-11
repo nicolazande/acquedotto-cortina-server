@@ -9,8 +9,9 @@
 // Il mese in cui si comincia e quello in cui si cessa contano interi, e il giorno
 // del mese non conta: chi cessa il 10 settembre ha avuto l'acqua anche a
 // settembre e paga nove mesi, chi entra il 27 aprile ne paga nove anche lui, da
-// aprile a dicembre. E la stessa regola con cui il gestionale precedente contava
-// i mesi delle utenze nuove nell'elenco per l'Anagrafe Tributaria.
+// aprile a dicembre. E la regola con cui il gestionale precedente contava i mesi
+// delle utenze nuove per l'Anagrafe Tributaria, e quella delle sue ultime
+// fatture: Siorpaes, cessata ad aprile 2026, ha pagato 4/12 della quota.
 //
 // Una conseguenza da sapere: su un subentro il mese del cambio lo pagano tutti e
 // due, chi esce e chi entra.
@@ -18,19 +19,9 @@
 // L'anno di riferimento e quello della lettura, che e anche quello della
 // fattura: il contatore si legge una volta l'anno, fra ottobre e novembre.
 
-// Il gestionale precedente non lasciava vuota la data di fine: ci scriveva
-// 31/12/2099 per dire "ancora in servizio". Presa alla lettera darebbe un
-// contatore attivo per settant'anni, il che va bene - non riduce niente - ma
-// tanto vale riconoscerla e trattarla come "nessuna fine".
-const ANNO_IMPLAUSIBILE = 2090;
+const { dataReale, toDate } = require('../utils/dates');
 
 const MESI_DELL_ANNO = 12;
-
-const aData = (valore) => {
-    if (!valore) return null;
-    const data = valore instanceof Date ? valore : new Date(valore);
-    return Number.isNaN(data.getTime()) ? null : data;
-};
 
 // Il mese di una data contato dal gennaio dell'anno di riferimento: gennaio e 0,
 // dicembre 11. Una data di un altro anno cade fuori da quell'intervallo, prima o
@@ -39,24 +30,25 @@ const meseNellAnno = (data, anno) => (
     (data.getUTCFullYear() - anno) * MESI_DELL_ANNO + data.getUTCMonth()
 );
 
-// La frazione di anno in cui il contatore e stato in servizio, in dodicesimi: 1
-// se tutto l'anno, 0 se mai. Fuori da questi estremi non puo andare.
-const frazioneDiAnno = ({ inizio, fine, anno }) => {
-    const attivazione = aData(inizio);
-    const cessazione = aData(fine);
+// I mesi interi di servizio dentro l'anno, da 0 a 12. Serve alla quota fissa e
+// all'Anagrafe Tributaria, che li scrive nel tracciato: la regola e una sola.
+// Una fine assente, o la data-sentinella del gestionale precedente, vuol dire
+// "ancora in servizio".
+const mesiDiServizio = ({ inizio, fine, anno }) => {
+    const attivazione = toDate(inizio);
+    const cessazione = dataReale(fine);
 
     const primoMese = attivazione ? Math.max(meseNellAnno(attivazione, anno), 0) : 0;
-    const ultimoMese = cessazione && cessazione.getUTCFullYear() < ANNO_IMPLAUSIBILE
+    const ultimoMese = cessazione
         ? Math.min(meseNellAnno(cessazione, anno), MESI_DELL_ANNO - 1)
         : MESI_DELL_ANNO - 1;
 
-    if (ultimoMese < primoMese) {
-        // Attivato dopo la fine dell'anno, o cessato prima che cominciasse.
-        return 0;
-    }
-
-    return (ultimoMese - primoMese + 1) / MESI_DELL_ANNO;
+    // Attivato dopo la fine dell'anno, o cessato prima che cominciasse: zero.
+    return Math.max(ultimoMese - primoMese + 1, 0);
 };
+
+// La frazione di anno in cui il contatore e stato in servizio, in dodicesimi.
+const frazioneDiAnno = (periodo) => mesiDiServizio(periodo) / MESI_DELL_ANNO;
 
 // La frazione da applicare alla quota fissa di un contatore, per la lettura che
 // si sta fatturando. Un contatore senza date - o attivo tutto l'anno - paga
@@ -70,6 +62,8 @@ const rateoQuotaFissa = ({ contatore, anno }) => {
 };
 
 module.exports = {
+    MESI_DELL_ANNO,
     frazioneDiAnno,
+    mesiDiServizio,
     rateoQuotaFissa,
 };

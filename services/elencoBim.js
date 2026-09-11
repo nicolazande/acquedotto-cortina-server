@@ -14,7 +14,7 @@ const Lettura = require('../models/Lettura');
 const Contatore = require('../models/Contatore');
 require('../models/Cliente');
 require('../models/Edificio');
-const { formatItalianDate, toDate } = require('../utils/dates');
+const { dataReale, formatItalianDate, toDate } = require('../utils/dates');
 const { customerLabel } = require('../utils/customer');
 
 // Le larghezze sono pesi, non punti: `creaPdf` li scala sulla pagina.
@@ -39,10 +39,6 @@ const COLONNE = [
     { titolo: 'Consumi', campo: 'consumi', larghezza: 36, numero: true },
     { titolo: 'Tipo fornitura', campo: 'tipoFornitura', larghezza: 135 },
 ];
-
-// Il gestionale precedente non lasciava vuota la data di fine: ci scriveva
-// 31/12/2099 per dire "ancora in servizio".
-const ANNO_SENTINELLA = 2090;
 
 const testo = (valore) => (valore === null || valore === undefined ? '' : String(valore));
 
@@ -75,8 +71,7 @@ const rigaDaLettura = ({ lettura, contatore, cliente, edificio, letturaPrecedent
         // precedente, e ancora in servizio. Serve a distinguere un subentro -
         // dove uno dei due e cessato - da un condominiale, dove sono attivi
         // entrambi e il consumo andrebbe ripartito.
-        inServizio: !toDate(contatore?.scadenza)
-            || toDate(contatore?.scadenza).getUTCFullYear() >= ANNO_SENTINELLA,
+        inServizio: !dataReale(contatore?.scadenza),
     };
 };
 
@@ -103,14 +98,9 @@ const ordinaPerSubentro = (letture) => {
     // Una scadenza assente e la data-sentinella del gestionale precedente
     // dicono la stessa cosa - "ancora in servizio" - e devono pesare uguale,
     // altrimenti l'ordine dipenderebbe da come e stato importato il record.
-    const fine = (lettura) => {
-        const scadenza = toDate(lettura.contatore?.scadenza);
-        if (!scadenza || scadenza.getUTCFullYear() >= ANNO_SENTINELLA) {
-            return Number.MAX_SAFE_INTEGER;
-        }
-
-        return scadenza.getTime();
-    };
+    const fine = (lettura) => (
+        dataReale(lettura.contatore?.scadenza)?.getTime() ?? Number.MAX_SAFE_INTEGER
+    );
 
     letture.sort((a, b) => {
         const giorno = toDate(a.data_lettura)?.getTime() - toDate(b.data_lettura)?.getTime();
