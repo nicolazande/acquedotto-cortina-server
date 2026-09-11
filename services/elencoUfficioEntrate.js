@@ -11,6 +11,10 @@
 // Testa e coda sono identiche a meno del primo carattere.
 
 const { siglaProvincia } = require('../utils/province');
+const Contatore = require('../models/Contatore');
+const Lettura = require('../models/Lettura');
+const anagrafe = require('../config/anagrafeTributaria');
+const { righeDellAnno } = require('./elencoBim');
 
 const LUNGHEZZA_RIGA = 1798;
 
@@ -33,6 +37,11 @@ const CAMPI = {
     indirizzo: [255, 295],
     codiceCatastale: [295, 299],
     tipoFornitura: [299, 300],
+    // Foglio, particella e subalterno dell'unita immobiliare. Ci sono solo
+    // sulle utenze nuove: per le vecchie l'Anagrafe vuole i soli consumi.
+    foglio: [300, 306],
+    particella: [306, 313],
+    subalterno: [313, 319],
     mesi: [322, 325],
     consumo: [325, 334],
     consumoPrecedente: [334, 343],
@@ -107,18 +116,49 @@ const intestazione = (tipoRecord, ente, anno) => {
     return riga.join('');
 };
 
-// Il codice a due cifre che distingue il tipo di posizione. Nel file di
-// riferimento: 21 e 22 per le persone, 31 per le societa; la seconda cifra
-// cambia quando l'utenza e subentrata in corso d'anno.
-const tipoUtenza = ({ eSocieta, lettura }) => {
-    if (eSocieta) return '31';
-    return lettura?.subentro ? '22' : '21';
+// Il codice a due cifre che distingue il tipo di posizione.
+//
+// La prima cifra dice che uso si fa dell'acqua: 1 un'abitazione di residenti,
+// 2 un'abitazione di non residenti, 3 un'attivita - un'impresa, un cantiere.
+// La seconda dice se l'utenza e nuova dell'anno, e in quel caso vale 2.
+//
+// La regola e ricavata dalle tredici righe del file prodotto dal gestionale
+// precedente. Non e la partita IVA a decidere la prima cifra: Guaitani non ne
+// ha e sta fra le attivita (32), perche il suo contatore e PRODUTTIVO.
+const CIFRA_PER_ATTIVITA = [
+    [/non\s*residen/i, '2'],
+    [/residen/i, '1'],
+];
+
+const cifraDellUso = (contatore) => {
+    const attivita = String(contatore?.tipo_attivita || '');
+    const trovata = CIFRA_PER_ATTIVITA.find(([quale]) => quale.test(attivita));
+    // Tutto cio che non e un'abitazione e un'attivita: produttivo, cantieri,
+    // utenze condominiali, societa immobiliari.
+    return trovata ? trovata[1] : '3';
+};
+
+const tipoUtenza = ({ contatore, nuova }) => `${cifraDellUso(contatore)}${nuova ? '2' : '1'}`;
+
+// I mesi di fornitura scritti nel tracciato. Un'utenza che c'e stata tutto
+// l'anno ne ha dodici; una nuova ne ha quanti ne restano da quando e cominciata,
+// col mese d'inizio contato intero - chi subentra il 27 aprile ne ha nove, da
+// aprile a dicembre - e la "E" davanti che marca la posizione come nuova.
+const MESI_DELL_ANNO = 12;
+
+const mesiDiFornitura = ({ nuova, inizio }) => {
+    if (!nuova || !inizio) {
+        return String(MESI_DELL_ANNO).padStart(3);
+    }
+
+    const mese = (inizio instanceof Date ? inizio : new Date(inizio)).getUTCMonth() + 1;
+    return `E${String(MESI_DELL_ANNO + 1 - mese).padStart(2)}`;
 };
 
 // Una utenza. Persone fisiche e societa occupano posizioni diverse: la persona
 // ha cognome, nome, sesso, data e comune di nascita; la societa ha la ragione
 // sociale in un campo che parte dove la persona metterebbe la provincia.
-const rigaUtenza = ({ cliente, contatore, edificio, lettura, consumo, consumoPrecedente, mesi }) => {
+const rigaUtenza = ({ cliente, contatore, edificio, nuova, consumo, consumoPrecedente }) => {
     // Una persona fisica ha il codice fiscale di sedici caratteri; una societa ha
     // la partita IVA. `ragione_sociale` non distingue: l'archivio la valorizza
     // anche per le persone, col nome e cognome dentro.
@@ -142,6 +182,16 @@ const rigaUtenza = ({ cliente, contatore, edificio, lettura, consumo, consumoPre
             provinciaNascita: dueLettere(cliente?.provincia_nascita),
         };
 
+    // I dati catastali accompagnano solo le utenze nuove: per le altre
+    // l'Anagrafe vuole i soli consumi, e le colonne restano vuote.
+    const catasto = nuova
+        ? {
+            foglio: aDestra(edificio?.foglio, 6),
+            particella: aDestra(edificio?.particella ?? edificio?.ped, 7),
+            subalterno: aDestra(edificio?.subalterno ?? edificio?.estensione, 6),
+        }
+        : {};
+
     return componiRiga({
         tipoRecord: '1',
         codiceFiscale: aSinistra(identificativo, 16),
@@ -150,14 +200,18 @@ const rigaUtenza = ({ cliente, contatore, edificio, lettura, consumo, consumoPre
         // lo scriveva il gestionale precedente, e lo si e verificato su tutte
         // le tredici righe del file di riferimento.
         codiceUtenza: aSinistra(`1${contatore?.codice ?? ''}`, 31),
-        tipoUtenza: aSinistra(tipoUtenza({ eSocieta, lettura }), 2),
-        dataLettura: lettura?.subentro ? dataCompatta(lettura.data_lettura) : '',
+        tipoUtenza: tipoUtenza({ contatore, nuova }),
+        // La data di inizio della fornitura, che c'e solo sulle utenze nuove.
+        dataLettura: nuova ? dataCompatta(contatore?.inizio) : '',
         indirizzo: aSinistra(edificio?.indirizzo || contatore?.nome_edificio, 40),
         codiceCatastale: aSinistra(edificio?.catasto, 4),
         tipoFornitura: 'F',
-        mesi: aDestra(mesi ?? 12, 3),
-        consumo: aDestra(Math.round(consumo ?? 0), 9),
-        consumoPrecedente: aDestra(Math.round(consumoPrecedente ?? 0), 9),
+        ...catasto,
+        mesi: mesiDiFornitura({ nuova, inizio: contatore?.inizio }),
+        // Su un'utenza nuova il gestionale precedente scriveva zero in entrambi
+        // i consumi: il primo anno non ha ancora una lettura da confrontare.
+        consumo: aDestra(nuova ? 0 : Math.round(consumo ?? 0), 9),
+        consumoPrecedente: aDestra(nuova ? 0 : Math.round(consumoPrecedente ?? 0), 9),
         fine: 'A',
     });
 };
@@ -168,8 +222,83 @@ const componiFile = ({ ente, anno, utenze }) => [
     intestazione('9', ente, anno),
 ].join('\r\n') + '\r\n';
 
+// Le utenze da mandare all'Anagrafe per un anno.
+//
+// Ci vanno tutte quelle che hanno avuto un consumo, piu quelle nate nell'anno -
+// un subentro o un primo impianto - che portano anche i dati catastali. Le
+// vecchie hanno i soli consumi: e la regola che l'acquedotto applica da sempre.
+//
+// I consumi arrivano dalle stesse righe che vanno al BIM, cosi i due elenchi non
+// possono raccontare due storie diverse dello stesso anno. Li si trova per
+// seriale, che e l'unica cosa che la riga del BIM porta con se del contatore.
+const utenzeDellAnno = async (anno) => {
+    const inizio = new Date(Date.UTC(anno, 0, 1));
+    const dopo = new Date(Date.UTC(anno + 1, 0, 1));
+
+    const consumiPerSeriale = new Map();
+    (await righeDellAnno(anno)).forEach((riga) => {
+        if (!riga.seriale) return;
+        const gia = consumiPerSeriale.get(riga.seriale);
+        consumiPerSeriale.set(riga.seriale, {
+            consumo: (gia?.consumo ?? 0) + riga.consumi,
+            consumoPrecedente: gia?.consumoPrecedente ?? riga.letturaPrecedente,
+        });
+    });
+
+    // I contatori con una lettura nell'anno: sono le utenze da dichiarare.
+    const lettiQuestAnno = await Lettura.find({ data_lettura: { $gte: inizio, $lt: dopo } })
+        .distinct('contatore');
+
+    const contatori = await Contatore.find({ _id: { $in: lettiQuestAnno } })
+        .populate(['cliente', 'edificio'])
+        .sort({ inizio: 1, codice: 1 })
+        .lean();
+
+    return contatori.map((contatore) => {
+        // Nuova e l'utenza cominciata quest'anno: solo quelle portano i dati
+        // catastali, e solo per quelle l'Anagrafe vuole la data di inizio.
+        const nuova = Boolean(contatore.inizio) && contatore.inizio >= inizio && contatore.inizio < dopo;
+        const consumi = consumiPerSeriale.get(contatore.seriale);
+
+        return {
+            cliente: contatore.cliente,
+            contatore,
+            edificio: contatore.edificio,
+            nuova,
+            consumo: consumi?.consumo ?? 0,
+            consumoPrecedente: consumi?.consumoPrecedente ?? 0,
+        };
+    });
+};
+
+// Il file completo per un anno, intestazione e piede compresi.
+const fileDellAnno = async (anno) => componiFile({
+    ente: anagrafe,
+    anno,
+    utenze: await utenzeDellAnno(anno),
+});
+
+// Cosa contiene il file, senza produrlo: quante utenze, quante nuove, e quante
+// di quelle nuove non hanno i dati catastali - che per l'Anagrafe e il dato che
+// conta, e l'unico che va chiesto a chi firma il contratto.
+const riepilogoDellAnno = async (anno) => {
+    const utenze = await utenzeDellAnno(anno);
+    const nuove = utenze.filter((u) => u.nuova);
+
+    return {
+        anno,
+        utenze: utenze.length,
+        nuove: nuove.length,
+        senzaCatasto: nuove.filter((u) => !u.edificio?.foglio || !(u.edificio?.particella ?? u.edificio?.ped)).length,
+        senzaCodiceFiscale: utenze.filter((u) => !u.cliente?.codice_fiscale && !u.cliente?.partita_iva).length,
+    };
+};
+
 module.exports = {
     CAMPI,
+    fileDellAnno,
+    riepilogoDellAnno,
+    utenzeDellAnno,
     LUNGHEZZA_RIGA,
     aDestra,
     aSinistra,
