@@ -9,6 +9,7 @@
 // conoscere, e `config` e una foglia: da li non si guarda verso l'alto.
 
 const elencoBim = require('../services/elencoBim');
+const elencoUfficioEntrate = require('../services/elencoUfficioEntrate');
 
 const ELENCHI = {
     bim: {
@@ -20,6 +21,15 @@ const ELENCHI = {
         colonne: elencoBim.COLONNE,
         righe: elencoBim.righeDellAnno,
         riepilogo: elencoBim.riepilogoDellAnno,
+    },
+    // L'Anagrafe Tributaria non vuole una tabella ma un file a larghezza fissa,
+    // con un tracciato deciso da loro: non ha colonne, ha `testo`.
+    'anagrafe-tributaria': {
+        etichetta: 'Elenco per l\'Anagrafe Tributaria',
+        nomeFile: (anno) => `Anagrafe_Tributaria_${anno}`,
+        titolo: (anno) => `Utenze ${anno}`,
+        testo: elencoUfficioEntrate.fileDellAnno,
+        riepilogo: elencoUfficioEntrate.riepilogoDellAnno,
     },
 };
 

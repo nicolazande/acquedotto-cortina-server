@@ -25,6 +25,13 @@ const FORMATI = {
         tipo: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         crea: (elenco, righe, opzioni) => creaWord(elenco.colonne, righe, opzioni),
     },
+    // Un tracciato deciso da chi lo riceve: si manda il file com'e.
+    testo: {
+        estensione: 'txt',
+        tipo: 'text/plain; charset=utf-8',
+        soloTesto: true,
+        crea: (elenco, contenuto) => Buffer.from(contenuto, 'latin1'),
+    },
 };
 
 const FORMATI_AMMESSI = Object.keys(FORMATI).join(', ');
@@ -59,9 +66,21 @@ const scaricaElenco = async (req, res) => {
             return res.status(400).json({ error: `Formato non valido: usare ${FORMATI_AMMESSI}` });
         }
 
+        // Un elenco che produce un tracciato non ha righe da impaginare, e uno
+        // tabellare non ha un testo gia pronto: chiedere quello che non c'e
+        // darebbe un file vuoto invece di un errore.
+        if (Boolean(elenco.testo) !== Boolean(formato.soloTesto)) {
+            return res.status(400).json({
+                error: elenco.testo
+                    ? `L'elenco ${req.params.elenco} si scarica solo come testo`
+                    : `L'elenco ${req.params.elenco} non ha un formato testo`,
+            });
+        }
+
         const anno = annoRichiesto(req.query.anno);
-        const righe = await elenco.righe(anno);
-        const buffer = formato.crea(elenco, righe, { anno, ente: anagrafe.denominazione });
+        const buffer = elenco.testo
+            ? formato.crea(elenco, await elenco.testo(anno))
+            : formato.crea(elenco, await elenco.righe(anno), { anno, ente: anagrafe.denominazione });
         const filename = `${elenco.nomeFile(anno)}.${formato.estensione}`;
 
         res.setHeader('Content-Type', formato.tipo);
