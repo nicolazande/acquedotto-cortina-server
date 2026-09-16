@@ -1,7 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { riservaProgressivoInvio } = require('../services/counters');
+const { componiCodiceInvio, riservaProgressivoInvio } = require('../services/counters');
+const anagrafe = require('../config/anagrafeTributaria');
 
 // Il progressivo di invio non e ricavabile dal numero della fattura. Il nome del
 // file trasmesso deve essere unico per sempre presso lo SdI: una fattura
@@ -21,4 +22,23 @@ test('il progressivo di invio sta in dieci caratteri alfanumerici', () => {
 
 test('riservaProgressivoInvio esiste ed e la sola via per ottenerne uno', () => {
     assert.equal(typeof riservaProgressivoInvio, 'function');
+});
+
+// Il codice che identifica un file mandato all'Anagrafe Tributaria. Cambia a ogni
+// file prodotto: quando il Desktop Telematico segnala un errore, l'elenco si
+// corregge e si ristampa, e il file nuovo non puo portare il codice del vecchio.
+test('il codice di invio e sei cifre di progressivo piu la data del giorno', () => {
+    const quando = new Date('2026-09-16T00:00:00.000Z');
+
+    assert.equal(componiCodiceInvio(210042, quando), '21004216092026');
+    assert.equal(componiCodiceInvio(7, quando), '00000716092026');
+    assert.equal(componiCodiceInvio(210042, quando).length, 14, 'lungo come quello di Gesco');
+});
+
+test('il progressivo riparte da dopo l ultimo codice del gestionale precedente', () => {
+    // Cosi i codici gia mandati all'Agenzia non si ripetono.
+    const ultimo = Number(anagrafe.ultimoCodiceInvio.slice(0, 6));
+
+    assert.ok(Number.isInteger(ultimo) && ultimo > 0, 'il codice di partenza va letto dalla configurazione');
+    assert.equal(componiCodiceInvio(ultimo + 1, new Date('2026-02-28T00:00:00.000Z')), '21004228022026');
 });

@@ -23,6 +23,7 @@ const { fromCents, toCents } = require('../utils/money');
 const { siglaProvincia } = require('../utils/province');
 const { senzaAccenti } = require('../utils/values');
 const { MESI_DELL_ANNO, mesiDiServizio } = require('./rateoQuotaFissa');
+const { riservaCodiceInvioAnagrafe } = require('./counters');
 
 const LUNGHEZZA_RIGA = 1798;
 
@@ -116,7 +117,7 @@ const componiRiga = (valori) => {
 // I dati dell'ente che apre e chiude il file. Sono costanti dell'acquedotto -
 // codice fornitura, partita IVA, denominazione - e stanno in `config/anagrafeTributaria`
 // perche siano modificabili senza toccare il codice che compone le righe.
-const intestazione = (tipoRecord, ente, anno) => {
+const intestazione = (tipoRecord, ente, anno, codiceInvio) => {
     const riga = new Array(LUNGHEZZA_RIGA).fill(' ');
     const scrivi = (da, testo) => {
         const t = String(testo ?? '');
@@ -131,7 +132,7 @@ const intestazione = (tipoRecord, ente, anno) => {
     scrivi(102, soloLettere(ente.comune).slice(0, 40));
     scrivi(142, ente.provincia);
     scrivi(239, `${anno}${ente.progressivoFornitura}`);
-    scrivi(259, ente.codiceInvio);
+    scrivi(259, codiceInvio);
     scrivi(1797, 'A');
 
     return riga.join('');
@@ -230,10 +231,10 @@ const rigaUtenza = ({ cliente, contatore, edificio, nuova, consumo, importoConsu
     });
 };
 
-const componiFile = ({ ente, anno, utenze }) => [
-    intestazione('0', ente, anno),
+const componiFile = ({ ente, anno, utenze, codiceInvio }) => [
+    intestazione('0', ente, anno, codiceInvio),
     ...utenze.map(rigaUtenza),
-    intestazione('9', ente, anno),
+    intestazione('9', ente, anno, codiceInvio),
 ].join('\r\n') + '\r\n';
 
 // Le righe di fattura che dicono quanta acqua e passata da un contatore e quanto
@@ -343,9 +344,12 @@ const datiDellAnno = async (anno) => {
 };
 
 // Il file completo per un anno, intestazione e piede compresi.
+// Ogni file prodotto si prende un codice di invio nuovo: e cosi che il Desktop
+// Telematico distingue una ristampa corretta dal file che l'ha preceduta.
 const fileDellAnno = async (anno) => componiFile({
     ente: anagrafe,
     anno,
+    codiceInvio: await riservaCodiceInvioAnagrafe(),
     utenze: (await datiDellAnno(anno)).utenze,
 });
 

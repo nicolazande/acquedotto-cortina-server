@@ -33,9 +33,11 @@ test('ogni riga del tracciato e lunga esattamente quanto deve', () => {
 
 test('testa e coda del file sono identiche a quelle del gestionale precedente', () => {
     // I codici dell'ente sono quelli del file vero: se uno cambia per errore, il
-    // file viene rifiutato prima ancora di leggere le utenze.
-    assert.equal(intestazione('0', ente, 2026), RIGHE_DI_GESCO[0]);
-    assert.equal(intestazione('9', ente, 2026), RIGHE_DI_GESCO[RIGHE_DI_GESCO.length - 1]);
+    // file viene rifiutato prima ancora di leggere le utenze. Il codice di invio
+    // cambia a ogni file, quindi per il confronto si passa quello di quel file.
+    const codice = ente.ultimoCodiceInvio;
+    assert.equal(intestazione('0', ente, 2026, codice), RIGHE_DI_GESCO[0]);
+    assert.equal(intestazione('9', ente, 2026, codice), RIGHE_DI_GESCO[RIGHE_DI_GESCO.length - 1]);
 });
 
 // Un'utenza qualsiasi, su cui cambiare una cosa per volta. I dati sono quelli di

@@ -4,7 +4,9 @@
 //
 //   fatture:<serie>  il numero della fattura, che riparte ogni anno ed e cio
 //                    che il cliente vede sul documento;
-//   trasmissioni     il progressivo di invio allo SdI, che non riparte mai.
+//   trasmissioni     il progressivo di invio allo SdI, che non riparte mai;
+//   anagrafe:invii   il codice che identifica un file mandato all'Anagrafe
+//                    Tributaria, che cambia a ogni file prodotto.
 //
 // Il secondo non e ricavabile dal primo. Il nome del file trasmesso
 // (IT<partitaIva>_<progressivo>.xml) deve essere unico per sempre: se una
@@ -12,6 +14,8 @@
 // altrimenti lo SdI lo rifiuta come gia inviato. Un progressivo dedotto dal
 // numero della fattura non puo cambiare, e quindi non si puo rispedire nulla.
 const InvoiceCounter = require('../models/InvoiceCounter');
+const anagrafe = require('../config/anagrafeTributaria');
+const { formatItalianDate } = require('../utils/dates');
 
 // I contatori che non hanno un anno usano questo, perche l'indice e su
 // (scope, anno) e vuole comunque un valore.
@@ -45,8 +49,34 @@ const riservaProgressivoInvio = async (session) => {
     return numero.toString(36).toUpperCase().padStart(5, '0');
 };
 
+// Il codice che identifica un invio all'Anagrafe Tributaria: sei cifre di
+// progressivo e la data del giorno, come lo scriveva il gestionale precedente
+// (210041 + 28022026). Cambia a ogni file prodotto, anche quando lo stesso elenco
+// viene ristampato dopo una correzione segnalata dal Desktop Telematico: due file
+// diversi non possono portare lo stesso codice.
+const componiCodiceInvio = (progressivo, quando = new Date()) => (
+    `${String(progressivo).padStart(6, '0')}${formatItalianDate(quando).replace(/\//g, '')}`
+);
+
+// Il progressivo riparte da dove l'aveva lasciato il gestionale precedente, cosi
+// i codici gia mandati all'Agenzia non si ripetono.
+const riservaCodiceInvioAnagrafe = async ({ quando = new Date(), session } = {}) => {
+    const scope = 'anagrafe:invii';
+    const partenza = Number(String(anagrafe.ultimoCodiceInvio || '').slice(0, 6)) || 0;
+
+    await InvoiceCounter.updateOne(
+        { scope, year: SENZA_ANNO },
+        { $max: { value: partenza } },
+        { upsert: true, session }
+    );
+
+    return componiCodiceInvio(await prossimoNumero({ scope, session }), quando);
+};
+
 module.exports = {
+    componiCodiceInvio,
     scopeDellaSerie,
     prossimoNumero,
+    riservaCodiceInvioAnagrafe,
     riservaProgressivoInvio,
 };

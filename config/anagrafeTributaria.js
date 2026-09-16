@@ -10,8 +10,13 @@ module.exports = {
     denominazione: 'COOPERATIVA  GESTIONE ACQUEDOTTO VICINIA DI ZUEL',
     comune: "CORTINA D'AMPEZZO",
     provincia: 'BL',
-    // Progressivo della fornitura e codice di invio: accompagnano l'anno nella
-    // riga di testa.
+    // Accompagna l'anno nella riga di testa. Undici cifre come un codice fiscale
+    // di societa, e non e quello dell'acquedotto: sembra il codice di chi
+    // trasmette la fornitura. Resta uguale a ogni invio.
     progressivoFornitura: '00705780252',
-    codiceInvio: '21004128022026',
+    // L'ultimo codice di invio prodotto dal gestionale precedente, il 28/02/2026.
+    // Non e un valore fisso: il codice cambia a ogni file prodotto, anche quando
+    // lo stesso elenco viene ristampato dopo una correzione. Serve solo a far
+    // ripartire il nostro contatore da dove l'aveva lasciato lui.
+    ultimoCodiceInvio: '21004128022026',
 };
