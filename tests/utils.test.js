@@ -12,7 +12,7 @@ const {
     roundMoney,
     sumMoneyBy,
 } = require('../utils/values');
-const { addDays, daysBetween, formatItalianDate, getDate, startOfDay, toDate } = require('../utils/dates');
+const { addDays, dataCompatta, daysBetween, formatItalianDate, getDate, startOfDay, toDate } = require('../utils/dates');
 const { customerLabel } = require('../utils/customer');
 const { conflict, createError, notFound, unprocessable } = require('../utils/errors');
 const { recordId, uniqueById } = require('../utils/mongo');
@@ -166,4 +166,10 @@ test('formatItalianDate: giorno/mese/anno, e stringa vuota se non e una data', (
     } finally {
         process.env.TZ = fuso;
     }
+});
+
+test('dataCompatta: giorno, mese e anno senza separatori, e vuota senza data', () => {
+    assert.equal(dataCompatta(new Date('2026-04-27T00:00:00.000Z')), '27042026');
+    assert.equal(dataCompatta('2026-01-05'), '05012026');
+    assert.equal(dataCompatta(null), '');
 });

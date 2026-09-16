@@ -63,11 +63,16 @@ const formatItalianDate = (value) => {
     return `${due(date.getUTCDate())}/${due(date.getUTCMonth() + 1)}/${date.getUTCFullYear()}`;
 };
 
+// La data senza separatori, come la vogliono i tracciati a larghezza fissa:
+// 27042026. Una data assente resta una stringa vuota.
+const dataCompatta = (value) => formatItalianDate(value).replace(/\//g, '');
+
 const daysBetween = (from, to) => Math.floor((startOfDay(to) - startOfDay(from)) / MS_PER_DAY);
 
 module.exports = {
-    DATA_IMPLAUSIBILE,
     addDays,
+    DATA_IMPLAUSIBILE,
+    dataCompatta,
     dataReale,
     daysBetween,
     formatItalianDate,

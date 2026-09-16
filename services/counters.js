@@ -15,7 +15,7 @@
 // numero della fattura non puo cambiare, e quindi non si puo rispedire nulla.
 const InvoiceCounter = require('../models/InvoiceCounter');
 const anagrafe = require('../config/anagrafeTributaria');
-const { formatItalianDate } = require('../utils/dates');
+const { dataCompatta } = require('../utils/dates');
 
 // I contatori che non hanno un anno usano questo, perche l'indice e su
 // (scope, anno) e vuole comunque un valore.
@@ -55,7 +55,7 @@ const riservaProgressivoInvio = async (session) => {
 // viene ristampato dopo una correzione segnalata dal Desktop Telematico: due file
 // diversi non possono portare lo stesso codice.
 const componiCodiceInvio = (progressivo, quando = new Date()) => (
-    `${String(progressivo).padStart(6, '0')}${formatItalianDate(quando).replace(/\//g, '')}`
+    `${String(progressivo).padStart(6, '0')}${dataCompatta(quando)}`
 );
 
 // Il progressivo riparte da dove l'aveva lasciato il gestionale precedente, cosi

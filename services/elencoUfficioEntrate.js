@@ -18,7 +18,7 @@ require('../models/Cliente');
 require('../models/Edificio');
 require('../models/Lettura');
 const anagrafe = require('../config/anagrafeTributaria');
-const { dataReale, formatItalianDate, toDate } = require('../utils/dates');
+const { dataCompatta, dataReale, toDate } = require('../utils/dates');
 const { fromCents, toCents } = require('../utils/money');
 const { siglaProvincia } = require('../utils/province');
 const { senzaAccenti } = require('../utils/values');
@@ -75,9 +75,6 @@ const dueLettere = (valore) => String(siglaProvincia(valore) || '').slice(0, 2).
 
 const aSinistra = (valore, quanti) => soloLettere(valore).slice(0, quanti).padEnd(quanti, ' ');
 const aDestra = (valore, quanti) => String(valore ?? '').slice(-quanti).padStart(quanti, ' ');
-
-// La data come la vuole il tracciato: giorno, mese e anno di seguito, 27042026.
-const dataCompatta = (data) => formatItalianDate(data).replace(/\//g, '');
 
 // Euro senza decimali, arrotondati a meta per eccesso: 13,50 diventa 14. Si
 // passa dai centesimi, cosi una somma di righe non porta con se gli errori della
