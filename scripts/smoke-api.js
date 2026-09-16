@@ -1177,6 +1177,208 @@ const testCounterHistory = async () => {
     }
 };
 
+// Un numero uscito non torna libero. Una fattura uscita dal gestionale e poi
+// cancellata lascia il suo numero bruciato; cancellando dopo anche una fattura di
+// prova, il contatore tornava al numero piu alto rimasto - sotto quello bruciato -
+// e la fattura seguente se lo riprendeva: due documenti con lo stesso numero, uno
+// gia in mano al cliente.
+const testBurnedNumberNotReused = async () => {
+    if (skipMutation) {
+        console.log('skipped');
+        return;
+    }
+
+    const createdRecords = [];
+    const nuovaFattura = async (cliente) => {
+        const fattura = await createRecord('fatture', {
+            cliente: cliente._id,
+            data_fattura: OGGI,
+            tipo_documento: 'Fattura',
+            imponibile: 10,
+            iva: 1,
+            totale_fattura: 11,
+        });
+        createdRecords.push({ resource: 'fatture', id: fattura._id });
+        return fattura;
+    };
+    const cancella = (fattura) => request(`/fatture/${fattura._id}?sbloccoConfermato=true`, { method: 'DELETE' });
+
+    try {
+        const cliente = await createTrackedRecord(createdRecords, 'clienti', {
+            nome: 'Smoke',
+            cognome: 'Numero',
+            ragione_sociale: 'Smoke Numero',
+        });
+
+        const uscita = await nuovaFattura(cliente);
+        // La data di invio dice che il documento ha lasciato il gestionale.
+        await request(`/fatture/${uscita._id}?sbloccoConfermato=true`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data_invio_fattura: OGGI }),
+        });
+        await cancella(uscita);
+
+        const prova = await nuovaFattura(cliente);
+        assert(
+            Number(prova.numero) === Number(uscita.numero) + 1,
+            `the number of an invoice that went out must stay taken (${uscita.numero} -> ${prova.numero})`
+        );
+        await cancella(prova);
+
+        const seguente = await nuovaFattura(cliente);
+        assert(
+            Number(seguente.numero) === Number(uscita.numero) + 1,
+            `freeing a later number must not bring back one that went out (${uscita.numero} -> ${seguente.numero})`
+        );
+        await cancella(seguente);
+    } finally {
+        await deleteCreatedRecords(createdRecords);
+    }
+};
+
+// Tornare indietro da una fattura elettronica, come lo si spiega a chi la usa:
+// l'XML riscaricato prende un nome nuovo; una consegna annullata torna in coda,
+// una evasa no; la fattura si riapre solo confermando; cancellata dopo essere
+// uscita, il suo numero non torna libero.
+const testDeliveryRollback = async () => {
+    if (skipMutation) {
+        console.log('skipped');
+        return;
+    }
+
+    const createdRecords = [];
+    const json = (method, body = {}) => ({
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    const rifiutata = async (promessa, stato) => {
+        try {
+            await promessa;
+            return false;
+        } catch (error) {
+            return new RegExp(`failed with ${stato}`).test(error.message);
+        }
+    };
+
+    try {
+        const cliente = await createTrackedRecord(createdRecords, 'clienti', {
+            nome: 'Smoke',
+            cognome: 'Rollback',
+            ragione_sociale: 'Smoke Rollback',
+            codice_fiscale: 'RSSMRA80A01H501U',
+            indirizzo_residenza: 'Via Smoke',
+            numero_residenza: '1',
+            cap_residenza: '32043',
+            localita_residenza: "Cortina d'Ampezzo",
+            provincia_residenza: 'Belluno',
+            fattura_elettronica: true,
+            email_pec: 'smoke@pec.esempio.it',
+        });
+        const listino = await createTrackedRecord(createdRecords, 'listini', {
+            categoria: 'SMOKE ROLLBACK',
+            descrizione: 'Listino temporaneo smoke test',
+        });
+        await createTrackedRecord(createdRecords, 'fasce', {
+            tipo: 'Tariffa Base',
+            min: 1,
+            max: 100,
+            prezzo: 1,
+            inizio: INIZIO_ANNO,
+            scadenza: FINE_ANNO,
+            listino: listino._id,
+        });
+        const contatore = await createTrackedRecord(createdRecords, 'contatori', {
+            codice: 'SMOKE-ROLL',
+            seriale: 'SMOKE-ROLL',
+            cliente: cliente._id,
+            listino: listino._id,
+        });
+        await createTrackedRecord(createdRecords, 'letture', {
+            data_lettura: INIZIO_ANNO,
+            consumo: 0,
+            unita_misura: 'm3',
+            fatturata: true,
+            contatore: contatore._id,
+        });
+        const lettura = await createTrackedRecord(createdRecords, 'letture', {
+            data_lettura: OGGI,
+            consumo: 40,
+            unita_misura: 'm3',
+            fatturata: false,
+            contatore: contatore._id,
+        });
+
+        const { body: generata } = await request('/fatture/genera-da-letture', json('POST', {
+            letture: [lettura._id],
+            data_fattura: OGGI,
+        }));
+        const fattura = generata.fattura;
+        createdRecords.push({ resource: 'fatture', id: fattura._id });
+        await request(`/fatture/${fattura._id}`, json('PUT', { confermata: true }));
+
+        const primaInCoda = Number((await request('/consegne/riepilogo')).body.perTipo?.elettronica || 0);
+        await request('/consegne/pianifica', json('POST', { fatture: [fattura._id] }));
+        const consegna = async () => (await request(`/fatture/${fattura._id}/consegne`)).body.registrate
+            .find((voce) => voce.tipo === 'elettronica');
+        const elettronica = await consegna();
+        assert(elettronica?.stato === 'in_coda', 'the electronic delivery should be queued');
+
+        // Lo scarico prende tutte le fatture elettroniche in coda: si prova solo se
+        // c'e soltanto questa, per non toccare quelle di qualcun altro.
+        if (primaInCoda === 0) {
+            await request('/consegne/xml', json('POST'));
+            const primo = (await consegna()).progressivo;
+            await request('/consegne/xml', json('POST'));
+            const secondo = (await consegna()).progressivo;
+            assert(primo && secondo && primo !== secondo, `a new XML download must give the file a new name (${primo} -> ${secondo})`);
+        } else {
+            console.log(`  (scarico XML non provato: ${primaInCoda} fatture elettroniche gia in coda)`);
+        }
+
+        await request(`/consegne/${elettronica._id}/annulla`, json('POST', { note: 'smoke' }));
+        assert((await consegna()).stato === 'annullata', 'the delivery should be cancelled');
+        await request(`/consegne/${elettronica._id}/coda`, json('POST'));
+        assert((await consegna()).stato === 'in_coda', 'a cancelled delivery should go back to the queue');
+
+        await request(`/consegne/${elettronica._id}/evasa`, json('POST', { note: 'smoke' }));
+        assert((await consegna()).stato === 'inviata', 'the delivery should be marked as done');
+        assert(
+            await rifiutata(request(`/consegne/${elettronica._id}/coda`, json('POST')), 400),
+            'a delivery already done must not go back to the queue'
+        );
+
+        assert(
+            await rifiutata(request(`/fatture/${fattura._id}`, json('PUT', { destinazione: 'Smoke riaperta' })), 409),
+            'a confirmed invoice must not change without an explicit unlock'
+        );
+        await request(`/fatture/${fattura._id}?sbloccoConfermato=true`, json('PUT', { destinazione: 'Smoke riaperta' }));
+        assert(
+            (await request(`/fatture/${fattura._id}`)).body.destinazione === 'Smoke riaperta',
+            'a confirmed invoice should be editable after the unlock'
+        );
+
+        await request(`/fatture/${fattura._id}?sbloccoConfermato=true`, { method: 'DELETE' });
+        const seguente = await createRecord('fatture', {
+            cliente: cliente._id,
+            data_fattura: OGGI,
+            tipo_documento: 'Fattura',
+            imponibile: 10,
+            iva: 1,
+            totale_fattura: 11,
+        });
+        createdRecords.push({ resource: 'fatture', id: seguente._id });
+        assert(
+            Number(seguente.numero) === Number(fattura.numero) + 1,
+            `an invoice that went out must keep its number after deletion (${fattura.numero} -> ${seguente.numero})`
+        );
+        await request(`/fatture/${seguente._id}`, { method: 'DELETE' });
+    } finally {
+        await deleteCreatedRecords(createdRecords);
+    }
+};
+
 const main = async () => {
     console.log(`Smoke API target: ${apiUrl}`);
     await step('health endpoint', testHealth);
@@ -1185,7 +1387,9 @@ const main = async () => {
     await step('relation references create/read/delete', testRelationReferences);
     await step('billing preview/generation/verification', testBillingGeneration);
     await step('invoice deletion cascade', testInvoiceDeletionCascade);
+    await step('a number that went out is never reused', testBurnedNumberNotReused);
     await step('invoice delivery queue', testInvoiceDelivery);
+    await step('going back from an electronic invoice', testDeliveryRollback);
     await step('tariff renewal', testTariffRenewal);
     await step('payment registration', testPaymentRegistration);
     await step('referential integrity', testReferentialIntegrity);
