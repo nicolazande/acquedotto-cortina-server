@@ -1,7 +1,6 @@
 const Articolo = require('../models/Articolo');
 const Cliente = require('../models/Cliente');
 const Fattura = require('../models/Fattura');
-const InvoiceCounter = require('../models/InvoiceCounter');
 const Lettura = require('../models/Lettura');
 require('../models/Listino');
 const Scadenza = require('../models/Scadenza');
@@ -19,7 +18,7 @@ const {
     roundMoney,
 } = require('./billingCalculator');
 const { INVOICE_SERIES, invoiceCode } = require('../config/invoicing');
-const { prossimoNumero, scopeDellaSerie } = require('./counters');
+const { reserveInvoiceNumber } = require('./numerazioneFatture');
 const { runWithOptionalTransaction } = require('./transaction');
 const { righeDellaFattura } = require('./righeFattura');
 const {
@@ -36,24 +35,6 @@ const { uniqueById, withSession } = require('../utils/mongo');
 const { customerLabel } = require('../utils/customer');
 
 const DEFAULT_DELAY_FEE = Number.parseFloat(process.env.INVOICE_DELAY_FEE || '6');
-
-const reserveInvoiceNumber = async (year, session, serie = INVOICE_SERIES) => {
-    const scope = scopeDellaSerie(serie);
-    const highestFattura = await withSession(Fattura.findOne({ anno: year, serie }), session)
-        .sort({ numero: -1 })
-        .limit(1)
-        .select('numero')
-        .lean();
-    const highestNumber = highestFattura ? numberOrZero(highestFattura.numero) : 0;
-
-    await InvoiceCounter.updateOne(
-        { scope, year },
-        { $max: { value: highestNumber } },
-        { upsert: true, session }
-    );
-
-    return prossimoNumero({ scope, year, session });
-};
 
 const releaseReadingsForBilling = async (letturaIds) => {
     if (!letturaIds.length) {

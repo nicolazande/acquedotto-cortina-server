@@ -293,6 +293,11 @@ Con la serie dedicata:
   file XML prodotto, nessuna data di invio - e solo per l'ultimo: una fattura
   cancellata in mezzo lascia un buco, che non si chiude senza rinumerare quelle
   dopo.
+- un numero **uscito non torna mai libero**, nemmeno quando la fattura viene poi
+  cancellata: il contatore se lo ricorda (`ultimo_uscito`) e non scende sotto.
+  Senza, cancellando dopo una fattura di prova il contatore tornava al numero piu
+  alto rimasto e la fattura seguente si riprendeva il numero di quella uscita.
+  Le regole della numerazione stanno tutte in `services/numerazioneFatture.js`.
 
 > La lettera della serie va concordata con chi tiene la contabilita: e una scelta
 > fiscale, non tecnica. Si cambia con `INVOICE_SERIES` e vale dalla fattura

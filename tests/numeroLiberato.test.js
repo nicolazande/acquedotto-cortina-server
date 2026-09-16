@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { numeroRiusabile } = require('../services/invoiceDeletionService');
+const { numeroRiusabile } = require('../services/numerazioneFatture');
 const { scopeDellaSerie } = require('../services/counters');
 
 // Una fattura di prova: serie nuova, mai uscita.

@@ -182,6 +182,7 @@ classDiagram
         String scope
         Number year
         Number value
+        Number ultimo_uscito
         Ref _id
         Date createdAt
         Date updatedAt

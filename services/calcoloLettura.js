@@ -55,12 +55,6 @@ const isCondominiumSplitCounter = (contatore) => {
     );
 };
 
-// Il progressivo si calcola sulla sola serie corrente: prima veniva preso il
-// massimo fra tutte le fatture dell'anno, storico compreso, e le fatture nuove
-// ereditavano un numero derivato da codici cliente (2761, 2835, ...).
-// Su un anno senza documenti il primo numero era inoltre 0, perche il contatore
-// parte da -1: ora la prima fattura di una serie e la numero 1.
-
 const getPreviousReading = (lettura, session) => {
     const contatoreId = lettura.contatore?._id || lettura.contatore;
     const query = {
