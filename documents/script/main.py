@@ -560,6 +560,35 @@ def parse_letture_from_counter(html, counter_mongo_id):
 
     return letture
 
+def letture_di_tutte_le_pagine(session_cookie, counter_url, prima_pagina, counter_mongo_id):
+    """Le letture di un contatore, da tutte le pagine della sua griglia.
+
+    La scheda del contatore mostra cinque letture per pagina, dalla piu recente.
+    Leggendo solo la prima, ogni contatore con piu di cinque letture perdeva le
+    piu vecchie: a Campo 320 contatori, a Zuel 703. Si prosegue finche una pagina
+    non porta letture nuove, perche oltre l'ultima Gesco ripete l'ultima.
+    """
+    letture = parse_letture_from_counter(prima_pagina, counter_mongo_id)
+    if "grid-page=" not in prima_pagina:
+        return letture
+
+    def chiave(lettura):
+        return lettura.get("id_lettura") or (lettura.get("data_lettura"), lettura.get("consumo"))
+
+    visti = {chiave(lettura) for lettura in letture}
+    for pagina in range(2, env_int("IMPORT_LETTURE_MAX_PAGES", 200) + 1):
+        html = fetch_html(session_cookie, f"{counter_url}?grid-page={pagina}")
+        nuove = [
+            lettura for lettura in parse_letture_from_counter(html, counter_mongo_id)
+            if chiave(lettura) not in visti
+        ]
+        if not nuove:
+            break
+        letture.extend(nuove)
+        visti.update(chiave(lettura) for lettura in nuove)
+
+    return letture
+
 def parse_counter_details(html):
     print("Parsing counter details (Consuntivo)...")
     soup = BeautifulSoup(html, 'html.parser')
@@ -680,7 +709,7 @@ def parse_and_fetch_counters_from_client(html, session_cookie, client_mongo_id, 
         counter_details["cliente"] = client_mongo_id
 
         counter_mongo_id = db.contatori.insert_one(counter_details).inserted_id
-        letture = parse_letture_from_counter(counter_html, counter_mongo_id)
+        letture = letture_di_tutte_le_pagine(session_cookie, counter_url, counter_html, counter_mongo_id)
         if letture:
             db.letture.insert_many(letture)
 
@@ -1064,41 +1093,63 @@ def parse_scadenze_table(html):
     print(f"Parsed {len(scadenze)} Scadenze entries.")
     return scadenze
 
+def chiave_scadenza(scadenza: dict) -> tuple:
+    """Cosa distingue una scadenza dall'altra nella griglia di Gesco, che non
+    mostra un identificativo: il documento, l'intestatario, la data e l'importo."""
+    return (
+        scadenza.get("anno"),
+        scadenza.get("numero"),
+        scadenza.get("cognome"),
+        scadenza.get("nome"),
+        scadenza.get("scadenza"),
+        scadenza.get("totale"),
+    )
+
 def fetch_all_scadenze(session_cookie, db):
     """
-    Fetches and parses all Scadenze data from the grid across all pages.
-    """
-    old_size = 0
-    page = 1
-    all_scadenze = []
+    Legge tutte le scadenze dalla griglia di Gesco, pagina per pagina.
 
-    while page < env_int("IMPORT_SCADENZE_MAX_PAGES", 28):
+    Chiedendo una pagina oltre l'ultima, Gesco restituisce di nuovo l'ultima. Il
+    ciclo si fermava solo quando la lista smetteva di crescere - cosa che con
+    quella risposta non succede mai - e arrivava sempre al limite fisso di 27
+    pagine. Dove le pagine vere erano meno, l'ultima veniva reinserita fino al
+    limite: a Campo 845 copie. Dove erano di piu, il resto non veniva letto: a
+    Zuel tutto il 2021 e parte del 2022. Ora ci si ferma alla prima pagina che
+    non porta scadenze nuove, come per gli altri elenchi; il limite resta solo
+    come rete di sicurezza, e se lo si raggiunge lo si dice.
+    """
+    visti = set()
+    scadenze = []
+    massimo = env_int("IMPORT_SCADENZE_MAX_PAGES", 1000)
+    page = 1
+
+    while page <= massimo:
         print(f"Fetching Scadenze list, page {page}...")
         scadenze_url = fasttools_url(f"/DataHeaderInvoices/Scadenze?grid-page={page}")
         html = fetch_html(session_cookie, scadenze_url)
 
-        # Parse the Scadenze table on the current page
-        page_scadenze = parse_scadenze_table(html)
+        nuove = []
+        for scadenza in parse_scadenze_table(html):
+            chiave = chiave_scadenza(scadenza)
+            if chiave not in visti:
+                visti.add(chiave)
+                nuove.append(scadenza)
 
-        # Update Scadenze and old size
-        all_scadenze.extend(page_scadenze)
-
-        # Stop if no new Scadenze found
-        if not page_scadenze or len(all_scadenze) == old_size:
+        if not nuove:
             print(f"No new Scadenze found on page {page}. Stopping.")
             break
 
-        old_size = len(all_scadenze)
-        print(f"Page {page}: Found {len(page_scadenze)} Scadenze. Total so far: {old_size}.")
+        scadenze.extend(nuove)
+        print(f"Page {page}: Found {len(nuove)} new Scadenze. Total so far: {len(scadenze)}.")
         page += 1
+    else:
+        print(f"!! Raggiunto il limite di {massimo} pagine di scadenze: potrebbero essercene altre.")
 
-    # Insert Scadenze into the database
-    inserted_count = len(all_scadenze)
-    if all_scadenze:
-        db.scadenze.insert_many(all_scadenze)
+    if scadenze:
+        db.scadenze.insert_many(scadenze)
 
-    print(f"Stored {inserted_count}/{len(all_scadenze)} new Scadenze.")
-    return all_scadenze
+    print(f"Stored {len(scadenze)} Scadenze.")
+    return scadenze
 
 def get_import_steps() -> list[str]:
     requested_steps = env_list("IMPORT_STEPS", DEFAULT_IMPORT_ORDER)

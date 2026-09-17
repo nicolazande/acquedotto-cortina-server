@@ -147,6 +147,27 @@ ognuna con un `manifest.json` che spiega cosa e stato cambiato e come tornare in
 
 ## Cose da sapere sui dati
 
+### L'import da Gesco leggeva scadenze e letture solo in parte
+
+Fino al 17/09/2026 l'import aveva due difetti, corretti in `documents/script/main.py`:
+
+- **scadenze**: oltre l'ultima pagina Gesco ripete l'ultima, e il ciclo non se ne
+  accorgeva: arrivava sempre a 27 pagine. Dove le pagine erano meno, l'ultima
+  finiva nel database piu volte (Campo: 845 copie); dove erano di piu, il resto
+  non veniva letto (Zuel: nessuna scadenza del 2021 e parte del 2022, cioe le
+  770 fatture senza scadenza);
+- **letture**: la scheda del contatore ne mostra cinque per pagina e si leggeva
+  solo la prima, cosi ogni contatore perdeva le piu vecchie (Campo 320 contatori,
+  Zuel 703). La fatturazione non ne risente, perche usa l'ultima lettura.
+
+I dati di Zuel in produzione vengono dall'import vecchio: le scadenze e le
+letture mancanti vanno aggiunte con un recupero mirato, senza reimportare, perche
+in produzione si lavora da settimane. Va fatto finche Gesco e raggiungibile.
+
+Le fatture che l'import lascia senza cliente si collegano con
+`npm run maintenance:allinea-dati -- --fix`, quando la ragione sociale e di un
+solo cliente.
+
 ### Il ritardo delle scadenze e un valore derivato
 
 Il ritardo **non e un campo salvato**: cresce di un giorno al giorno per le scadenze
