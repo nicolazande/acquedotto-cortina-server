@@ -1,7 +1,18 @@
 require('dotenv').config();
 
+const fs = require('node:fs');
+const path = require('node:path');
 const mongoose = require('mongoose');
 const connectDB = require('../../config/db');
+
+// Un modello esiste per Mongoose solo quando qualcuno lo richiede: nel server lo
+// fanno le rotte, in uno script nessuno. Senza, un `populate('listino')` muore
+// con "Schema hasn't been registered for model" - e succedeva a report:anteprima.
+// Si caricano tutti perche l'elenco di quali servono cambia a ogni populate.
+const cartellaModelli = path.join(__dirname, '..', '..', 'models');
+fs.readdirSync(cartellaModelli)
+    .filter((file) => file.endsWith('.js'))
+    .forEach((file) => require(path.join(cartellaModelli, file)));
 
 // `--remoto` fa lavorare lo script sul database di produzione invece che su
 // quello locale, prendendo l'indirizzo da `REMOTE_MONGODB_URI`.

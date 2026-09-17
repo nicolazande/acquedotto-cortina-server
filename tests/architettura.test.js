@@ -123,3 +123,17 @@ test('le intestazioni che il client legge sono dichiarate a CORS', () => {
     const dimenticate = [...nostre].filter((nome) => !esposte.includes(nome));
     assert.deepEqual(dimenticate, [], 'intestazioni mandate ma non esposte: il client le vedrebbe vuote');
 });
+
+// Nel server i modelli si registrano perche le rotte li richiedono. Uno script
+// non passa di li: se manca una registrazione, il primo populate muore a meta
+// lavoro con "Schema hasn't been registered". Meglio averli tutti dall'avvio.
+test('chi lancia uno script ha tutti i modelli registrati', () => {
+    require('../scripts/utils/runScript');
+
+    const dichiarati = fs.readdirSync(path.join(RADICE, 'models'))
+        .filter((nome) => nome.endsWith('.js'))
+        .map((nome) => require(path.join(RADICE, 'models', nome)).modelName)
+        .sort();
+
+    assert.deepEqual(require('mongoose').modelNames().sort(), dichiarati);
+});
