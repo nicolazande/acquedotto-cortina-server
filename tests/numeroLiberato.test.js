@@ -40,8 +40,8 @@ test('una data di invio sulla fattura tiene il numero, anche scritta a mano', ()
 });
 
 test('lo storico importato non libera niente', () => {
-    // Senza serie il numero non e un progressivo: nel gestionale precedente
-    // era un altro dato, e non c'e un contatore da riallineare.
+    // Senza serie il documento viene dal gestionale precedente: il suo numero
+    // non esce da nessun contatore di qui, e non c'e niente da riallineare.
     assert.equal(numeroRiusabile({ fattura: fattura({ serie: undefined }) }), false);
     assert.equal(numeroRiusabile({ fattura: fattura({ numero: null }) }), false);
     assert.equal(numeroRiusabile({ fattura: fattura({ anno: null }) }), false);

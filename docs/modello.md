@@ -76,6 +76,7 @@ classDiagram
         String codice_cliente_erp
         String iban
         String note
+        String codice
         Ref _id
     }
     class Consegna {

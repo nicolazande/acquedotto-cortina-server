@@ -1,9 +1,10 @@
 // Serie di numerazione dei documenti emessi da questo gestionale.
 //
-// Perche una serie separata: nelle fatture importate il campo `numero` non e un
-// progressivo di fattura ma un codice cliente, e la coppia (anno, numero) si
-// ripete su 2.745 documenti. Agganciare la numerazione nuova a quei valori
-// significherebbe partire da numeri arbitrari e non poter garantire l'unicita.
+// Perche una serie separata: nelle fatture importate prima del 17/09/2026 il
+// campo `numero` non e il numero del documento ma il civico dell'indirizzo, per
+// un difetto dell'import, e la coppia (anno, numero) si ripete su centinaia di
+// documenti. Agganciare la numerazione nuova a quei valori significherebbe
+// partire da numeri arbitrari e non poter garantire l'unicita.
 // Con una serie dedicata il progressivo riparte da 1 ogni anno, resta univoco e
 // non entra mai in conflitto con lo storico.
 const { normalizeText } = require('../utils/values');

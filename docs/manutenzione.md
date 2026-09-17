@@ -147,22 +147,43 @@ ognuna con un `manifest.json` che spiega cosa e stato cambiato e come tornare in
 
 ## Cose da sapere sui dati
 
-### L'import da Gesco leggeva scadenze e letture solo in parte
+### L'import da Gesco leggeva male alcuni dati
 
-Fino al 17/09/2026 l'import aveva due difetti, corretti in `documents/script/main.py`:
+Fino al 17/09/2026 l'import (`documents/script/main.py`) aveva questi difetti,
+tutti corretti. I numeri di Zuel sono quelli della copia locale.
 
-- **scadenze**: oltre l'ultima pagina Gesco ripete l'ultima, e il ciclo non se ne
-  accorgeva: arrivava sempre a 27 pagine. Dove le pagine erano meno, l'ultima
-  finiva nel database piu volte (Campo: 845 copie); dove erano di piu, il resto
-  non veniva letto (Zuel: nessuna scadenza del 2021 e parte del 2022, cioe le
-  770 fatture senza scadenza);
-- **letture**: la scheda del contatore ne mostra cinque per pagina e si leggeva
-  solo la prima, cosi ogni contatore perdeva le piu vecchie (Campo 320 contatori,
-  Zuel 703). La fatturazione non ne risente, perche usa l'ultima lettura.
+- **scadenze lette solo in parte**: oltre l'ultima pagina Gesco ripete l'ultima, e
+  il ciclo non se ne accorgeva: arrivava sempre a 27 pagine. Dove le pagine erano
+  meno, l'ultima finiva nel database piu volte (Campo: 845 copie); dove erano di
+  piu, il resto non veniva letto (Zuel: nessuna scadenza del 2021 e parte del
+  2022, cioe le 770 fatture senza scadenza);
+- **letture vecchie perse**: la scheda del contatore ne mostra cinque per pagina e
+  si leggeva solo la prima (Campo 320 contatori, Zuel 703). La fatturazione non ne
+  risente, perche usa l'ultima lettura;
+- **numero della fattura**: nella pagina della fattura "Numero" compare tre volte,
+  prima come numero del documento e poi come civico dei due indirizzi, e si teneva
+  l'ultimo. Il `numero` delle fatture importate prima della correzione **e il
+  civico**, non il numero: a Zuel 2.777 fatture su 3.472 hanno il civico del
+  cliente, 464 sono vuote (civico non numerico, "12/A") e la coppia (anno, numero)
+  si ripete su 498 gruppi. Il numero vero si legge in Gesco, colonna "N." sia
+  nell'elenco delle fatture sia in quello delle scadenze;
+- **cliente della fattura**: si cercava per nome e cognome e fra omonimi vinceva il
+  primo trovato. A Zuel 10 fatture sono intestate al cliente sbagliato (Pompanin
+  Claudio: due persone diverse; Menardi Massimo: la stessa persona con due schede)
+  e 121 sono rimaste senza cliente. Ora si usa il "Codice" della fattura, che e
+  l'id del cliente in Gesco e sta sul cliente nel campo `codice`;
+- **scadenza della fattura**: si cercava per anno, totale e intestatario, cosi due
+  fatture di pari importo nello stesso anno finivano sulla stessa scadenza e le
+  altre restavano orfane (Zuel: 8 fatture su 3 scadenze, 3 scadenze orfane; Campo
+  6 e 15). Ora si usano anno e numero, che in Gesco individuano il documento;
+- **edificio del contatore**: si collegava il primo contatore con la matricola
+  della riga. Dove due contatori hanno la stessa matricola - un subentro, o una
+  matricola segnaposto come "00000" - uno finiva nell'edificio dell'altro (Zuel 3
+  casi, Campo 1). Ora conta anche il cliente scritto nella riga.
 
-I dati di Zuel in produzione vengono dall'import vecchio: le scadenze e le
-letture mancanti vanno aggiunte con un recupero mirato, senza reimportare, perche
-in produzione si lavora da settimane. Va fatto finche Gesco e raggiungibile.
+I dati di Zuel in produzione vengono dall'import vecchio: vanno corretti con un
+recupero mirato, senza reimportare, perche in produzione si lavora da settimane.
+Serve Gesco, quindi va fatto finche e raggiungibile.
 
 Le fatture che l'import lascia senza cliente si collegano con
 `npm run maintenance:allinea-dati -- --fix`, quando la ragione sociale e di un
@@ -179,34 +200,35 @@ Il campo e stato rimosso dai record e l'import non lo riporta piu. Se ricompare,
 `npm run report:integrita` lo segnala e `npm run maintenance:allinea-dati -- --fix`
 lo ripulisce.
 
-### Tre numeri di fattura ripetuti nello storico
+### Otto fatture di Zuel puntano alla scadenza di un'altra
 
-Tre documenti importati compaiono piu volte con lo stesso numero e puntano tutti
-alla stessa scadenza: **5121** (Costruzioni Largura, 132,61), **5334** (Jump 3000,
-2.000,00) e **4989** (Siorpaes Luciano, 66,55). Restano inoltre tre scadenze che
-nessuna fattura richiama, degli stessi intestatari: sembrano pagamenti a rate che
-nel gestionale precedente occupavano piu righe.
+Tre scadenze sono richiamate da piu fatture - **Jump 3000** (2.000,00, tre
+fatture del 2024), **Costruzioni Largura** (132,61, tre del 2025) e **Siorpaes
+Luciano** (66,55, due del 2023) - e tre scadenze non le richiama nessuno. E il
+difetto dell'import sulle scadenze descritto sopra: sono fatture di pari importo
+nello stesso anno, e andavano tutte sulla prima scadenza trovata. Dove la
+scadenza giusta esiste ancora, il recupero dei dati di Zuel le rimette a posto.
 
-Non e un difetto del codice e non lascia residui: la cancellazione di una fattura
-elimina la scadenza **solo se nessun'altra la richiama**
-(`services/invoiceDeletionService.js`). E un dato da chiarire con chi teneva la
-contabilita prima di toccarlo: sono 3 casi su 2.702, tutti anteriori al 2026.
+Nel frattempo non lascia residui: la cancellazione di una fattura elimina la
+scadenza **solo se nessun'altra la richiama**
+(`services/invoiceDeletionService.js`).
 
-### Tre contatori collegati a un edificio con un altro nome
+### Tre contatori di Zuel sono collegati all'edificio sbagliato
 
-Su tre contatori il nome scritto e l'edificio collegato non coincidono, e in
-tutti e tre i casi i due edifici sono unita vicine dello stesso complesso:
+Su tre contatori l'edificio collegato non e quello scritto sulla loro scheda. In
+Gesco il dato e giusto: e il difetto dell'import sulle matricole condivise. Ogni
+matricola sta su due contatori di edifici diversi, e il primo e finito
+nell'edificio del secondo:
 
-| contatore | nome scritto | collegato a | dove |
+| matricola | intestatario | edificio scritto sulla scheda | collegato a |
 |---|---|---|---|
-| 16292009 | CASA B | CASA D | Acquabona |
-| 202923 | CONDOMINIO SAN MARCO B | CONDOMINIO SAN MARCO A | Zuel di Sotto |
-| 9612864fisso4 | CAPANNONE F.LLI PIZZOLOTTO | CAPANNONE  PIZZOLOTTO | Pian da Lago |
+| 16292009 | Alberti Franca | CASA B | CASA D |
+| 202923 | Denna Massimo | CONDOMINIO SAN MARCO B | CONDOMINIO SAN MARCO A |
+| 9612864fisso4 | Impresa Edile Pizzolotto SRL | CAPANNONE F.LLI PIZZOLOTTO | CAPANNONE  PIZZOLOTTO |
 
-Il terzo e quasi certamente lo stesso capannone scritto in due modi. Gli altri
-due sono unita diverse: uno dei due dati e sbagliato, ma quale lo sa solo chi
-conosce gli immobili. Il codice non li tocca; `report:integrita` non li segnala
-perche il collegamento e valido - punta a un edificio che esiste.
+Tutti e sei gli edifici esistono. Vanno ricollegati nel recupero dei dati di
+Zuel; `report:integrita` non li segnala perche il collegamento e valido - punta a
+un edificio che esiste.
 
 ### La penale per il ritardo si addebita una volta sola
 

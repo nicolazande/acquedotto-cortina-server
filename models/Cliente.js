@@ -50,6 +50,9 @@ const clienteSchema = new Schema(
         codice_cliente_erp: String,
         iban: String,
         note: String,
+        // Id del cliente in Gesco, il gestionale precedente. Le fatture importate
+        // lo riportano nel loro `codice`: e cosi che l'import le collega al cliente.
+        codice: String,
     },
     {
         collection: 'clienti'

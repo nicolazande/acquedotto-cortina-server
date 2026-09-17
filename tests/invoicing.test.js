@@ -9,8 +9,8 @@ test('il codice documento unisce anno, serie e numero', () => {
 });
 
 test('senza serie non si costruisce un codice', () => {
-    // Le fatture importate non hanno serie: il loro `numero` e un codice cliente
-    // e non va presentato come progressivo di fattura.
+    // Le fatture importate non hanno serie: il loro numero viene dal gestionale
+    // precedente e non appartiene alla numerazione di questo.
     assert.equal(invoiceCode({ anno: 2026, numero: 2760 }), '');
     assert.equal(invoiceCode({}), '');
 });

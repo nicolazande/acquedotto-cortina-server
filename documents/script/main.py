@@ -175,6 +175,18 @@ def clean_text(value) -> str | None:
     text = value.get_text(strip=True) if hasattr(value, "get_text") else str(value).strip()
     return text or None
 
+def testo_confrontabile(value) -> str:
+    return " ".join(str(value or "").split()).upper()
+
+def nome_senza_codice(nome_cliente: str | None) -> str | None:
+    """"1317 - ROSSI MARIO" -> "ROSSI MARIO".
+
+    La pagina del contatore antepone al cliente il suo id; la ragione sociale
+    puo contenere a sua volta " - " ("Rossi Mario - cessato").
+    """
+    codice, separatore, nome = (nome_cliente or "").partition(" - ")
+    return nome if separatore and codice.strip().isdigit() else nome_cliente
+
 def parse_bool(value) -> bool:
     if isinstance(value, bool):
         return value
@@ -192,6 +204,22 @@ def parse_number(value: str) -> float | int | None:
     except ValueError:
         return None
 
+def coppie_del_gruppo(group):
+    columns = group.find_all('div', class_=lambda x: x and x.startswith('col-sm-'))
+    for index in range(0, len(columns) - 1, 2):
+        yield clean_text(columns[index]), clean_text(columns[index + 1])
+
+def gruppo_che_inizia_con(soup, etichetta: str) -> dict:
+    """Etichette e valori del solo gruppo che si apre con `etichetta`.
+
+    Serve dove un'etichetta si ripete nella pagina: parse_form_groups tiene
+    l'ultimo valore, e l'ultimo puo essere un altro campo con lo stesso nome.
+    """
+    for group in soup.find_all('div', class_='form-group'):
+        if clean_text(group.find('label')) == etichetta:
+            return {label: value for label, value in coppie_del_gruppo(group) if label}
+    return {}
+
 def parse_form_groups(soup, section_labels: set[str] | None = None, keep_empty: bool = False) -> dict:
     details = {}
     current_section = None
@@ -203,10 +231,7 @@ def parse_form_groups(soup, section_labels: set[str] | None = None, keep_empty: 
             current_section = section_label
             continue
 
-        columns = group.find_all('div', class_=lambda x: x and x.startswith('col-sm-'))
-        for index in range(0, len(columns) - 1, 2):
-            label = clean_text(columns[index])
-            value = clean_text(columns[index + 1])
+        for label, value in coppie_del_gruppo(group):
             if not label or (not value and not keep_empty):
                 continue
 
@@ -620,6 +645,9 @@ def fetch_client_and_counters_with_letture(session_cookie, client_id, db):
     client_url = fasttools_url(f"/Customers/Details/{client_id}")
     client_html = fetch_html(session_cookie, client_url)
     client_details = parse_client_details(client_html)
+    # L'id di Gesco e il "Codice" che ogni fattura riporta: e la chiave con cui
+    # le fatture trovano il loro cliente.
+    client_details["codice"] = client_id
     client_mongo_id = db.clienti.insert_one(client_details).inserted_id
     # Parse and fetch counters with details
     parse_and_fetch_counters_from_client(client_html, session_cookie, client_mongo_id, db)
@@ -655,19 +683,26 @@ def parse_edificio_details(html, edificio_id, edificio_mongo_id, db):
         "note": details.get("Note"),
     }
 
-    # Parsing Contatori table and updating the MongoDB counters
+    # La matricola da sola non individua il contatore: nei subentri la stessa sta
+    # su piu contatori, e una matricola segnaposto come "00000" su contatori di
+    # edifici diversi. Ogni riga dice anche di quale cliente e.
     counters_table = soup.find('table', class_='table-hover')
     for counter_data in table_dicts(counters_table):
         seriale = counter_data.get("Seriale")
         if not seriale:
             continue
-        existing_counter = db.contatori.find_one({"seriale": seriale})
-        if existing_counter:
-            db.contatori.update_one(
-                {"_id": existing_counter["_id"]},
+        cliente = testo_confrontabile(counter_data.get("Cliente"))
+        contatori = [
+            contatore["_id"]
+            for contatore in db.contatori.find({"seriale": seriale}, {"nome_cliente": 1})
+            if testo_confrontabile(nome_senza_codice(contatore.get("nome_cliente"))) == cliente
+        ]
+        if contatori:
+            db.contatori.update_many(
+                {"_id": {"$in": contatori}},
                 {"$set": {"edificio": edificio_mongo_id}}
             )
-            print(f"Linked Counter {existing_counter['_id']} to Edificio {edificio_mongo_id}.")
+            print(f"Linked {len(contatori)} Counter(s) {seriale} to Edificio {edificio_mongo_id}.")
 
     return mapped_details
 
@@ -953,17 +988,18 @@ def parse_fattura_details(html):
     checkbox = soup.find('input', id='IsflgConfirmed', type='checkbox')
     is_confermata = checkbox.has_attr('checked') if checkbox else False
     details['Confermata'] = is_confermata
+    # "Numero" compare tre volte: nella testata e il numero del documento, poi
+    # il civico dei due indirizzi. Letto da `details` sarebbe l'ultimo civico.
+    testata = gruppo_che_inizia_con(soup, "Anno")
 
     mapped_details = {
         "tipo_documento": details.get("Tipo Documento"),
         "ragione_sociale": details.get("Ragione Sociale"),
         "confermata": parse_bool(details.get("Confermata")),
-        "anno": parse_number(details.get("Anno")),
-        "numero": parse_number(details.get("Numero")),
-        "data_fattura": parse_date(details.get("Data Fattura")),
+        "anno": parse_number(testata.get("Anno")),
+        "numero": parse_number(testata.get("Numero")),
+        "data_fattura": parse_date(testata.get("Data Fattura")),
         "codice": details.get("Codice"),
-        "cognome": details.get("Cognome"),
-        "nome": details.get("Nome"),
         "destinazione": details.get("Destinazione"),
         "imponibile": parse_number(details.get("Imponibile")),
         "iva": parse_number(details.get("Iva")),
@@ -1013,29 +1049,21 @@ def fetch_fattura_and_servizi(session_cookie, fattura_id, db):
     fattura_url = fasttools_url(f"/DataHeaderInvoices/Details/{fattura_id}")
     fattura_html = fetch_html(session_cookie, fattura_url)
     fattura_details = parse_fattura_details(fattura_html)
-    # cliente
-    nome = fattura_details.get("nome", "")
-    cognome = fattura_details.get("cognome", "")
-    client = db.clienti.find_one({"nome": nome, "cognome": cognome})
-    # scadenza
-    scadenza = db.scadenze.find_one({
-        "anno": fattura_details.get("anno"),
-        "totale": fattura_details.get("totale_fattura"),
-        "nome": nome,
-        "cognome": cognome
-    })
+    # Nome e cognome non bastavano: fra omonimi, e fra un condominio e il suo
+    # amministratore, la fattura finiva al cliente sbagliato. Il "Codice" della
+    # fattura e l'id del cliente in Gesco.
+    codice = fattura_details.get("codice")
+    client = db.clienti.find_one({"codice": codice}) if codice else None
+    fattura_details["cliente"] = client["_id"] if client else None
 
-    if client:
-        fattura_details["cliente"] = client["_id"]
-    else:
-        fattura_details["cliente"] = None
-    del fattura_details["cognome"]
-    del fattura_details["nome"]
-
-    if scadenza:
-        fattura_details["scadenza"] = scadenza["_id"]
-    else:
-        fattura_details["scadenza"] = None
+    # Anno e numero individuano il documento. Con anno, totale e intestatario due
+    # fatture dello stesso importo nello stesso anno finivano sulla stessa scadenza.
+    numero = fattura_details.get("numero")
+    scadenza = (
+        db.scadenze.find_one({"anno": fattura_details.get("anno"), "numero": numero})
+        if numero is not None else None
+    )
+    fattura_details["scadenza"] = scadenza["_id"] if scadenza else None
     # update database
     fattura_mongo_id = db.fatture.insert_one(fattura_details).inserted_id
     # servizi

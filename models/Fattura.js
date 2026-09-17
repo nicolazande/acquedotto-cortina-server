@@ -11,10 +11,11 @@ const fatturaSchema = new Schema(
         data_fattura: { type: Date, required: false },
         codice: { type: String, required: false },
         // Serie di numerazione. Le fatture importate dal gestionale precedente
-        // non ne hanno una: il loro `numero` non e un progressivo di fattura ma
-        // un codice cliente (arriva a 6343 in ogni anno). I documenti emessi da
-        // questo gestionale usano una serie propria, con progressivo pulito che
-        // riparte da 1 ogni anno.
+        // non ne hanno una, e nei dati importati prima del 17/09/2026 il loro
+        // `numero` non e nemmeno il numero del documento ma il civico
+        // dell'indirizzo, per un difetto dell'import (docs/manutenzione.md). I
+        // documenti emessi da questo gestionale usano una serie propria, con
+        // progressivo pulito che riparte da 1 ogni anno.
         serie: { type: String, required: false },
         destinazione: { type: String, required: false },
         imponibile: { type: Number, required: false },

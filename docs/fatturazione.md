@@ -272,12 +272,13 @@ non sulla sua approssimazione binaria.
 I documenti emessi da questo gestionale usano una **serie di numerazione
 dedicata** (`INVOICE_SERIES`, default `A`), separata dallo storico importato.
 
-Il motivo e nei dati: nelle fatture importate il campo `numero` **non e** un
-progressivo di fattura ma un codice cliente. Arriva a 6343 in ogni anno e la
-coppia (anno, numero) si ripete su 2.745 documenti su 3.469; il campo `codice`
-contiene a sua volta il codice del cliente, uguale su tutte le sue fatture.
-Agganciare la numerazione nuova a quei valori significava partire da numeri
-arbitrari e non poter garantire l'unicita.
+Il motivo e nei dati: nelle fatture importate prima del 17/09/2026 il campo
+`numero` **non e** il numero del documento ma il civico dell'indirizzo, per un
+difetto dell'import corretto quel giorno (vedi `docs/manutenzione.md`). Arriva a
+6343, si ripete e in centinaia di casi e vuoto; il campo `codice` contiene invece
+l'id del cliente in Gesco, uguale su tutte le sue fatture. Agganciare la
+numerazione nuova a quei valori significava partire da numeri arbitrari e non
+poter garantire l'unicita.
 
 Con la serie dedicata:
 
