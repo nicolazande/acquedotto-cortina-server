@@ -13,6 +13,8 @@
 //     dipendere da un valore di ripiego nel codice
 //   - edifici: rimette il punto decimale nelle coordinate che l'hanno perso
 //   - contatori: collega ogni contatore a quello che ha sostituito
+//   - fatture: collega al cliente quelle rimaste senza, se la ragione sociale e
+//     di un solo cliente
 const { runScript } = require('./utils/runScript');
 const Cliente = require('../models/Cliente');
 const Contatore = require('../models/Contatore');
@@ -344,6 +346,52 @@ const collegaContatoriAlLoroEdificio = async () => {
     console.log(`  collegati: ${daCollegare.length}`);
 };
 
+// L'import collega una fattura al suo cliente cercando nome e cognome identici.
+// Quando non combaciano la fattura resta senza cliente: a Campo 371 su 1.469, a
+// Zuel 121. Tutte pero portano la ragione sociale di un solo cliente, e quella
+// basta. Si collega solo quando il cliente e uno; se sono di piu, o nessuno, la
+// fattura resta com'e e viene elencata, perche un collegamento sbagliato manda
+// il documento e i solleciti alla persona sbagliata.
+const collegaFattureSenzaCliente = async () => {
+    const chiave = (testo) => String(testo || '').trim().replace(/\s+/g, ' ').toUpperCase();
+
+    const perRagioneSociale = new Map();
+    const clienti = await Cliente.find({}, { ragione_sociale: 1 }).lean();
+    clienti.forEach((cliente) => {
+        const k = chiave(cliente.ragione_sociale);
+        if (k) perRagioneSociale.set(k, [...(perRagioneSociale.get(k) || []), cliente._id]);
+    });
+
+    const senzaCliente = await Fattura.find({ cliente: null }, { ragione_sociale: 1, anno: 1, numero: 1 }).lean();
+    const daCollegare = [];
+    const daDecidere = [];
+    senzaCliente.forEach((fattura) => {
+        const trovati = perRagioneSociale.get(chiave(fattura.ragione_sociale)) || [];
+        if (trovati.length === 1) {
+            daCollegare.push({ fattura, cliente: trovati[0] });
+        } else {
+            daDecidere.push({ fattura, quanti: trovati.length });
+        }
+    });
+
+    console.log('Fatture senza cliente:');
+    console.log(`  da collegare (ragione sociale di un solo cliente): ${daCollegare.length}`);
+    console.log(`  da decidere a mano: ${daDecidere.length}`);
+    daDecidere.slice(0, 10).forEach(({ fattura, quanti }) => console.log(
+        `    ${fattura.anno}/${fattura.numero ?? '-'} "${fattura.ragione_sociale || ''}": `
+        + `${quanti ? `${quanti} clienti con quella ragione sociale` : 'nessun cliente con quella ragione sociale'}`
+    ));
+
+    if (!applica || daCollegare.length === 0) {
+        return;
+    }
+
+    await Fattura.collection.bulkWrite(daCollegare.map(({ fattura, cliente }) => ({
+        updateOne: { filter: { _id: fattura._id, cliente: null }, update: { $set: { cliente } } },
+    })));
+    console.log(`  collegate: ${daCollegare.length}`);
+};
+
 const main = async () => {
     console.log(applica ? '== APPLICO LE CORREZIONI ==\n' : '== SOLA LETTURA (usa --fix per applicare) ==\n');
 
@@ -364,6 +412,8 @@ const main = async () => {
     await collegaContatoriSostituiti();
     console.log('');
     await collegaContatoriAlLoroEdificio();
+    console.log('');
+    await collegaFattureSenzaCliente();
 };
 
 runScript(main);
