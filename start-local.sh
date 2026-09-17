@@ -6,7 +6,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOCAL_NODE="$ROOT_DIR/.tools/node-v24.19.0-linux-x64/bin"
 MONGO_CONTAINER="${MONGO_CONTAINER:-acquedotto-cortina-mongo}"
 MONGO_IMAGE="${MONGO_IMAGE:-mongo:7}"
-MONGO_VOLUME="${MONGO_VOLUME:-acquedotto-mongo-data}"
+MONGO_VOLUME="${MONGO_VOLUME:-acquedotto-cortina-mongo-data}"
 
 if [[ -d "$LOCAL_NODE" ]]; then
     export PATH="$LOCAL_NODE:$PATH"
@@ -71,6 +71,7 @@ if [[ "${START_MONGO:-false}" == "true" ]]; then
             --name "$MONGO_CONTAINER" \
             -p 27017:27017 \
             -v "$MONGO_VOLUME":/data/db \
+            --restart unless-stopped \
             "$MONGO_IMAGE" >/dev/null
     fi
 fi
