@@ -67,8 +67,8 @@ const anagraficaCliente = (cliente, fattura) => {
 
     if (!partitaIva && !codiceFiscale) {
         throw unprocessable(
-            `Il cliente ${denominazione} non ha partita IVA ne codice fiscale: `
-            + 'la fattura elettronica non puo essere emessa.'
+            `Il cliente ${denominazione} non ha partita IVA né codice fiscale: `
+            + 'la fattura elettronica non può essere emessa.'
         );
     }
 
@@ -95,7 +95,8 @@ const rigaDettaglio = (servizio, indice) => {
         throw unprocessable(
             `La riga "${servizio.descrizione || servizio.articolo?.codice}" ha IVA a zero `
             + `("${servizio.articolo?.iva || 'non indicata'}") ma nessuna natura corrispondente. `
-            + 'Aggiungere la corrispondenza in config/invoicing.js prima di emettere.'
+            + 'Senza, il Sistema di Interscambio scarta il file: va aggiunta la corrispondenza '
+            + 'prima di emettere (config/invoicing.js).'
         );
     }
 

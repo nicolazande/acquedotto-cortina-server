@@ -152,7 +152,7 @@ test('una riga a zero senza natura nota blocca l emissione', () => {
 test('un cliente senza partita IVA ne codice fiscale blocca l emissione', () => {
     const anonimo = { ragione_sociale: 'Senza dati' };
 
-    assert.throws(() => genera({ cliente: anonimo }), /partita IVA ne codice fiscale/);
+    assert.throws(() => genera({ cliente: anonimo }), /partita IVA né codice fiscale/);
 });
 
 test('una fattura senza righe blocca l emissione', () => {
