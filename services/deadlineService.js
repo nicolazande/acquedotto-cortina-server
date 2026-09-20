@@ -3,6 +3,7 @@ const { saldataExpression } = require('../models/Scadenza');
 const { numberOrZero } = require('../utils/values');
 const { addDays, daysBetween, startOfDay, toDate, DATA_IMPLAUSIBILE, dataReale } = require('../utils/dates');
 const { customerLabel } = require('../utils/customer');
+const { giorniDelTermine } = require('../config/invoicing');
 
 const DEFAULT_DUE_DAYS = Number.parseInt(process.env.INVOICE_DUE_DAYS || '30', 10);
 
@@ -79,9 +80,20 @@ const withDeadlineDelay = (record) => {
     return plain.scadenza ? { ...plain, scadenza: withComputedDelay(plain.scadenza) } : plain;
 };
 
-const getDueDate = (invoiceDate, dueDate) => (
-    startOfDay(dueDate) || addDays(invoiceDate || new Date(), Number.isFinite(DEFAULT_DUE_DAYS) ? DEFAULT_DUE_DAYS : 30)
-);
+// La data scritta a mano vince su tutto; poi vale il termine di pagamento del
+// documento - "Vista Fattura" significa il giorno stesso - e in mancanza di
+// entrambi i trenta giorni di prassi.
+const getDueDate = (invoiceDate, dueDate, tipoPagamento) => {
+    const scelta = startOfDay(dueDate);
+    if (scelta) {
+        return scelta;
+    }
+
+    const predefiniti = Number.isFinite(DEFAULT_DUE_DAYS) ? DEFAULT_DUE_DAYS : 30;
+    const giorni = giorniDelTermine(tipoPagamento);
+
+    return addDays(invoiceDate || new Date(), giorni === null ? predefiniti : giorni);
+};
 
 const getCustomerNameParts = (cliente, fattura) => ({
     cognome: cliente?.cognome || customerLabel(cliente, fattura),
@@ -91,7 +103,7 @@ const getCustomerNameParts = (cliente, fattura) => ({
 const buildDeadlinePayload = ({ cliente, dueDate, fattura }) => {
     const nameParts = getCustomerNameParts(cliente, fattura);
     const payload = {
-        scadenza: getDueDate(fattura?.data_fattura, dueDate),
+        scadenza: getDueDate(fattura?.data_fattura, dueDate, fattura?.tipo_pagamento),
         saldo: false,
         pagamento: null,
         anno: fattura?.anno,

@@ -79,7 +79,33 @@ const naturaPerIva = (testoIva) => {
     return voce ? NATURE_IVA[voce] : null;
 };
 
+// Quanti giorni passano fra la fattura e la sua scadenza, secondo il termine di
+// pagamento scritto sul documento. Prima erano trenta per tutti: una fattura per
+// un acconto gia incassato nasceva con trenta giorni di attesa davanti.
+// Si riconosce dal testo perche l'archivio ha scritture diverse per la stessa
+// cosa ("30 Giorni data fattura", "60 giorni data fattura").
+const GIORNI_PER_TERMINE = [
+    { riconosce: /vista\s*fattura|rimessa\s*diretta|contant/i, giorni: 0 },
+    { riconosce: /(\d+)\s*giorni/i, giorni: null },
+];
+
+const giorniDelTermine = (tipoPagamento) => {
+    const testo = String(tipoPagamento || '');
+
+    const voce = GIORNI_PER_TERMINE.find((termine) => termine.riconosce.test(testo));
+    if (!voce) {
+        return null;
+    }
+
+    if (voce.giorni !== null) {
+        return voce.giorni;
+    }
+
+    return Number.parseInt(testo.match(voce.riconosce)[1], 10);
+};
+
 module.exports = {
+    giorniDelTermine,
     CEDENTE,
     INVOICE_SERIES,
     invoiceCode,

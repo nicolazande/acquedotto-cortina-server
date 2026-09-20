@@ -395,6 +395,20 @@ l'azione `fattura.modificata_dopo_conferma`, cosi resta distinguibile da una
 modifica ordinaria su una bozza. Nell'interfaccia il pulsante chiede conferma
 esplicita prima di procedere.
 
+## Quando si incassa
+
+La scadenza di una fattura nasce cosi, in quest'ordine:
+
+1. la **data scritta a mano** nella maschera (`data_scadenza`), se c'e;
+2. il **termine di pagamento** del documento (`tipo_pagamento`): "Vista Fattura"
+   e "Rimessa diretta" valgono il giorno stesso, "60 giorni data fattura"
+   sessanta. I giorni si leggono dal testo perche l'archivio scrive la stessa
+   cosa in piu modi (`giorniDelTermine` in `config/invoicing.js`);
+3. in mancanza di entrambi, `INVOICE_DUE_DAYS` (trenta giorni).
+
+Serve per gli **acconti**: si fattura un incasso gia ricevuto, e trenta giorni di
+attesa davanti non hanno senso.
+
 ## Transazioni
 
 La generazione crea fattura, righe servizio, scadenza e blocca le letture. Su

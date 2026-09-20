@@ -157,3 +157,22 @@ test('una fattura senza scadenza resta com e', () => {
     assert.deepEqual(withDeadlineDelay({ anno: 2026 }), { anno: 2026 });
     assert.equal(withDeadlineDelay(null), null);
 });
+
+test('il termine di pagamento decide quando si incassa', () => {
+    const fattura = (tipo_pagamento) => ({ data_fattura: '2026-03-10', tipo_pagamento });
+    const giorno = (scadenza) => new Date(scadenza).toISOString().slice(0, 10);
+
+    // Un acconto si fattura quando i soldi sono gia arrivati: la scadenza e il
+    // giorno stesso, non fra trenta.
+    assert.equal(giorno(buildDeadlinePayload({ fattura: fattura('Vista Fattura') }).scadenza), '2026-03-10');
+    assert.equal(giorno(buildDeadlinePayload({ fattura: fattura('60 giorni data fattura') }).scadenza), '2026-05-09');
+    assert.equal(giorno(buildDeadlinePayload({ fattura: fattura('30 Giorni data fattura') }).scadenza), '2026-04-09');
+    // Senza termine riconosciuto restano i trenta giorni di prassi.
+    assert.equal(giorno(buildDeadlinePayload({ fattura: fattura('Addebito in conto  a scadenza') }).scadenza), '2026-04-09');
+    assert.equal(giorno(buildDeadlinePayload({ fattura: fattura(undefined) }).scadenza), '2026-04-09');
+});
+
+test('una data di scadenza scelta a mano vince sul termine di pagamento', () => {
+    const scadenza = getDueDate('2026-03-10', '2026-12-31', 'Vista Fattura');
+    assert.equal(new Date(scadenza).toISOString().slice(0, 10), '2026-12-31');
+});
