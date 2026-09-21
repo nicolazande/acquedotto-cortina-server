@@ -189,6 +189,35 @@ Le fatture che l'import lascia senza cliente si collegano con
 `npm run maintenance:allinea-dati -- --fix`, quando la ragione sociale e di un
 solo cliente.
 
+### Le spunte non sono mai state importate
+
+Una casella di spunta in Gesco non ha testo: l'import leggeva il testo della
+cella, trovava vuoto e scartava il campo, e `parse_bool(None)` lo dava per "no".
+**Tutte** le spunte importate risultano quindi false su ogni record, anche dove
+in Gesco sono spuntate: `socio` e `fattura_elettronica` sui clienti, `inattivo`,
+`subentro`, `sostituzione` e `condominiale` sui contatori.
+
+Si vede dai dati di Zuel: 3.452 fatture su 3.472 hanno una data di fattura
+elettronica - sono passate dallo SdI, per 780 clienti diversi - eppure nessun
+cliente risulta impostato per la fattura elettronica. Nessun socio su 900, e
+nessun contatore inattivo su 1.061.
+
+Conseguenza pratica: la coda delle consegne non prepara nessuna fattura
+elettronica, perche le prepara solo per i clienti con quella spunta.
+
+L'import corretto le legge (`valore_della_cella`). Per i dati gia importati:
+
+```bash
+npm run gesco:login            # il CAPTCHA si risolve a mano
+npm run gesco:spunte           # mostra cosa cambierebbe
+npm run gesco:spunte -- --scrivi [--remoto]
+```
+
+Rilegge le schede di Gesco in sola lettura e aggiorna solo quei campi, piu il
+`codice` Gesco del cliente dove manca. Su Campo, il 21/09/2026: 368 clienti su
+374 in fattura elettronica, 31 soci, 16 contatori inattivi, 67 subentri, 15
+sostituzioni, 11 condominiali - tutti valori che prima erano zero.
+
 ### Una fattura confermata dalla maschera restava una bozza
 
 Fino al 21/09/2026 confermare una fattura dalla sua scheda la lasciava con

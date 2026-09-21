@@ -10,8 +10,9 @@ Questo script non reimporta niente: apre le schede di Gesco in sola lettura e
 aggiorna solo quei campi, piu il codice Gesco del cliente dove manca - e la
 chiave con cui le fatture trovano il loro intestatario.
 
-    .venv/bin/python documents/script/aggiorna_spunte.py            # mostra e basta
-    .venv/bin/python documents/script/aggiorna_spunte.py --scrivi   # applica
+    npm run gesco:spunte                      # mostra e basta
+    npm run gesco:spunte -- --scrivi           # applica, sul database locale
+    npm run gesco:spunte -- --scrivi --remoto  # applica su quello di produzione
 
 Serve una sessione valida (`npm run gesco:login`): il login chiede un CAPTCHA.
 """
@@ -131,7 +132,31 @@ def aggiorna_contatori(cookie, db, scrivi: bool) -> dict:
     return esito
 
 
+def destinazione_remota():
+    """`--remoto` lavora sul database di produzione invece che su quello locale.
+
+    Sta qui e non nella riga di comando perche passare l'indirizzo a mano e il
+    modo piu facile di scrivere sul database sbagliato: o la variabile c'e, o lo
+    script si ferma. Stessa regola degli script di manutenzione in `scripts/`.
+    """
+    if "--remoto" not in sys.argv:
+        return True
+
+    remoto = main.os.getenv("REMOTE_MONGODB_URI")
+    if not remoto:
+        print("--remoto richiede REMOTE_MONGODB_URI nel file .env")
+        return False
+
+    main.os.environ["MONGODB_URI"] = remoto
+    main.os.environ.pop("MONGODB_DB", None)
+    print("== PRODUZIONE: si sta lavorando sul database remoto ==")
+    return True
+
+
 def main_script() -> int:
+    if not destinazione_remota():
+        return 1
+
     scrivi = "--scrivi" in sys.argv
     cookie = main.cookie_salvato() or main.get_session_cookie(
         main.os.getenv("FASTTOOLS_EMAIL"), main.os.getenv("FASTTOOLS_PASSWORD")
