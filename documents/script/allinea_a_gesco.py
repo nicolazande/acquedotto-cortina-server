@@ -83,6 +83,7 @@ class Allineamento:
         self.resoconto = defaultdict(int)
         # Da identificativo nella copia di Gesco a identificativo in uso.
         self.corrispondenze = {}
+        self.doppie_contate = set()
 
     def conta(self, voce, quanti=1):
         self.resoconto[voce] += quanti
@@ -101,8 +102,9 @@ class Allineamento:
         ambigue = doppie_gesco | doppie_in_uso
         for valore in ambigue:
             da_gesco.pop(valore, None)
-        if ambigue:
+        if ambigue and nome not in self.doppie_contate:
             self.conta(f"{nome}: chiavi doppie lasciate a una persona", len(ambigue))
+            self.doppie_contate.add(nome)
 
         for valore, documento in da_gesco.items():
             gemello = in_uso.get(valore)
@@ -174,32 +176,40 @@ class Allineamento:
                 self.conta("contatori con le date corrette")
 
     def letture(self):
-        # Le fatture servono gia qui: una lettura e fatturata se lo e da una
-        # fattura di Gesco che esiste anche nel gestionale.
+        da_gesco, in_uso = self.collega("letture", COLLEZIONI["letture"]["chiave"])
+        for identificativo, lettura in da_gesco.items():
+            if identificativo in in_uso:
+                continue
+            # Entra da fatturare: se e fatturata lo decide l'ultimo passo, quando
+            # si sa quali fatture di Gesco esistono anche qui.
+            self.inserisci("letture", {**lettura, "fatturata": False}, ["contatore"])
+            self.conta("letture aggiunte")
+
+    def segni_di_fatturazione(self):
+        """Una lettura e fatturata se la fattura di Gesco che l'ha fatturata c'e
+        anche qui - anche se e appena stata aggiunta.
+
+        Il segno si aggiunge e basta: toglierlo a una lettura fatturata qui
+        vorrebbe dire fatturarla una seconda volta. E se la fattura di Gesco qui
+        non c'e - cancellata apposta, e non reinserita - la lettura resta da
+        fatturare, com'era stata liberata.
+        """
         self.collega("fatture", COLLEZIONI["fatture"]["chiave"])
         fattura_della_lettura = {
             riga["lettura"]: riga["fattura"]
             for riga in self.origine.servizi.find({"lettura": {"$ne": None}}, {"lettura": 1, "fattura": 1})
         }
 
-        da_gesco, in_uso = self.collega("letture", COLLEZIONI["letture"]["chiave"])
-        for identificativo, lettura in da_gesco.items():
-            gemella = in_uso.get(identificativo)
-            if not gemella:
-                self.inserisci("letture", lettura, ["contatore"])
-                self.conta("letture aggiunte")
+        for lettura in self.origine.letture.find({"fatturata": True}, {"_id": 1}):
+            in_uso = self.corrispondenze.get(lettura["_id"])
+            if not in_uso or fattura_della_lettura.get(lettura["_id"]) not in self.corrispondenze:
                 continue
-
-            # Il segno si aggiunge e basta. Toglierlo a una lettura fatturata qui
-            # vorrebbe dire fatturarla una seconda volta; e se la fattura di Gesco
-            # qui non c'e piu - cancellata, e la lettura liberata apposta per
-            # rifatturarla - la lettura resta com'e.
-            if not lettura.get("fatturata") or gemella.get("fatturata"):
+            # Si legge anche senza scrivere: la prova in sola lettura deve contare
+            # solo cio che cambierebbe davvero.
+            gemella = self.destinazione.letture.find_one({"_id": in_uso}, {"fatturata": 1})
+            if gemella and gemella.get("fatturata"):
                 continue
-            if fattura_della_lettura.get(lettura["_id"]) not in self.corrispondenze:
-                continue
-
-            self.aggiorna("letture", gemella["_id"], {"fatturata": True})
+            self.aggiorna("letture", in_uso, {"fatturata": True})
             self.conta("letture segnate come fatturate (lo sono da una fattura di Gesco)")
 
     def numeri_delle_fatture(self):
@@ -256,6 +266,12 @@ class Allineamento:
             if not gemella or gemella.get("serie"):
                 continue
 
+            if fattura.get("scadenza") and fattura["scadenza"] not in self.corrispondenze:
+                # In Gesco la scadenza c'e, ma qui non si e riconosciuta (per
+                # esempio una chiave doppia): non e un motivo per staccarla.
+                self.conta("fatture con una scadenza di Gesco non riconosciuta qui (lasciate com'erano)")
+                continue
+
             attesa = self.corrispondenze.get(fattura["scadenza"]) if fattura.get("scadenza") else None
             if gemella.get("scadenza") == attesa:
                 continue
@@ -276,8 +292,20 @@ class Allineamento:
         for riga in self.origine.servizi.find({}):
             righe_per_fattura[riga["fattura"]].append(riga)
 
+        # L'import vecchio aveva letto tutte le fatture: una che manca ed e piu
+        # vecchia dell'ultima arrivata da Gesco e stata cancellata qui, apposta
+        # - magari per rifarla e liberarne le letture. Non si resuscita.
+        ultima = max(
+            (d["data_fattura"] for d in in_uso.values() if not d.get("serie") and d.get("data_fattura")),
+            default=None,
+        )
+
         for valore, fattura in da_gesco.items():
             if valore in in_uso:
+                continue
+
+            if ultima and fattura.get("data_fattura") and fattura["data_fattura"] <= ultima:
+                self.conta("fatture di Gesco che mancano qui ma sono piu vecchie dell'ultimo import (non reinserite)")
                 continue
 
             vecchio_id = fattura["_id"]
@@ -335,6 +363,7 @@ class Allineamento:
         self.scadenze()
         self.fatture_mancanti()
         self.legami_fattura_scadenza()
+        self.segni_di_fatturazione()
         self.ripara_riferimenti()
         return self.resoconto
 
