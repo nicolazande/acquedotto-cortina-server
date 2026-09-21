@@ -1175,6 +1175,61 @@ const testConfermaDallaMaschera = async () => {
     }
 };
 
+const testArchivioConClienteEstero = async () => {
+    if (skipMutation) {
+        console.log('skipped');
+        return;
+    }
+
+    const createdRecords = [];
+    const fatture = [];
+
+    try {
+        const articoli = await request('/articoli?limit=100');
+        const acqua = articoli.body.data.find((articolo) => articolo.codice === 'ACQUA');
+        const italiano = await createTrackedRecord(createdRecords, 'clienti', {
+            ragione_sociale: 'Smoke Elettronica Italia', codice_fiscale: 'RSSMRA85T10A562S',
+            indirizzo_residenza: 'Via Zuel', numero_residenza: '1', cap_residenza: '32043',
+            localita_residenza: 'Cortina', provincia_residenza: 'Belluno', nazione_residenza: 'ITA',
+            fattura_elettronica: true, codice_destinatario: 'TULURSB',
+        });
+        const estero = await createTrackedRecord(createdRecords, 'clienti', {
+            ragione_sociale: 'Smoke Elettronica Malta', partita_iva: 'MT12345678',
+            indirizzo_residenza: 'Triq', cap_residenza: '0', localita_residenza: 'Malta',
+            nazione_residenza: 'MALTA', nazione_fatturazione: 'MALTA',
+            fattura_elettronica: true, codice_destinatario: 'XXXXXXX',
+        });
+
+        for (const cliente of [italiano, estero]) {
+            const fattura = await createRecord('fatture', {
+                cliente: cliente._id, articolo: acqua._id, imponibile: 10,
+                tipo_documento: 'Fattura', data_fattura: OGGI, confermata: true,
+            });
+            fatture.push(fattura);
+            createdRecords.push({ resource: 'scadenze', id: fattura.scadenza });
+        }
+
+        await request('/consegne/pianifica', json('POST', { fatture: fatture.map((f) => f._id) }));
+        const elettronicaDi = async (fattura) => (await request(`/fatture/${fattura._id}/consegne`)).body.registrate
+            .find((voce) => voce.tipo === 'elettronica');
+        const perEstero = await elettronicaDi(fatture[1]);
+        assert(/cliente estero/.test(perEstero?.ultimo_errore || ''), 'the queue row should say why a foreign invoice will not go out');
+
+        // Un cliente estero in coda non deve fermare l'archivio di tutti gli altri.
+        const archivio = await request('/consegne/xml', json('POST'));
+        const saltate = Number(archivio.response.headers.get('x-consegne-saltate'));
+        assert(saltate >= 1, `the archive should report the skipped invoices, got ${saltate}`);
+
+        // E il documento rifiutato non consuma un progressivo di invio.
+        assert(!(await elettronicaDi(fatture[1])).progressivo, 'a refused invoice must not burn a transmission number');
+    } finally {
+        for (const fattura of fatture) {
+            await request(`/fatture/${fattura._id}?sbloccoConfermato=true`, { method: 'DELETE' }).catch(() => {});
+        }
+        await deleteCreatedRecords(createdRecords);
+    }
+};
+
 const testCounterHistory = async () => {
     if (skipMutation) {
         console.log('skipped');
@@ -1460,6 +1515,7 @@ const main = async () => {
     await step('late fee charged once', testDelayFeeChargedOnce);
     await step('manual invoice lines and totals', testManualInvoiceLines);
     await step('confirming an invoice from the form', testConfermaDallaMaschera);
+    await step('a foreign client does not stop the XML archive', testArchivioConClienteEstero);
     await step('counter history across a replacement', testCounterHistory);
     await step('note attachments create/list/file/delete', testAttachments);
 

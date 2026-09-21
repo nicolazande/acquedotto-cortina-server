@@ -44,7 +44,7 @@ const corsOptions = {
     // sul disco col nome che si inventa il browser. `X-Consegne-Rimaste` dice
     // quante fatture restano fuori dalla stampa, e la pagina delle consegne la
     // legge per sapere se ripetere.
-    exposedHeaders: ['Content-Disposition', 'X-Consegne-Rimaste'],
+    exposedHeaders: ['Content-Disposition', 'X-Consegne-Rimaste', 'X-Consegne-Saltate'],
     credentials: !allowAnyOrigin,
 };
 

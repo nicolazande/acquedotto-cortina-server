@@ -193,14 +193,14 @@ const fatturaDellaConsegna = (consegna) => (
 // visto, quindi rispedire lo stesso nome vorrebbe dire non poter rispedire.
 const allegatoXml = async (consegna, fattura) => {
     const servizi = await righeDellaFattura(fattura._id);
+    const dati = { cliente: fattura.cliente, fattura, scadenza: fattura.scadenza, servizi };
+
+    // Prima si controlla che il file si possa fare, poi si prende il progressivo.
+    // Un documento rifiutato - un cliente estero, un totale che non torna - non
+    // deve consumare un numero che lo SdI non vedra mai.
+    buildInvoiceXml(dati);
     const progressivo = await riservaProgressivoInvio();
-    const { filename, xml } = buildInvoiceXml({
-        cliente: fattura.cliente,
-        fattura,
-        progressivo,
-        scadenza: fattura.scadenza,
-        servizi,
-    });
+    const { filename, xml } = buildInvoiceXml({ ...dati, progressivo });
 
     await Consegna.updateOne({ _id: consegna._id }, { $set: { progressivo } });
 
@@ -420,21 +420,43 @@ const xmlDaTrasmettere = async ({ limite } = {}) => {
     }
 
     const file = [];
+    const incluse = [];
+    const saltate = [];
     for (const consegna of daInviare) {
         const fattura = await fatturaDellaConsegna(consegna);
         if (!fattura) {
+            saltate.push({ documento: consegna.documento, motivo: 'la fattura non esiste piu' });
             continue;
         }
 
-        const allegato = await allegatoXml(consegna, fattura);
-        file.push({ nome: allegato.nome, contenuto: allegato.contenuto });
+        try {
+            const allegato = await allegatoXml(consegna, fattura);
+            file.push({ nome: allegato.nome, contenuto: allegato.contenuto });
+            incluse.push(consegna._id);
+        } catch (errore) {
+            // Un documento che non si puo emettere non ferma gli altri: resta in
+            // coda con il motivo scritto sulla riga, e l'archivio esce con quelli
+            // buoni. Solo un rifiuto previsto si salta; un guasto vero si ferma.
+            if (errore.status !== 422) {
+                throw errore;
+            }
+            saltate.push({ documento: consegna.documento, motivo: errore.message });
+            await Consegna.updateOne({ _id: consegna._id }, { $set: { ultimo_errore: errore.message } });
+        }
+    }
+
+    if (file.length === 0) {
+        throw unprocessable(
+            `Nessuna delle fatture in coda si puo emettere: ${saltate.map((s) => `${s.documento}, ${s.motivo}`).join('; ')}`
+        );
     }
 
     return {
         buffer: creaZip(file),
         filename: `fatture-elettroniche-${new Date().toISOString().slice(0, 10)}.zip`,
         quante: file.length,
-        consegne: daInviare.map((consegna) => consegna._id),
+        saltate,
+        consegne: incluse,
     };
 };
 

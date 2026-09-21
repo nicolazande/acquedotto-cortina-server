@@ -121,11 +121,17 @@ const stampa = async (req, res) => {
 // I file XML delle fatture elettroniche ancora da trasmettere, in un archivio.
 const scaricaXml = async (req, res) => {
     try {
-        const { buffer, filename, quante } = await xmlDaTrasmettere({ limite: req.body.limite });
+        const { buffer, filename, quante, saltate } = await xmlDaTrasmettere({ limite: req.body.limite });
 
-        await registra(req, null, 'consegna.xml_scaricati', `Scaricati ${quante} file XML da trasmettere`, { quante });
+        await registra(req, null, 'consegna.xml_scaricati', `Scaricati ${quante} file XML da trasmettere`, {
+            quante,
+            saltate: saltate.length,
+        });
 
         res.setHeader('Content-Type', 'application/zip');
+        // Quante sono rimaste fuori dall'archivio: senza dirlo, si crederebbe di
+        // avere tutte le fatture in coda. Il motivo e scritto sulla loro riga.
+        res.setHeader('X-Consegne-Saltate', String(saltate.length));
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.setHeader('Content-Length', buffer.length);
         res.status(200).send(buffer);
