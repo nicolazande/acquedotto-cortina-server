@@ -26,7 +26,8 @@
     "maintenance:password": "node scripts/reimposta-password.js",
     "seed:articoli": "node scripts/seed-articoli.js",
     "gesco:login": ".venv/bin/python documents/script/login_gesco.py",
-    "gesco:import": ".venv/bin/python documents/script/main.py"
+    "gesco:import": ".venv/bin/python documents/script/main.py",
+    "gesco:spunte": ".venv/bin/python documents/script/aggiorna_spunte.py"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
