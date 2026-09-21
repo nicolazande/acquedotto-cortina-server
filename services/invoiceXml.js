@@ -10,7 +10,8 @@
 // che non viene generata.
 
 const { invoiceCode, modalitaPagamentoXml, naturaPerIva, tipoDocumentoXml } = require('../config/invoicing');
-const { AZIENDA, abiDellIban, cabDellIban } = require('../config/azienda');
+const { AZIENDA } = require('../config/azienda');
+const { abiDellIban, cabDellIban } = require('../utils/iban');
 const { CODICE_DESTINATARIO_ASSENTE, codiceDestinatarioValido } = require('../config/delivery');
 const { customerLabel } = require('../utils/customer');
 const { getTaxRate } = require('./billingCalculator');
@@ -161,38 +162,30 @@ const riepilogoPerAliquota = (servizi) => {
 };
 
 // Dove e quando si paga. Il gestionale precedente lo scriveva in ogni fattura, e
-// senza questo blocco il cliente riceve un documento elettronico che non dice ne
-// l'IBAN ne la scadenza: gli resta solo il PDF di cortesia, che pero non tutti
-// ricevono.
+// senza questo blocco chi riceve solo il file elettronico - senza copia di
+// cortesia - non sa ne l'IBAN ne la scadenza.
 //
-// Il conto che compare dipende da come si paga: un bonifico arriva sul conto
-// dell'acquedotto, un addebito SDD esce da quello del cliente.
+// TP02 vuol dire "in una soluzione": le rate qui non esistono, a ogni fattura
+// corrisponde una scadenza sola.
 const datiPagamento = ({ cliente, scadenza, totaleEuro }) => {
     const modalita = modalitaPagamentoXml(cliente);
-    const addebito = modalita === 'MP19';
-    const iban = (addebito ? cliente?.iban : AZIENDA.banca.iban) || '';
-    const data = dataIso(scadenza?.scadenza || scadenza);
+    // Il conto che si dichiara e quello movimentato: un bonifico arriva su
+    // quello dell'acquedotto, un addebito SDD esce da quello del cliente. Se
+    // manca, i suoi campi spariscono da soli: `tag` non scrive valori vuoti.
+    const iban = (modalita === 'MP19' ? cliente?.iban : AZIENDA.banca.iban) || '';
 
-    const dettaglio = [
-        `        <ModalitaPagamento>${modalita}</ModalitaPagamento>`,
-        data ? `        <DataScadenzaPagamento>${data}</DataScadenzaPagamento>` : '',
-        `        <ImportoPagamento>${importo(totaleEuro)}</ImportoPagamento>`,
-        addebito ? '' : `        ${tag('IstitutoFinanziario', AZIENDA.banca.istituto)}`,
-        iban ? `        ${tag('IBAN', iban)}` : '',
-        iban ? `        ${tag('ABI', abiDellIban(iban))}` : '',
-        iban ? `        ${tag('CAB', cabDellIban(iban))}` : '',
-    ].filter(Boolean);
-
-    return [
-        '    <DatiPagamento>',
-        // TP02: pagamento in una soluzione. Le rate qui non esistono: a ogni
-        // fattura corrisponde una scadenza sola.
-        '      <CondizioniPagamento>TP02</CondizioniPagamento>',
-        '      <DettaglioPagamento>',
-        ...dettaglio,
-        '      </DettaglioPagamento>',
-        '    </DatiPagamento>',
-    ].join('\n');
+    return `    <DatiPagamento>
+      <CondizioniPagamento>TP02</CondizioniPagamento>
+      <DettaglioPagamento>
+        <ModalitaPagamento>${modalita}</ModalitaPagamento>
+        ${tag('DataScadenzaPagamento', dataIso(scadenza?.scadenza || scadenza))}
+        <ImportoPagamento>${importo(totaleEuro)}</ImportoPagamento>
+        ${modalita === 'MP19' ? '' : tag('IstitutoFinanziario', AZIENDA.banca.istituto)}
+        ${tag('IBAN', iban)}
+        ${tag('ABI', abiDellIban(iban))}
+        ${tag('CAB', cabDellIban(iban))}
+      </DettaglioPagamento>
+    </DatiPagamento>`;
 };
 
 const buildInvoiceXml = ({ cliente, fattura, progressivo, scadenza, servizi }) => {

@@ -103,6 +103,12 @@ Due operazioni servono a portare fuori cio che non parte da solo:
    un programma di compressione e rinominarla. Il file esce gia col nome della
    trasmissione.
 
+Entrambi i pulsanti lavorano sulle **fatture elettroniche in coda**: quando non
+ce ne sono, quello generale resta spento e sulle righe non compare nulla. La
+pagina dice perche - nessun cliente impostato per la fattura elettronica, oppure
+coda momentaneamente vuota - invece di lasciar cercare un pulsante che non puo
+esserci (`canaleSdiTesto`, lato client).
+
 ## Niente parte per sbaglio
 
 Perche un messaggio esca servono **due condizioni insieme**:

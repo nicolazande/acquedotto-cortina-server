@@ -46,16 +46,12 @@ const AZIENDA = {
         sito: process.env.INVOICE_COMPANY_WEBSITE || 'www.acquedottozuel.it',
     },
 
-    // Dove il cliente paga. ABI e CAB non si scrivono: stanno dentro l'IBAN, e
-    // copiarli a mano sarebbe un secondo posto dove possono sbagliarsi.
+    // Dove il cliente paga. ABI e CAB non si scrivono: si ricavano dall'IBAN
+    // (`utils/iban.js`), cosi non esiste un secondo posto che puo sbagliarsi.
     banca: {
         istituto: process.env.INVOICE_BANK_NAME || 'CORTINA BANCA Credito cooperativo Italiano',
         iban: (process.env.INVOICE_IBAN || 'IT11M0851161070000000006953').replace(/\s+/g, ''),
     },
 };
 
-// L'IBAN italiano porta l'ABI dal quinto carattere e il CAB dal decimo.
-const abiDellIban = (iban) => String(iban || '').slice(5, 10);
-const cabDellIban = (iban) => String(iban || '').slice(10, 15);
-
-module.exports = { AZIENDA, abiDellIban, cabDellIban };
+module.exports = { AZIENDA };

@@ -100,6 +100,8 @@ un file solo, e chi ne ha bisogno la importa invece di riscriverla:
 | chi dipende da chi alla cancellazione     | `config/relations.js`        |
 | chi puo aprire e cambiare cosa            | `config/permessi.js`         |
 | dove va a finire una fattura              | `config/delivery.js`         |
+| chi emette le fatture                     | `config/azienda.js`          |
+| ABI e CAB di un conto                     | `utils/iban.js`              |
 | province e loro sigla                     | `utils/province.js`          |
 
 Sono state tutte, in origine, scritte due volte. Ogni volta la copia in piu ha

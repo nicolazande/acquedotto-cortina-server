@@ -326,7 +326,15 @@ se e un addebito SEPA (MP19), quello dell'acquedotto se e un bonifico (MP05).
 I dati di chi emette - ragione sociale, sede, REA, contatti, banca - stanno tutti
 in `config/azienda.js`, **un posto solo**: sono gli stessi che finiscono sul PDF e
 sull'elenco per l'anagrafe tributaria. Finche erano tre copie, la ragione sociale
-era diversa in una.
+era diversa in una. ABI e CAB non sono scritti da nessuna parte: si leggono
+dentro l'IBAN (`utils/iban.js`), che li dichiara anche nella forma a gruppi usata
+sul PDF.
+
+> **Il nome in testa al PDF e disegnato dentro il logo** (`assets/invoice/logo-zuel.ppm`)
+> e dice ancora "COOPERATIVA DI GESTIONE ACQUEDOTTO ZUEL DI SOPRA". Il piede della
+> pagina, che e testo, porta invece la ragione sociale del profilo. Allinearli
+> significa rifare l'immagine: e una decisione di chi gestisce l'acquedotto, non
+> una modifica al codice.
 
 Un test controlla i file prodotti contro lo **schema ufficiale dell'Agenzia**
 (`tests/fatturapa-v1.2.xsd`, scaricato da fatturapa.gov.it): un elemento fuori

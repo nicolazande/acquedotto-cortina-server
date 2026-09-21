@@ -13,6 +13,7 @@ const { getLineTaxRate } = require('./billingCalculator');
 const { righeConOrigine } = require('./righeFattura');
 const { applyRate, fromCents, toCents } = require('../utils/money');
 const { AZIENDA } = require('../config/azienda');
+const { ibanLeggibile } = require('../utils/iban');
 
 const PAGE_WIDTH = 595;
 const PAGE_HEIGHT = 842;
@@ -25,22 +26,14 @@ const LIGHT_GRAY = [0.94, 0.94, 0.94];
 const BORDER_GRAY = [0.72, 0.72, 0.72];
 
 // Il PDF mostra gli stessi dati del tracciato elettronico, scritti come li legge
-// una persona: il telefono spaziato, l'IBAN a gruppi, il piede in una riga sola.
-// I dati arrivano dal profilo dell'azienda, che e uno per tutti i documenti.
-const spazia = (testo, ...tagli) => {
-    const pezzi = [];
-    let resto = String(testo || '');
-
-    tagli.forEach((quanti) => {
-        pezzi.push(resto.slice(0, quanti));
-        resto = resto.slice(quanti);
-    });
-
-    return [...pezzi, resto].filter(Boolean).join(' ');
-};
+// una persona: il prefisso staccato dal numero, l'IBAN a gruppi, il piede in una
+// riga sola. I dati arrivano dal profilo dell'azienda, uno per tutti i documenti.
+const telefonoLeggibile = (numero) => String(numero || '').replace(/^(\d{4})(\d+)$/, '$1 $2');
 
 const companyConfig = {
-    name: AZIENDA.denominazione,
+    // Il nome in testa alla fattura non si scrive: e disegnato dentro il logo
+    // (`assets/invoice/logo-zuel.ppm`). Qui resta il piede, che e l'unico punto
+    // del PDF dove la ragione sociale e testo.
     footer: process.env.INVOICE_COMPANY_FOOTER || [
         AZIENDA.denominazione,
         `${AZIENDA.sede.indirizzo}, ${AZIENDA.sede.civico} ${AZIENDA.sede.cap} ${AZIENDA.sede.comune} (${AZIENDA.sede.provincia})`,
@@ -49,9 +42,9 @@ const companyConfig = {
     ].join(' - '),
     website: AZIENDA.contatti.sito,
     email: AZIENDA.contatti.email,
-    phoneDirect: spazia(AZIENDA.contatti.telefono, 4),
+    phoneDirect: telefonoLeggibile(AZIENDA.contatti.telefono),
     bankName: AZIENDA.banca.istituto,
-    iban: spazia(AZIENDA.banca.iban, 5, 5, 5, 4, 4),
+    iban: ibanLeggibile(AZIENDA.banca.iban),
 };
 const invoiceAssets = {
     logo: path.join(__dirname, '..', 'assets', 'invoice', 'logo-zuel.ppm'),
