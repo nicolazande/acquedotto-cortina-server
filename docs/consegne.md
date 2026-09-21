@@ -244,6 +244,7 @@ e tecnico, e raccogliere gli indirizzi.
 | `config/delivery.js`             | modalita, canali, testi dei messaggi           |
 | `services/deliveryPlan.js`       | dove deve andare una fattura (nessun database) |
 | `services/deliveryService.js`    | la coda: pianifica, elabora, registra          |
+| `services/documentiConsegna.js`  | i file: PDF, XML, stampa delle buste, archivio |
 | `services/mailer.js`             | l'unico punto in cui un messaggio esce         |
 | `models/Consegna.js`             | il record di una consegna                      |
 | `controllers/ConsegnaController.js` | le rotte `/api/consegne`                    |

@@ -56,15 +56,23 @@ RIFERIMENTI = [
 
 
 def indice(collezione, chiave, escludi=frozenset()):
-    """Chiave di Gesco -> documento, saltando chi la chiave non ce l'ha."""
-    trovati = {}
+    """Chiave di Gesco -> documento, piu le chiavi che compaiono due volte."""
+    trovati, doppie = {}, set()
     for documento in collezione.find({}):
         if documento["_id"] in escludi:
             continue
         valore = chiave(documento)
-        if valore:
-            trovati.setdefault(valore, documento)
-    return trovati
+        if not valore:
+            continue
+        if valore in trovati:
+            doppie.add(valore)
+        trovati.setdefault(valore, documento)
+    return trovati, doppie
+
+
+def data_reale(valore):
+    """Una data vera: ne vuota, ne una delle sentinelle 01/01/1900 e 31/12/2099."""
+    return bool(valore) and hasattr(valore, "year") and 1901 <= valore.year < 2090
 
 
 class Allineamento:
@@ -80,9 +88,21 @@ class Allineamento:
         self.resoconto[voce] += quanti
 
     def collega(self, nome, chiave, escludi=frozenset()):
-        """Associa i documenti delle due parti e ricorda chi corrisponde a chi."""
-        da_gesco = indice(self.origine[nome], chiave)
-        in_uso = indice(self.destinazione[nome], chiave, escludi)
+        """Associa i documenti delle due parti e ricorda chi corrisponde a chi.
+
+        Una chiave che compare due volte, da una parte o dall'altra, e un caso che
+        lo strumento non sa decidere: tenere il primo record trovato vorrebbe dire
+        correggere, collegare o inserire quello sbagliato. Si lascia fuori e si
+        conta, perche lo guardi una persona.
+        """
+        da_gesco, doppie_gesco = indice(self.origine[nome], chiave)
+        in_uso, doppie_in_uso = indice(self.destinazione[nome], chiave, escludi)
+
+        ambigue = doppie_gesco | doppie_in_uso
+        for valore in ambigue:
+            da_gesco.pop(valore, None)
+        if ambigue:
+            self.conta(f"{nome}: chiavi doppie lasciate a una persona", len(ambigue))
 
         for valore, documento in da_gesco.items():
             gemello = in_uso.get(valore)
@@ -142,16 +162,26 @@ class Allineamento:
                 continue
 
             # Una data di cessazione arrivata dopo l'import: senza, il contatore
-            # risulterebbe ancora in servizio e verrebbe fatturato.
+            # risulterebbe ancora in servizio e verrebbe fatturato. Si scrive solo
+            # dove qui la data manca o e la sentinella: una data messa nel
+            # gestionale dopo il passaggio e piu recente di Gesco, e non si tocca.
             cambi = {
                 campo: contatore.get(campo) for campo in ("inizio", "scadenza")
-                if contatore.get(campo) != gemello.get(campo)
+                if data_reale(contatore.get(campo)) and not data_reale(gemello.get(campo))
             }
             if cambi:
                 self.aggiorna("contatori", gemello["_id"], cambi)
                 self.conta("contatori con le date corrette")
 
     def letture(self):
+        # Le fatture servono gia qui: una lettura e fatturata se lo e da una
+        # fattura di Gesco che esiste anche nel gestionale.
+        self.collega("fatture", COLLEZIONI["fatture"]["chiave"])
+        fattura_della_lettura = {
+            riga["lettura"]: riga["fattura"]
+            for riga in self.origine.servizi.find({"lettura": {"$ne": None}}, {"lettura": 1, "fattura": 1})
+        }
+
         da_gesco, in_uso = self.collega("letture", COLLEZIONI["letture"]["chiave"])
         for identificativo, lettura in da_gesco.items():
             gemella = in_uso.get(identificativo)
@@ -160,9 +190,17 @@ class Allineamento:
                 self.conta("letture aggiunte")
                 continue
 
-            if bool(lettura.get("fatturata")) != bool(gemella.get("fatturata")):
-                self.aggiorna("letture", gemella["_id"], {"fatturata": lettura.get("fatturata")})
-                self.conta("letture con lo stato di fatturazione corretto")
+            # Il segno si aggiunge e basta. Toglierlo a una lettura fatturata qui
+            # vorrebbe dire fatturarla una seconda volta; e se la fattura di Gesco
+            # qui non c'e piu - cancellata, e la lettura liberata apposta per
+            # rifatturarla - la lettura resta com'e.
+            if not lettura.get("fatturata") or gemella.get("fatturata"):
+                continue
+            if fattura_della_lettura.get(lettura["_id"]) not in self.corrispondenze:
+                continue
+
+            self.aggiorna("letture", gemella["_id"], {"fatturata": True})
+            self.conta("letture segnate come fatturate (lo sono da una fattura di Gesco)")
 
     def numeri_delle_fatture(self):
         chiave = COLLEZIONI["fatture"]["chiave"]

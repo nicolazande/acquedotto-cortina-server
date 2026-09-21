@@ -59,14 +59,29 @@ def uno_solo(db, filtro) -> object:
     return trovati[0] if len(trovati) == 1 else None
 
 
+def codici_in_contrasto(cliente, dati) -> bool:
+    """Il cliente trovato ha un codice fiscale o una partita IVA diversi da Gesco."""
+    for campo in ("codice_fiscale", "partita_iva"):
+        qui = (cliente.get(campo) or "").strip().upper()
+        la = (dati.get(campo) or "").strip().upper()
+        if qui and la and qui != la:
+            return True
+    return False
+
+
 def cliente_da_aggiornare(db, codice, dati, codici):
     """Il cliente a cui appartiene la scheda, e cosa cambia.
 
     Si cerca dal riconoscimento piu sicuro al meno: il codice di Gesco, poi il
     codice fiscale o la partita IVA - che distinguono anche due omonimi - e solo
     alla fine il nome, che va bene se e di uno solo.
+
+    Riconosciuto per nome, il cliente riceve le spunte ma non il codice di
+    Gesco: il codice e la chiave con cui le fatture trovano l'intestatario, e
+    scriverlo su un omonimo porterebbe da lui le fatture di un altro.
     """
     id_cliente = codici.get(str(codice))
+    per_nome = False
 
     for campo in ("codice_fiscale", "partita_iva"):
         if id_cliente:
@@ -84,11 +99,18 @@ def cliente_da_aggiornare(db, codice, dati, codici):
         if len(candidati) != 1:
             return None, None
         id_cliente = candidati[0]
+        per_nome = True
 
-    attuale = db.clienti.find_one({"_id": id_cliente}, {campo: 1 for campo in SPUNTE_CLIENTE + ["codice"]})
+    attuale = db.clienti.find_one(
+        {"_id": id_cliente},
+        {campo: 1 for campo in SPUNTE_CLIENTE + ["codice", "codice_fiscale", "partita_iva"]},
+    )
+    if per_nome and codici_in_contrasto(attuale, dati):
+        return None, None
+
     cambi = {campo: dati[campo] for campo in SPUNTE_CLIENTE if bool(attuale.get(campo)) != bool(dati[campo])}
 
-    if not attuale.get("codice"):
+    if not attuale.get("codice") and not per_nome:
         cambi["codice"] = str(codice)
 
     return id_cliente, cambi

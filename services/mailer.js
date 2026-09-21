@@ -13,6 +13,7 @@
 
 const nodemailer = require('nodemailer');
 const { parseBoolean } = require('../utils/values');
+const { AZIENDA } = require('../config/azienda');
 
 const configurazione = () => ({
     abilitato: parseBoolean(process.env.INVIO_EMAIL_ABILITATO),
@@ -24,7 +25,10 @@ const configurazione = () => ({
     utente: (process.env.SMTP_USER || '').trim(),
     password: process.env.SMTP_PASSWORD || '',
     mittente: (process.env.INVIO_MITTENTE || process.env.INVOICE_COMPANY_EMAIL || '').trim(),
-    mittenteNome: (process.env.INVIO_MITTENTE_NOME || process.env.INVOICE_COMPANY_NAME || '').trim(),
+    // Il nome si puo prendere dal profilo dell'azienda; l'indirizzo no, di
+    // proposito: un mittente scritto a mano e una delle condizioni che tengono
+    // spento l'invio, e un valore predefinito la farebbe sparire.
+    mittenteNome: (process.env.INVIO_MITTENTE_NOME || AZIENDA.denominazione || '').trim(),
     rispostaA: (process.env.INVIO_RISPOSTE_A || '').trim(),
     destinatarioProva: (process.env.INVIO_DESTINATARIO_PROVA || '').trim(),
 });

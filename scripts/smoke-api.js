@@ -1215,13 +1215,21 @@ const testArchivioConClienteEstero = async () => {
         const perEstero = await elettronicaDi(fatture[1]);
         assert(/cliente estero/.test(perEstero?.ultimo_errore || ''), 'the queue row should say why a foreign invoice will not go out');
 
-        // Un cliente estero in coda non deve fermare l'archivio di tutti gli altri.
-        const archivio = await request('/consegne/xml', json('POST'));
-        const saltate = Number(archivio.response.headers.get('x-consegne-saltate'));
-        assert(saltate >= 1, `the archive should report the skipped invoices, got ${saltate}`);
+        // Lo scarico dell'archivio prende tutte le fatture elettroniche in coda,
+        // e a ognuna da un progressivo nuovo: si prova solo se in coda ci sono
+        // soltanto le due di questa prova, per non toccare quelle di qualcuno.
+        const inCoda = Number((await request('/consegne/riepilogo')).body.perTipo?.elettronica || 0);
+        if (inCoda === 2) {
+            // Un cliente estero in coda non deve fermare l'archivio degli altri.
+            const archivio = await request('/consegne/xml', json('POST'));
+            const saltate = Number(archivio.response.headers.get('x-consegne-saltate'));
+            assert(saltate === 1, `the archive should leave out only the foreign invoice, got ${saltate}`);
 
-        // E il documento rifiutato non consuma un progressivo di invio.
-        assert(!(await elettronicaDi(fatture[1])).progressivo, 'a refused invoice must not burn a transmission number');
+            // E il documento rifiutato non consuma un progressivo di invio.
+            assert(!(await elettronicaDi(fatture[1])).progressivo, 'a refused invoice must not burn a transmission number');
+        } else {
+            console.log(`  (archivio non provato: ${inCoda - 2} altre fatture elettroniche in coda)`);
+        }
     } finally {
         for (const fattura of fatture) {
             await request(`/fatture/${fattura._id}?sbloccoConfermato=true`, { method: 'DELETE' }).catch(() => {});

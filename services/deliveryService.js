@@ -13,17 +13,19 @@
 const Cliente = require('../models/Cliente');
 const Consegna = require('../models/Consegna');
 const Fattura = require('../models/Fattura');
-const { righeDellaFattura } = require('./righeFattura');
-const { CAMPO_DATA_CONSEGNA, CANALE_TRASMISSIONE_SDI, testoEmailCortesia } = require('../config/delivery');
+const {
+    CAMPO_DATA_CONSEGNA,
+    CANALE_TRASMISSIONE_SDI,
+    STATI_APERTI,
+    testoEmailCortesia,
+} = require('../config/delivery');
+const { AZIENDA } = require('../config/azienda');
+const { allegatoPdf, allegatoXml, fatturaDellaConsegna } = require('./documentiConsegna');
 const { pianoConsegne } = require('./deliveryPlan');
-const { generateInvoicePdf, generateInvoicesPdf } = require('./invoicePdf');
-const { buildInvoiceXml } = require('./invoiceXml');
-const { riservaProgressivoInvio } = require('./counters');
 const { inviaEmail, statoTrasporto } = require('./mailer');
 const { badRequest, notFound, unprocessable } = require('../utils/errors');
 const { formatItalianDate } = require('../utils/dates');
 const { parsePositiveInteger } = require('../utils/values');
-const { creaZip } = require('../utils/zip');
 
 // Tetto alle fatture toccate da una sola richiesta: la pianificazione legge
 // anagrafiche e la elaborazione costruisce PDF, quindi il costo per documento
@@ -31,13 +33,10 @@ const { creaZip } = require('../utils/zip');
 const MAX_FATTURE_PER_LOTTO = 500;
 const MAX_CONSEGNE_PER_ELABORAZIONE = 200;
 
-// Stati su cui si puo ancora intervenire. Una consegna gia inviata non viene
-// mai riscritta da una nuova pianificazione: sarebbe riscrivere la storia.
-const STATI_APERTI = ['in_coda', 'errore'];
-
+// Chi firma il messaggio di cortesia: lo stesso profilo delle fatture.
 const mittente = () => ({
-    nome: process.env.INVOICE_COMPANY_NAME || 'Cooperativa di Gestione Acquedotto Zuel di Sopra',
-    recapito: process.env.INVOICE_COMPANY_EMAIL || '',
+    nome: AZIENDA.denominazione,
+    recapito: AZIENDA.contatti.email,
 });
 
 const chiave = (fatturaId, tipo) => `${fatturaId}:${tipo}`;
@@ -174,40 +173,6 @@ const anteprimaFattura = async (fatturaId) => {
 };
 
 // ---------------------------------------------------------------------------
-// Allegati
-// ---------------------------------------------------------------------------
-
-const allegatoPdf = async (fatturaId) => {
-    const { buffer, filename } = await generateInvoicePdf(fatturaId);
-    return { nome: filename, contenuto: buffer, tipo: 'application/pdf' };
-};
-
-// La fattura di una consegna, con addosso quello che serve per scriverla: il
-// cliente e la scadenza, che nel tracciato dice entro quando pagare.
-const fatturaDellaConsegna = (consegna) => (
-    Fattura.findById(consegna.fattura).populate('cliente scadenza').lean()
-);
-
-// Ogni trasmissione si prende un progressivo nuovo, anche quando e un secondo
-// tentativo sulla stessa fattura: lo SdI rifiuta un file il cui nome ha gia
-// visto, quindi rispedire lo stesso nome vorrebbe dire non poter rispedire.
-const allegatoXml = async (consegna, fattura) => {
-    const servizi = await righeDellaFattura(fattura._id);
-    const dati = { cliente: fattura.cliente, fattura, scadenza: fattura.scadenza, servizi };
-
-    // Prima si controlla che il file si possa fare, poi si prende il progressivo.
-    // Un documento rifiutato - un cliente estero, un totale che non torna - non
-    // deve consumare un numero che lo SdI non vedra mai.
-    buildInvoiceXml(dati);
-    const progressivo = await riservaProgressivoInvio();
-    const { filename, xml } = buildInvoiceXml({ ...dati, progressivo });
-
-    await Consegna.updateOne({ _id: consegna._id }, { $set: { progressivo } });
-
-    return { nome: filename, contenuto: Buffer.from(xml, 'utf8'), tipo: 'application/xml' };
-};
-
-// ---------------------------------------------------------------------------
 // Trasporti
 // ---------------------------------------------------------------------------
 
@@ -328,10 +293,7 @@ const elaboraCoda = async ({ limite, tipo, fatture } = {}) => {
                 throw unprocessable(`Nessun trasporto per ${consegna.tipo} su ${consegna.canale}.`);
             }
 
-            const fattura = await Fattura.findById(consegna.fattura)
-                .populate('cliente')
-                .populate('scadenza')
-                .lean();
+            const fattura = await fatturaDellaConsegna(consegna);
 
             if (!fattura) {
                 throw notFound('Fattura non trovata.');
@@ -362,126 +324,6 @@ const elaboraCoda = async ({ limite, tipo, fatture } = {}) => {
     }
 
     return { elaborate: daFare.length, inviate, simulate, errori, esiti, trasporto: statoTrasporto() };
-};
-
-// ---------------------------------------------------------------------------
-// Stampa e scarico in blocco
-// ---------------------------------------------------------------------------
-
-// Quante consegne si possono materializzare in una sola richiesta. Ogni fattura
-// significa leggere il documento, le sue righe e disegnarne una pagina: senza un
-// tetto, cinquecento in un colpo diventano un file enorme e una richiesta che
-// scade.
-const MAX_DA_STAMPARE = 200;
-
-const consegneInCoda = async ({ canali, tipo, limite }) => Consegna.find({
-    stato: { $in: STATI_APERTI },
-    ...(canali ? { canale: { $in: canali } } : {}),
-    ...(tipo ? { tipo } : {}),
-})
-    .sort({ intestatario: 1, createdAt: 1 })
-    // Ordine alfabetico italiano, indifferente alle maiuscole: senza, "ANNO
-    // 8919 srl" finisce prima di "Achenza" e le buste escono in un ordine che
-    // non e quello in cui si imbustano.
-    .collation({ locale: 'it', strength: 1 })
-    .limit(Math.min(parsePositiveInteger(limite, MAX_DA_STAMPARE), MAX_DA_STAMPARE))
-    .lean();
-
-// Le fatture da imbustare, in un unico PDF ordinato per intestatario: e
-// l'ordine in cui si preparano le buste.
-const stampaDaConsegnare = async ({ limite } = {}) => {
-    const daStampare = await consegneInCoda({ canali: ['postale', 'sportello'], limite });
-
-    if (daStampare.length === 0) {
-        throw unprocessable('Non c’è niente da stampare: la coda delle consegne cartacee è vuota.');
-    }
-
-    const inCoda = await Consegna.countDocuments({
-        stato: { $in: STATI_APERTI },
-        canale: { $in: ['postale', 'sportello'] },
-    });
-    const documento = await generateInvoicesPdf(daStampare.map((consegna) => consegna.fattura));
-
-    return {
-        ...documento,
-        consegne: daStampare.map((consegna) => consegna._id),
-        // Quante restano fuori da questa stampa: senza dirlo, si crederebbe di
-        // aver stampato tutto.
-        rimaste: Math.max(0, inCoda - daStampare.length),
-    };
-};
-
-// I file XML delle fatture elettroniche ancora da trasmettere, in un archivio.
-const xmlDaTrasmettere = async ({ limite } = {}) => {
-    const daInviare = await consegneInCoda({ tipo: 'elettronica', limite });
-
-    if (daInviare.length === 0) {
-        throw unprocessable('Non c’è nessuna fattura elettronica in attesa di trasmissione.');
-    }
-
-    const file = [];
-    const incluse = [];
-    const saltate = [];
-    for (const consegna of daInviare) {
-        const fattura = await fatturaDellaConsegna(consegna);
-        if (!fattura) {
-            saltate.push({ documento: consegna.documento, motivo: 'la fattura non esiste piu' });
-            continue;
-        }
-
-        try {
-            const allegato = await allegatoXml(consegna, fattura);
-            file.push({ nome: allegato.nome, contenuto: allegato.contenuto });
-            incluse.push(consegna._id);
-        } catch (errore) {
-            // Un documento che non si puo emettere non ferma gli altri: resta in
-            // coda con il motivo scritto sulla riga, e l'archivio esce con quelli
-            // buoni. Solo un rifiuto previsto si salta; un guasto vero si ferma.
-            if (errore.status !== 422) {
-                throw errore;
-            }
-            saltate.push({ documento: consegna.documento, motivo: errore.message });
-            await Consegna.updateOne({ _id: consegna._id }, { $set: { ultimo_errore: errore.message } });
-        }
-    }
-
-    if (file.length === 0) {
-        throw unprocessable(
-            `Nessuna delle fatture in coda si puo emettere: ${saltate.map((s) => `${s.documento}, ${s.motivo}`).join('; ')}`
-        );
-    }
-
-    return {
-        buffer: creaZip(file),
-        filename: `fatture-elettroniche-${new Date().toISOString().slice(0, 10)}.zip`,
-        quante: file.length,
-        saltate,
-        consegne: incluse,
-    };
-};
-
-// Il file di una singola consegna, per chi trasmette una fattura per volta:
-// stesso contenuto e stesso nome che avrebbe dentro l'archivio, senza passare
-// da uno zip da aprire e da rinominare.
-const xmlDellaConsegna = async (consegnaId) => {
-    const consegna = await Consegna.findById(consegnaId).lean();
-
-    if (!consegna) {
-        throw notFound('Consegna non trovata.');
-    }
-
-    if (consegna.tipo !== 'elettronica') {
-        throw unprocessable('Questa consegna e una copia di cortesia, non una fattura elettronica.');
-    }
-
-    const fattura = await fatturaDellaConsegna(consegna);
-    if (!fattura) {
-        throw unprocessable('La fattura di questa consegna non esiste piu.');
-    }
-
-    const allegato = await allegatoXml(consegna, fattura);
-
-    return { filename: allegato.nome, contenuto: allegato.contenuto };
 };
 
 // ---------------------------------------------------------------------------
@@ -592,7 +434,4 @@ module.exports = {
     riepilogo,
     rimettiInCoda,
     segnaConsegnata,
-    stampaDaConsegnare,
-    xmlDaTrasmettere,
-    xmlDellaConsegna,
 };

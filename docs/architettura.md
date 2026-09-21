@@ -71,6 +71,7 @@ va aggiunta qui, non ricopiata.
 | `invoiceXml.js`             | fattura elettronica nel tracciato FatturaPA 1.2                   |
 | `deliveryPlan.js`           | **puro, senza database**: dove deve andare una fattura e cosa lo blocca |
 | `deliveryService.js`        | la coda delle consegne: pianifica, elabora, registra l'esito      |
+| `documentiConsegna.js`      | i file che una consegna porta: PDF, XML, stampa e archivio        |
 | `tariffService.js`          | scadenza e rinnovo delle tariffe, copertura delle fasce           |
 | `paymentService.js`         | registrazione degli incassi su piu scadenze insieme               |
 | `referentialIntegrity.js`   | applica i legami dichiarati in `config/relations.js` |
@@ -132,9 +133,12 @@ Chi sta sotto non sa che esiste chi sta sopra. `calcoloLettura` e
 cambiando qualcosa. `invoiceGenerator` resta l'unico che crea documenti e ne
 rifa i totali - anche la quota fissa, che aggiunge una riga, passa da li.
 
-Il modulo da tenere d'occhio adesso e `deliveryService.js` (541 righe): pianifica,
-elabora, spedisce e registra l'esito. Non e ancora un problema, ma e il prossimo
-posto dove lo diventerebbe.
+`deliveryService.js` ha superato le seicento righe a settembre 2026, ed era il
+segnale previsto: dentro c'erano due cose. Ora la coda - pianifica, elabora,
+spedisce, registra l'esito - sta li, e i file che le consegne portano con se -
+il PDF, l'XML con il suo progressivo, la stampa delle buste, l'archivio -
+stanno in `documentiConsegna.js`. La coda usa i documenti; i documenti non
+sanno niente della coda.
 
 ### `controllers/utils/` — i CRUD non si scrivono a mano
 

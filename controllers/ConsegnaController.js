@@ -11,10 +11,8 @@ const {
     riepilogo,
     rimettiInCoda,
     segnaConsegnata,
-    stampaDaConsegnare,
-    xmlDaTrasmettere,
-    xmlDellaConsegna,
 } = require('../services/deliveryService');
+const { stampaDaConsegnare, xmlDaTrasmettere, xmlDellaConsegna } = require('../services/documentiConsegna');
 const { consegnaViews } = require('../config/listViews');
 
 // Ogni operazione sulla coda lascia traccia: sapere chi ha lanciato una

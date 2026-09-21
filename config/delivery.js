@@ -196,6 +196,10 @@ const CAMPO_DATA_CONSEGNA = {
     elettronica: 'data_fattura_elettronica',
 };
 
+// Stati su cui si puo ancora intervenire. Una consegna gia inviata non viene
+// mai riscritta da una nuova pianificazione: sarebbe riscrivere la storia.
+const STATI_APERTI = ['in_coda', 'errore'];
+
 // Chi trasmette allo SdI.
 //
 // `intermediario` significa che il gestionale prepara il file e lo mette in
@@ -231,6 +235,7 @@ module.exports = {
     CODICE_DESTINATARIO_ASSENTE,
     MODALITA_CONSEGNA,
     MODALITA_PREDEFINITA,
+    STATI_APERTI,
     canaleFatturaElettronica,
     codiceDestinatarioValido,
     destinatarioNonGestito,
