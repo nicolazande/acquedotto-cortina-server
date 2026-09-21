@@ -311,7 +311,26 @@ numerazione, ed e voluto.
 
 `GET /api/fatture/:id/xml` produce il file nel tracciato **FatturaPA 1.2**
 (`services/invoiceXml.js`), scaricabile anche dal pulsante **XML** nella scheda
-della fattura.
+della fattura. Per trasmettere si scarica invece da *Consegne*, dove ogni riga ha
+il suo **XML** e il file prende un progressivo nuovo (vedi
+[Come esce una fattura](consegne.md)).
+
+Il file dichiara, oltre al documento: l'**iscrizione al REA** e i recapiti di chi
+emette, il **civico** separato dalla via per entrambe le parti, l'**esigibilita
+IVA** su ogni riepilogo e i **dati di pagamento** - condizioni, modalita,
+scadenza, importo e IBAN. Quest'ultimo blocco e quello che dice al cliente dove e
+quando pagare: chi riceve solo la fattura elettronica, senza copia di cortesia,
+non lo saprebbe altrimenti. Il conto che compare dipende da come paga: il proprio
+se e un addebito SEPA (MP19), quello dell'acquedotto se e un bonifico (MP05).
+
+I dati di chi emette - ragione sociale, sede, REA, contatti, banca - stanno tutti
+in `config/azienda.js`, **un posto solo**: sono gli stessi che finiscono sul PDF e
+sull'elenco per l'anagrafe tributaria. Finche erano tre copie, la ragione sociale
+era diversa in una.
+
+Un test controlla i file prodotti contro lo **schema ufficiale dell'Agenzia**
+(`tests/fatturapa-v1.2.xsd`, scaricato da fatturapa.gov.it): un elemento fuori
+ordine fa scartare il documento, e senza schema lo si scoprirebbe dopo l'invio.
 
 > **Oggi il gestionale non trasmette nulla.** Genera il file e lo mette in coda
 > fra le consegne. L'inoltro al Sistema di Interscambio passa da un intermediario

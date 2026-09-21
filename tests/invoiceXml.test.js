@@ -204,3 +204,69 @@ test('il totale scritto nel documento e quello dei suoi riepiloghi', () => {
     assert.equal(dichiarato, Number(somma.toFixed(2)));
     assert.equal(dichiarato, 65.34);
 });
+
+// Cosa il gestionale precedente scriveva in ogni fattura e qui mancava. Il
+// confronto e stato fatto sul suo ultimo file (settembre 2026).
+
+test('la fattura esce a nome della cooperativa, quello con cui ha sempre fatturato', () => {
+    // Era l'unico punto in cui la ragione sociale era diversa: le fatture
+    // uscivano come "COOPERATIVA DI GESTIONE ACQUEDOTTO ZUEL DI SOPRA".
+    assert.match(genera().xml, /<Denominazione>COOPERATIVA {2}GESTIONE ACQUEDOTTO VICINIA DI ZUEL<\/Denominazione>/);
+});
+
+test('dichiara l iscrizione al registro imprese e i recapiti', () => {
+    const { xml } = genera();
+
+    assert.match(xml, /<IscrizioneREA>[\s\S]*<Ufficio>BL<\/Ufficio>[\s\S]*<NumeroREA>65393<\/NumeroREA>/);
+    assert.match(xml, /<CapitaleSociale>18500\.00<\/CapitaleSociale>/);
+    assert.match(xml, /<StatoLiquidazione>LN<\/StatoLiquidazione>/);
+    assert.match(xml, /<Contatti>[\s\S]*<Email>acquedottozuel@gmail\.com<\/Email>/);
+});
+
+test('il civico ha il suo campo, per chi emette e per chi riceve', () => {
+    const { xml } = genera();
+
+    // Prima finiva dentro l'indirizzo: "Via Roma 12" in un campo solo.
+    assert.match(xml, /<Indirizzo>Pian Da Lago<\/Indirizzo>\s*<NumeroCivico>64<\/NumeroCivico>/);
+    assert.match(xml, /<Indirizzo>Via Roma<\/Indirizzo>\s*<NumeroCivico>12<\/NumeroCivico>/);
+});
+
+test('ogni riepilogo dichiara l esigibilita dell IVA', () => {
+    const esigibilita = genera().xml.match(/<EsigibilitaIVA>I<\/EsigibilitaIVA>/g) || [];
+    const riepiloghi = genera().xml.match(/<DatiRiepilogo>/g) || [];
+
+    assert.equal(esigibilita.length, riepiloghi.length);
+});
+
+test('dice dove e quando pagare', () => {
+    // Senza questo blocco il cliente riceve una fattura elettronica che non
+    // porta ne l'IBAN ne la scadenza.
+    const { xml } = genera({ scadenza: { scadenza: new Date('2026-07-15T00:00:00.000Z') } });
+
+    assert.match(xml, /<CondizioniPagamento>TP02<\/CondizioniPagamento>/);
+    assert.match(xml, /<ModalitaPagamento>MP05<\/ModalitaPagamento>/);
+    assert.match(xml, /<DataScadenzaPagamento>2026-07-15<\/DataScadenzaPagamento>/);
+    assert.match(xml, /<ImportoPagamento>65\.34<\/ImportoPagamento>/);
+    assert.match(xml, /<IBAN>IT11M0851161070000000006953<\/IBAN>/);
+    // ABI e CAB si ricavano dall'IBAN: non sono un secondo posto da tenere allineato.
+    assert.match(xml, /<ABI>08511<\/ABI>/);
+    assert.match(xml, /<CAB>61070<\/CAB>/);
+});
+
+test('senza scadenza il blocco resta, senza la data', () => {
+    const { xml } = genera();
+
+    assert.match(xml, /<DatiPagamento>/);
+    assert.doesNotMatch(xml, /<DataScadenzaPagamento>/);
+});
+
+test('chi paga con addebito dichiara il proprio conto, non quello dell acquedotto', () => {
+    // MP19 e l'addebito SEPA: il conto che compare e quello da addebitare.
+    const { xml } = genera({
+        cliente: { ...cliente, pagamento: 'Addebito in conto  a scadenza', iban: 'IT60X0542811101000000123456' },
+    });
+
+    assert.match(xml, /<ModalitaPagamento>MP19<\/ModalitaPagamento>/);
+    assert.match(xml, /<IBAN>IT60X0542811101000000123456<\/IBAN>/);
+    assert.doesNotMatch(xml, /<IstitutoFinanziario>/);
+});

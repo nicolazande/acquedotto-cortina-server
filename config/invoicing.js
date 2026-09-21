@@ -16,23 +16,6 @@ const invoiceCode = ({ anno, numero, serie }) => (
     serie ? `${anno}/${serie}/${numero}` : ''
 );
 
-// Dati del cedente per la fattura elettronica. Sono gli stessi che compaiono sul
-// PDF, qui in forma strutturata perche il tracciato XML li vuole separati.
-const CEDENTE = {
-    denominazione: process.env.INVOICE_COMPANY_NAME
-        || 'COOPERATIVA DI GESTIONE ACQUEDOTTO ZUEL DI SOPRA',
-    partitaIva: process.env.INVOICE_VAT_NUMBER || '00296800253',
-    codiceFiscale: process.env.INVOICE_TAX_CODE || '00296800253',
-    // RF01 e il regime ordinario. Va confermato da chi tiene la contabilita:
-    // un regime sbagliato rende la fattura non conforme.
-    regimeFiscale: process.env.INVOICE_TAX_REGIME || 'RF01',
-    indirizzo: process.env.INVOICE_ADDRESS || 'Pian de Lago, 64',
-    cap: process.env.INVOICE_ZIP || '32043',
-    comune: process.env.INVOICE_CITY || "Cortina d'Ampezzo",
-    provincia: process.env.INVOICE_PROVINCE || 'BL',
-    nazione: 'IT',
-};
-
 // Tipo di documento nel tracciato. Il campo `tipo_documento` e testo libero
 // nell'anagrafica importata, ma assume solo due valori: "Fattura" su 3.467
 // documenti e "Nota di Credito" su 5. Emettere una nota di credito come TD01
@@ -79,6 +62,22 @@ const naturaPerIva = (testoIva) => {
     return voce ? NATURE_IVA[voce] : null;
 };
 
+// Come il cliente paga, nel codice del tracciato. Si legge dal termine scritto
+// sulla sua anagrafica: i 25 clienti in addebito hanno "Addebito in conto a
+// scadenza", per tutti gli altri vale il bonifico.
+const MODALITA_PAGAMENTO = [
+    { riconosce: /addebito|sdd|rid|sepa/i, codice: 'MP19' },
+    { riconosce: /contant/i, codice: 'MP01' },
+];
+
+const MODALITA_PREDEFINITA_XML = 'MP05';
+
+const modalitaPagamentoXml = (cliente) => {
+    const testo = String(cliente?.pagamento || '');
+    return MODALITA_PAGAMENTO.find((modalita) => modalita.riconosce.test(testo))?.codice
+        || MODALITA_PREDEFINITA_XML;
+};
+
 // Quanti giorni passano fra la fattura e la sua scadenza, secondo il termine di
 // pagamento scritto sul documento. Prima erano trenta per tutti: una fattura per
 // un acconto gia incassato nasceva con trenta giorni di attesa davanti.
@@ -106,7 +105,7 @@ const giorniDelTermine = (tipoPagamento) => {
 
 module.exports = {
     giorniDelTermine,
-    CEDENTE,
+    modalitaPagamentoXml,
     INVOICE_SERIES,
     invoiceCode,
     naturaPerIva,

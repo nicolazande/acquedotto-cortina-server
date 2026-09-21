@@ -12,6 +12,7 @@ require('../models/Scadenza');
 const { getLineTaxRate } = require('./billingCalculator');
 const { righeConOrigine } = require('./righeFattura');
 const { applyRate, fromCents, toCents } = require('../utils/money');
+const { AZIENDA } = require('../config/azienda');
 
 const PAGE_WIDTH = 595;
 const PAGE_HEIGHT = 842;
@@ -23,14 +24,34 @@ const GRAY = [0.82, 0.82, 0.82];
 const LIGHT_GRAY = [0.94, 0.94, 0.94];
 const BORDER_GRAY = [0.72, 0.72, 0.72];
 
+// Il PDF mostra gli stessi dati del tracciato elettronico, scritti come li legge
+// una persona: il telefono spaziato, l'IBAN a gruppi, il piede in una riga sola.
+// I dati arrivano dal profilo dell'azienda, che e uno per tutti i documenti.
+const spazia = (testo, ...tagli) => {
+    const pezzi = [];
+    let resto = String(testo || '');
+
+    tagli.forEach((quanti) => {
+        pezzi.push(resto.slice(0, quanti));
+        resto = resto.slice(quanti);
+    });
+
+    return [...pezzi, resto].filter(Boolean).join(' ');
+};
+
 const companyConfig = {
-    name: process.env.INVOICE_COMPANY_NAME || 'COOPERATIVA DI GESTIONE ACQUEDOTTO ZUEL DI SOPRA',
-    footer: process.env.INVOICE_COMPANY_FOOTER || 'COOPERATIVA DI GESTIONE ACQUEDOTTO - Pian de Lago, 64 32043 CORTINA D AMPEZZO (BL) - C.F./P.I. 00296800253 - R.E.A. Belluno 65393',
-    website: process.env.INVOICE_COMPANY_WEBSITE || 'www.acquedottozuel.it',
-    email: process.env.INVOICE_COMPANY_EMAIL || 'acquedottozuel@gmail.com',
-    phoneDirect: process.env.INVOICE_PHONE_DIRECT || '0436 867504',
-    bankName: process.env.INVOICE_BANK_NAME || 'CORTINA BANCA Credito cooperativo Italiano',
-    iban: process.env.INVOICE_IBAN || 'IT11M 08511 61070 0000 0000 6953',
+    name: AZIENDA.denominazione,
+    footer: process.env.INVOICE_COMPANY_FOOTER || [
+        AZIENDA.denominazione,
+        `${AZIENDA.sede.indirizzo}, ${AZIENDA.sede.civico} ${AZIENDA.sede.cap} ${AZIENDA.sede.comune} (${AZIENDA.sede.provincia})`,
+        `C.F./P.I. ${AZIENDA.partitaIva}`,
+        `R.E.A. ${AZIENDA.rea.ufficio} ${AZIENDA.rea.numero}`,
+    ].join(' - '),
+    website: AZIENDA.contatti.sito,
+    email: AZIENDA.contatti.email,
+    phoneDirect: spazia(AZIENDA.contatti.telefono, 4),
+    bankName: AZIENDA.banca.istituto,
+    iban: spazia(AZIENDA.banca.iban, 5, 5, 5, 4, 4),
 };
 const invoiceAssets = {
     logo: path.join(__dirname, '..', 'assets', 'invoice', 'logo-zuel.ppm'),

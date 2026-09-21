@@ -158,14 +158,20 @@ const applyFixedCharge = async (req, res) => {
 // file e identico in ogni scenario di invio, cambia solo chi lo inoltra.
 const downloadXml = async (req, res) => {
     try {
-        const fattura = await Fattura.findById(req.params.id).populate('cliente').lean();
+        // La scadenza entra nel tracciato: dice al cliente entro quando pagare.
+        const fattura = await Fattura.findById(req.params.id).populate('cliente scadenza').lean();
         if (!fattura) {
             return res.status(404).json({ error: 'Fattura not found' });
         }
 
         const servizi = await righeDellaFattura(fattura._id);
 
-        const { filename, xml } = buildInvoiceXml({ cliente: fattura.cliente, fattura, servizi });
+        const { filename, xml } = buildInvoiceXml({
+            cliente: fattura.cliente,
+            fattura,
+            scadenza: fattura.scadenza,
+            servizi,
+        });
 
         res.setHeader('Content-Type', 'application/xml; charset=utf-8');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);

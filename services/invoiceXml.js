@@ -9,7 +9,8 @@
 // qui: una fattura formalmente valida ma fiscalmente sbagliata e peggio di una
 // che non viene generata.
 
-const { CEDENTE, invoiceCode, naturaPerIva, tipoDocumentoXml } = require('../config/invoicing');
+const { invoiceCode, modalitaPagamentoXml, naturaPerIva, tipoDocumentoXml } = require('../config/invoicing');
+const { AZIENDA, abiDellIban, cabDellIban } = require('../config/azienda');
 const { CODICE_DESTINATARIO_ASSENTE, codiceDestinatarioValido } = require('../config/delivery');
 const { customerLabel } = require('../utils/customer');
 const { getTaxRate } = require('./billingCalculator');
@@ -53,7 +54,7 @@ const progressivoInvio = (fattura) => (
 // scarico manuale, dove non si sta trasmettendo nulla - e non basterebbe
 // comunque, perche nell'archivio storico si ripete 499 volte.
 const nomeFile = (fattura, progressivo) => (
-    `IT${CEDENTE.partitaIva}_${progressivo || progressivoInvio(fattura)}.xml`
+    `IT${AZIENDA.partitaIva}_${progressivo || progressivoInvio(fattura)}.xml`
 );
 
 const anagraficaCliente = (cliente, fattura) => {
@@ -147,6 +148,10 @@ const riepilogoPerAliquota = (servizi) => {
             natura ? `        <Natura>${natura}</Natura>` : '',
             `        <ImponibileImporto>${importo(fromCents(centesimi))}</ImponibileImporto>`,
             `        <Imposta>${importo(fromCents(imposta))}</Imposta>`,
+            // L'ordine degli elementi non e libero: lo schema vuole l'esigibilita
+            // prima del riferimento normativo, e un file fuori ordine viene
+            // scartato come se mancasse il dato.
+            '        <EsigibilitaIVA>I</EsigibilitaIVA>',
             natura ? '        <RiferimentoNormativo>Operazione senza applicazione IVA</RiferimentoNormativo>' : '',
             '      </DatiRiepilogo>',
         ].filter(Boolean).join('\n');
@@ -155,7 +160,42 @@ const riepilogoPerAliquota = (servizi) => {
     return { righe, imponibileCents, impostaCents };
 };
 
-const buildInvoiceXml = ({ cliente, fattura, progressivo, servizi }) => {
+// Dove e quando si paga. Il gestionale precedente lo scriveva in ogni fattura, e
+// senza questo blocco il cliente riceve un documento elettronico che non dice ne
+// l'IBAN ne la scadenza: gli resta solo il PDF di cortesia, che pero non tutti
+// ricevono.
+//
+// Il conto che compare dipende da come si paga: un bonifico arriva sul conto
+// dell'acquedotto, un addebito SDD esce da quello del cliente.
+const datiPagamento = ({ cliente, scadenza, totaleEuro }) => {
+    const modalita = modalitaPagamentoXml(cliente);
+    const addebito = modalita === 'MP19';
+    const iban = (addebito ? cliente?.iban : AZIENDA.banca.iban) || '';
+    const data = dataIso(scadenza?.scadenza || scadenza);
+
+    const dettaglio = [
+        `        <ModalitaPagamento>${modalita}</ModalitaPagamento>`,
+        data ? `        <DataScadenzaPagamento>${data}</DataScadenzaPagamento>` : '',
+        `        <ImportoPagamento>${importo(totaleEuro)}</ImportoPagamento>`,
+        addebito ? '' : `        ${tag('IstitutoFinanziario', AZIENDA.banca.istituto)}`,
+        iban ? `        ${tag('IBAN', iban)}` : '',
+        iban ? `        ${tag('ABI', abiDellIban(iban))}` : '',
+        iban ? `        ${tag('CAB', cabDellIban(iban))}` : '',
+    ].filter(Boolean);
+
+    return [
+        '    <DatiPagamento>',
+        // TP02: pagamento in una soluzione. Le rate qui non esistono: a ogni
+        // fattura corrisponde una scadenza sola.
+        '      <CondizioniPagamento>TP02</CondizioniPagamento>',
+        '      <DettaglioPagamento>',
+        ...dettaglio,
+        '      </DettaglioPagamento>',
+        '    </DatiPagamento>',
+    ].join('\n');
+};
+
+const buildInvoiceXml = ({ cliente, fattura, progressivo, scadenza, servizi }) => {
     if (!servizi?.length) {
         throw unprocessable('La fattura non ha righe: impossibile emettere la fattura elettronica.');
     }
@@ -210,7 +250,7 @@ const buildInvoiceXml = ({ cliente, fattura, progressivo, servizi }) => {
     <DatiTrasmissione>
       <IdTrasmittente>
         <IdPaese>IT</IdPaese>
-        <IdCodice>${testoXml(CEDENTE.partitaIva)}</IdCodice>
+        <IdCodice>${testoXml(AZIENDA.partitaIva)}</IdCodice>
       </IdTrasmittente>
       <ProgressivoInvio>${progressivoInvio(fattura)}</ProgressivoInvio>
       <FormatoTrasmissione>${FORMATO_PRIVATI}</FormatoTrasmissione>
@@ -221,21 +261,32 @@ const buildInvoiceXml = ({ cliente, fattura, progressivo, servizi }) => {
       <DatiAnagrafici>
         <IdFiscaleIVA>
           <IdPaese>IT</IdPaese>
-          <IdCodice>${testoXml(CEDENTE.partitaIva)}</IdCodice>
+          <IdCodice>${testoXml(AZIENDA.partitaIva)}</IdCodice>
         </IdFiscaleIVA>
-        ${tag('CodiceFiscale', CEDENTE.codiceFiscale)}
+        ${tag('CodiceFiscale', AZIENDA.codiceFiscale)}
         <Anagrafica>
-          ${tag('Denominazione', CEDENTE.denominazione)}
+          ${tag('Denominazione', AZIENDA.denominazione)}
         </Anagrafica>
-        <RegimeFiscale>${testoXml(CEDENTE.regimeFiscale)}</RegimeFiscale>
+        <RegimeFiscale>${testoXml(AZIENDA.regimeFiscale)}</RegimeFiscale>
       </DatiAnagrafici>
       <Sede>
-        ${tag('Indirizzo', CEDENTE.indirizzo)}
-        ${tag('CAP', CEDENTE.cap)}
-        ${tag('Comune', CEDENTE.comune)}
-        ${tag('Provincia', CEDENTE.provincia)}
-        <Nazione>${CEDENTE.nazione}</Nazione>
+        ${tag('Indirizzo', AZIENDA.sede.indirizzo)}
+        ${tag('NumeroCivico', AZIENDA.sede.civico)}
+        ${tag('CAP', AZIENDA.sede.cap)}
+        ${tag('Comune', AZIENDA.sede.comune)}
+        ${tag('Provincia', AZIENDA.sede.provincia)}
+        <Nazione>${AZIENDA.sede.nazione}</Nazione>
       </Sede>
+      <IscrizioneREA>
+        ${tag('Ufficio', AZIENDA.rea.ufficio)}
+        ${tag('NumeroREA', AZIENDA.rea.numero)}
+        ${tag('CapitaleSociale', AZIENDA.rea.capitaleSociale)}
+        ${tag('StatoLiquidazione', AZIENDA.rea.statoLiquidazione)}
+      </IscrizioneREA>
+      <Contatti>
+        ${tag('Telefono', AZIENDA.contatti.telefono)}
+        ${tag('Email', AZIENDA.contatti.email)}
+      </Contatti>
     </CedentePrestatore>
     <CessionarioCommittente>
       <DatiAnagrafici>
@@ -246,7 +297,8 @@ const buildInvoiceXml = ({ cliente, fattura, progressivo, servizi }) => {
         </Anagrafica>
       </DatiAnagrafici>
       <Sede>
-        ${tag('Indirizzo', [sede.indirizzo, sede.numero].filter(Boolean).join(' '))}
+        ${tag('Indirizzo', sede.indirizzo)}
+        ${tag('NumeroCivico', sede.numero)}
         ${tag('CAP', sede.cap)}
         ${tag('Comune', sede.comune)}
         ${tag('Provincia', sede.provincia)}
@@ -268,6 +320,7 @@ const buildInvoiceXml = ({ cliente, fattura, progressivo, servizi }) => {
 ${dettaglio.join('\n')}
 ${riepilogo.righe.join('\n')}
     </DatiBeniServizi>
+${datiPagamento({ cliente, scadenza, totaleEuro: fromCents(totaleCalcolato) })}
   </FatturaElettronicaBody>
 </p:FatturaElettronica>
 `;

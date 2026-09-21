@@ -4,12 +4,16 @@
 // righe, e perche si veda a colpo d'occhio cosa va aggiornato se cambiano.
 //
 // Ricavati dal file prodotto dal gestionale precedente per il 2026.
+const { AZIENDA } = require('./azienda');
+
 module.exports = {
     codiceFornitura: 'IDR00240',
-    partitaIva: '00296800253',
-    denominazione: 'COOPERATIVA  GESTIONE ACQUEDOTTO VICINIA DI ZUEL',
-    comune: "CORTINA D'AMPEZZO",
-    provincia: 'BL',
+    // Chi manda l'elenco e chi emette le fatture sono lo stesso soggetto: i dati
+    // vengono dal profilo dell'azienda, non da una seconda copia qui.
+    partitaIva: AZIENDA.partitaIva,
+    denominazione: AZIENDA.denominazione,
+    comune: AZIENDA.sede.comune,
+    provincia: AZIENDA.sede.provincia,
     // Accompagna l'anno nella riga di testa. Undici cifre come un codice fiscale
     // di societa, e non e quello dell'acquedotto: sembra il codice di chi
     // trasmette la fornitura. Resta uguale a ogni invio.
