@@ -21,6 +21,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import unicodedata  # noqa: E402
+
 import main  # noqa: E402  (il percorso va sistemato prima dell'import)
 
 SPUNTE_CLIENTE = ["socio", "fattura_elettronica"]
@@ -45,17 +47,39 @@ def mappa_dei_codici(db) -> dict:
     return {codice: id_cliente for codice, id_cliente in mappa.items() if id_cliente}
 
 
+def senza_accenti(testo: str) -> str:
+    """"Alvera" e "Alverà" sono lo stesso cognome scritto in due modi."""
+    normalizzato = unicodedata.normalize("NFD", main.testo_confrontabile(testo))
+    return "".join(c for c in normalizzato if unicodedata.category(c) != "Mn")
+
+
+def uno_solo(db, filtro) -> object:
+    """L'id del cliente che soddisfa il filtro, se e uno solo."""
+    trovati = [documento["_id"] for documento in db.clienti.find(filtro, {"_id": 1}).limit(2)]
+    return trovati[0] if len(trovati) == 1 else None
+
+
 def cliente_da_aggiornare(db, codice, dati, codici):
-    """Il cliente a cui appartiene la scheda, e cosa cambia."""
+    """Il cliente a cui appartiene la scheda, e cosa cambia.
+
+    Si cerca dal riconoscimento piu sicuro al meno: il codice di Gesco, poi il
+    codice fiscale o la partita IVA - che distinguono anche due omonimi - e solo
+    alla fine il nome, che va bene se e di uno solo.
+    """
     id_cliente = codici.get(str(codice))
 
+    for campo in ("codice_fiscale", "partita_iva"):
+        if id_cliente:
+            break
+        valore = (dati.get(campo) or "").strip()
+        if valore:
+            id_cliente = uno_solo(db, {campo: valore})
+
     if not id_cliente:
-        # Restano i clienti senza contatori: li riconosce la ragione sociale, ma
-        # solo se e di uno solo, altrimenti si sceglierebbe a caso.
-        nome = main.testo_confrontabile(dati.get("ragione_sociale"))
+        nome = senza_accenti(dati.get("ragione_sociale"))
         candidati = [
             documento["_id"] for documento in db.clienti.find({}, {"ragione_sociale": 1})
-            if main.testo_confrontabile(documento.get("ragione_sociale")) == nome
+            if senza_accenti(documento.get("ragione_sociale")) == nome
         ]
         if len(candidati) != 1:
             return None, None

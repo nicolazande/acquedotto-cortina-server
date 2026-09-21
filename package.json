@@ -27,7 +27,9 @@
     "seed:articoli": "node scripts/seed-articoli.js",
     "gesco:login": ".venv/bin/python documents/script/login_gesco.py",
     "gesco:import": ".venv/bin/python documents/script/main.py",
-    "gesco:spunte": ".venv/bin/python documents/script/aggiorna_spunte.py"
+    "gesco:spunte": ".venv/bin/python documents/script/aggiorna_spunte.py",
+    "gesco:confronta": ".venv/bin/python documents/script/confronta_database.py",
+    "gesco:allinea": ".venv/bin/python documents/script/allinea_a_gesco.py"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

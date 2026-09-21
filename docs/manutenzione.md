@@ -189,6 +189,41 @@ Le fatture che l'import lascia senza cliente si collegano con
 `npm run maintenance:allinea-dati -- --fix`, quando la ragione sociale e di un
 solo cliente.
 
+### Il recupero dei dati di Zuel, fatto il 21/09/2026
+
+I dati di produzione venivano dall'import vecchio, che sbagliava piu cose. Sono
+stati recuperati leggendo di nuovo tutto da Gesco in un database a parte e
+portando **solo le differenze** in produzione: le fatture emesse da qui, le
+consegne, gli account e le tariffe rinnovate nel gestionale non sono state
+toccate.
+
+```bash
+# 1. la copia fresca, in un database suo
+MONGODB_URI=mongodb://localhost:27017/acquedotto-zuel-gesco MONGODB_DB=acquedotto-zuel-gesco \
+  IMPORT_RESET_DB=1 npm run gesco:import
+
+# 2. l'audit: dove i due database non coincidono, e perche
+npm run gesco:confronta -- --origine acquedotto-zuel-gesco --remoto
+
+# 3. le differenze, prima mostrate e poi applicate
+npm run gesco:allinea -- --origine acquedotto-zuel-gesco --remoto
+npm run gesco:allinea -- --origine acquedotto-zuel-gesco --scrivi --remoto
+npm run maintenance:allinea-dati -- --fix --remoto   # normalizza cio che e appena entrato
+```
+
+Cosa e stato corretto in produzione: **3.467 numeri di fattura** (erano il civico
+dell'indirizzo), **683 scadenze** mai importate e il loro legame con la fattura,
+**646 letture** vecchie, 18 letture con lo stato di fatturazione sbagliato, 4
+fatture che puntavano alla scadenza di un'altra, 2 fatture emesse in Gesco dopo
+l'ultimo import, un cliente con il suo contatore (ALVERA MICHELA, mai importata)
+e una data di cessazione arrivata dopo l'import.
+
+Dopo: 0 riferimenti rotti, 0 fatture senza cliente, 0 totali che non tornano. Le
+89 fatture senza scadenza e la scadenza orfana rimasta sono cosi anche in Gesco.
+
+Restano due contatori da assegnare a mano a un edificio (CASA B, CAPANNONE
+F.LLI PIZZOLOTTO) e 126 matricole condivise da confermare come subentri.
+
 ### Le spunte non sono mai state importate
 
 Una casella di spunta in Gesco non ha testo: l'import leggeva il testo della
