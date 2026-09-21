@@ -16,6 +16,11 @@ const invoiceCode = ({ anno, numero, serie }) => (
     serie ? `${anno}/${serie}/${numero}` : ''
 );
 
+// Le fatture emesse da questo gestionale hanno una serie, quelle importate dal
+// programma precedente no: e l'unico segno che le distingue, e vale ovunque
+// serva saperlo - la numerazione, la coda delle consegne.
+const emessaDalGestionale = (fattura) => Boolean(fattura?.serie);
+
 // Tipo di documento nel tracciato. Il campo `tipo_documento` e testo libero
 // nell'anagrafica importata, ma assume solo due valori: "Fattura" su 3.467
 // documenti e "Nota di Credito" su 5. Emettere una nota di credito come TD01
@@ -104,6 +109,7 @@ const giorniDelTermine = (tipoPagamento) => {
 };
 
 module.exports = {
+    emessaDalGestionale,
     giorniDelTermine,
     modalitaPagamentoXml,
     INVOICE_SERIES,

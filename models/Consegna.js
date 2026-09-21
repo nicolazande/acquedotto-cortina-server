@@ -39,14 +39,34 @@ const consegnaSchema = new Schema(
         // persona non dichiara di averlo evaso: e l'elenco delle buste da fare.
         automatica: { type: Boolean, default: false },
         tentativi: { type: Number, default: 0 },
+        // Cosa manca perche possa partire, secondo il piano di oggi: un
+        // recapito, un cliente estero che il tracciato non gestisce. Lo scrive e
+        // lo toglie Prepara.
+        problema: { type: String },
+        // Cosa e andato storto all'ultimo tentativo di farla uscire: l'invio, il
+        // file XML, la stampa. Lo toglie un tentativo riuscito o Riprova, non
+        // Prepara: altrimenti un errore sparirebbe dalla riga senza essere risolto.
         ultimo_errore: { type: String },
         data_invio: { type: Date },
+        // L'ultimo tentativo che non l'ha consegnata: una prova (posta non attiva,
+        // o deviata sull'indirizzo di prova) oppure un errore. L'elaborazione
+        // parte da quelle mai tentate e poi da quelle tentate da piu tempo:
+        // altrimenti ripeterebbe sempre le stesse - le prove, o gli errori in cima
+        // alla coda - e il resto non verrebbe mai raggiunto.
+        ultimo_tentativo: { type: Date },
         // Identificativo restituito dal trasporto: message-id della mail o
         // protocollo dello SdI. Serve per ritrovare la consegna fuori di qui.
         riferimento: { type: String },
-        // Vero quando la consegna e stata registrata in modalita prova, cioe
-        // senza che nulla sia realmente uscito.
-        simulata: { type: Boolean, default: false },
+        // Messa in coda dalla scheda della fattura, per quella fattura, e non
+        // dal Prepara generale. Conta per le fatture del vecchio programma: la
+        // coda generale non le prepara, e non deve togliere quelle che una
+        // persona ha chiesto apposta.
+        su_richiesta: { type: Boolean, default: false },
+        // Annullata da Prepara perche il piano non la prevedeva piu - fattura
+        // riportata a bozza, cliente senza recapito, gia consegnata - e non da una
+        // persona. Se il piano torna a prevederla, Prepara la rimette in coda;
+        // una consegna annullata a mano resta annullata.
+        chiusa_dal_piano: { type: Boolean },
         allegati: [{ type: String }],
         note: { type: String },
     },

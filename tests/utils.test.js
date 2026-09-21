@@ -15,7 +15,7 @@ const {
 const { addDays, dataCompatta, daysBetween, formatItalianDate, getDate, startOfDay, toDate } = require('../utils/dates');
 const { customerLabel } = require('../utils/customer');
 const { conflict, createError, notFound, unprocessable } = require('../utils/errors');
-const { recordId, uniqueById } = require('../utils/mongo');
+const { recordId, setOrUnset, uniqueById } = require('../utils/mongo');
 
 test('numberOrZero: accetta la virgola come separatore decimale', () => {
     assert.equal(numberOrZero('1,5'), 1.5);
@@ -172,4 +172,19 @@ test('dataCompatta: giorno, mese e anno senza separatori, e vuota senza data', (
     assert.equal(dataCompatta(new Date('2026-04-27T00:00:00.000Z')), '27042026');
     assert.equal(dataCompatta('2026-01-05'), '05012026');
     assert.equal(dataCompatta(null), '');
+});
+
+test('setOrUnset: un campo vuoto si toglie, non si ignora', () => {
+    // Mongoose scarta gli undefined di un $set: senza $unset il valore vecchio
+    // restava nel database.
+    assert.deepEqual(setOrUnset({ stato: 'in_coda', ultimo_errore: undefined, note: null }), {
+        $set: { stato: 'in_coda' },
+        $unset: { ultimo_errore: '', note: '' },
+    });
+});
+
+test('setOrUnset: nessun operatore vuoto', () => {
+    // Il database rifiuta un $unset o un $set senza campi.
+    assert.deepEqual(setOrUnset({ stato: 'inviata' }), { $set: { stato: 'inviata' } });
+    assert.deepEqual(setOrUnset({ note: null }), { $unset: { note: '' } });
 });

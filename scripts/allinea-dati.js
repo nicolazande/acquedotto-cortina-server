@@ -15,15 +15,18 @@
 //   - contatori: collega ogni contatore a quello che ha sostituito
 //   - fatture: collega al cliente quelle rimaste senza, se la ragione sociale e
 //     di un solo cliente
+//   - consegne: rimette in coda quelle chiuse da una prova di invio e toglie il
+//     campo `simulata`, che non si scrive piu
 const { runScript } = require('./utils/runScript');
 const Cliente = require('../models/Cliente');
+const Consegna = require('../models/Consegna');
 const Contatore = require('../models/Contatore');
 const Edificio = require('../models/Edificio');
 const User = require('../models/User');
 const Fattura = require('../models/Fattura');
 const Scadenza = require('../models/Scadenza');
 const { MODALITA_CONSEGNA, normalizzaModalita } = require('../config/delivery');
-const { DATA_IMPLAUSIBILE } = require('../utils/dates');
+const { DATA_IMPLAUSIBILE, formatItalianDate } = require('../utils/dates');
 
 const applica = process.argv.includes('--fix');
 
@@ -392,6 +395,44 @@ const collegaFattureSenzaCliente = async () => {
     console.log(`  collegate: ${daCollegare.length}`);
 };
 
+// Fino al 21/09/2026 una prova di invio - senza posta attiva, o deviata
+// sull'indirizzo di prova - chiudeva la consegna come inviata, con
+// `simulata: true`: il cliente non aveva ricevuto niente, ma la consegna non
+// tornava piu in coda e a posta attiva non sarebbe partita. Ora una prova la
+// lascia in coda. Quelle chiuse cosi ci tornano, con l'esito della prova sulla
+// riga; il campo resta su tutte le altre con valore falso e non dice piu niente.
+const riapriConsegneProvate = async () => {
+    const provate = await Consegna.collection
+        .find({ simulata: true, stato: 'inviata' }, { projection: { data_invio: 1, documento: 1, intestatario: 1 } })
+        .toArray();
+    const conIlCampo = await Consegna.collection.countDocuments({ simulata: { $exists: true } });
+
+    console.log('Consegne chiuse da una prova di invio:');
+    console.log(`  da rimettere in coda: ${provate.length}`);
+    provate.forEach((consegna) => console.log(`    ${consegna.documento || consegna._id} ${consegna.intestatario || ''}`));
+    console.log(`  con il campo \`simulata\` da togliere: ${conIlCampo}`);
+
+    if (!applica || (provate.length + conIlCampo) === 0) {
+        return;
+    }
+
+    // Il recapito si toglie: una prova deviata aveva scritto l'indirizzo di
+    // prova al posto di quello del cliente. Lo riscrive il prossimo Prepara, e
+    // senza recapito un invio anticipato finisce in errore invece che altrove.
+    for (const consegna of provate) {
+        await Consegna.collection.updateOne({ _id: consegna._id }, {
+            $set: {
+                stato: 'in_coda',
+                note: `Prova del ${formatItalianDate(consegna.data_invio)}: il cliente non l'ha ricevuta. Resta in coda.`,
+                ultimo_tentativo: consegna.data_invio,
+            },
+            $unset: { data_invio: '', destinatario: '', riferimento: '', allegati: '' },
+        });
+    }
+    const ripulite = await Consegna.collection.updateMany({ simulata: { $exists: true } }, { $unset: { simulata: '' } });
+    console.log(`  rimesse in coda: ${provate.length}, campo tolto: ${ripulite.modifiedCount}`);
+};
+
 const main = async () => {
     console.log(applica ? '== APPLICO LE CORREZIONI ==\n' : '== SOLA LETTURA (usa --fix per applicare) ==\n');
 
@@ -414,6 +455,8 @@ const main = async () => {
     await collegaContatoriAlLoroEdificio();
     console.log('');
     await collegaFattureSenzaCliente();
+    console.log('');
+    await riapriConsegneProvate();
 };
 
 runScript(main);

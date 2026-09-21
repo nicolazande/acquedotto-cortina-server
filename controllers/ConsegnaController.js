@@ -52,12 +52,14 @@ const getAnteprima = async (req, res) => {
 
 const pianifica = async (req, res) => {
     try {
-        const esito = await pianificaConsegne({
-            fatture: req.body.fatture,
-            anno: req.body.anno,
-            limite: req.body.limite,
-        });
-        await registra(req, null, 'consegna.pianificata', `Pianificate ${esito.create} consegne`, esito);
+        const esito = await pianificaConsegne({ fatture: req.body.fatture });
+        await registra(
+            req,
+            null,
+            'consegna.pianificata',
+            `Pianificate ${esito.create} consegne, rimesse in coda ${esito.riaperte}, chiuse ${esito.annullate} non più da fare`,
+            esito
+        );
         res.status(200).json(esito);
     } catch (error) {
         sendServiceError(res, error, 'Error planning consegne', 400);

@@ -10,6 +10,7 @@
 const Consegna = require('../models/Consegna');
 const Fattura = require('../models/Fattura');
 const { righeDellaFattura } = require('./righeFattura');
+const { FATTURA_IN_BOZZA, fatturaConfermata } = require('./deliveryPlan');
 const { STATI_APERTI } = require('../config/delivery');
 const { generateInvoicePdf, generateInvoicesPdf } = require('./invoicePdf');
 const { buildInvoiceXml } = require('./invoiceXml');
@@ -37,6 +38,10 @@ const fatturaDellaConsegna = (consegna) => (
 // tentativo sulla stessa fattura: lo SdI rifiuta un file il cui nome ha gia
 // visto, quindi rispedire lo stesso nome vorrebbe dire non poter rispedire.
 const allegatoXml = async (consegna, fattura) => {
+    if (!fatturaConfermata(fattura)) {
+        throw unprocessable(FATTURA_IN_BOZZA);
+    }
+
     const servizi = await righeDellaFattura(fattura._id);
     const dati = { cliente: fattura.cliente, fattura, scadenza: fattura.scadenza, servizi };
 
@@ -47,7 +52,9 @@ const allegatoXml = async (consegna, fattura) => {
     const progressivo = await riservaProgressivoInvio();
     const { filename, xml } = buildInvoiceXml({ ...dati, progressivo });
 
-    await Consegna.updateOne({ _id: consegna._id }, { $set: { progressivo } });
+    // Il file si e fatto: un errore scritto da un tentativo precedente - un
+    // cliente estero poi corretto, una fattura allora in bozza - non vale piu.
+    await Consegna.updateOne({ _id: consegna._id }, { $set: { progressivo }, $unset: { ultimo_errore: '' } });
 
     return { nome: filename, contenuto: Buffer.from(xml, 'utf8'), tipo: 'application/xml' };
 };
@@ -78,10 +85,34 @@ const consegneInCoda = async ({ canali, tipo, limite }) => Consegna.find({
 // Le fatture da imbustare, in un unico PDF ordinato per intestatario: e
 // l'ordine in cui si preparano le buste.
 const stampaDaConsegnare = async ({ limite } = {}) => {
-    const daStampare = await consegneInCoda({ canali: ['postale', 'sportello'], limite });
+    const cartacee = await consegneInCoda({ canali: ['postale', 'sportello'], limite });
+
+    // Una fattura riportata a bozza dopo essere entrata in coda non si stampa:
+    // la sua riga resta, con il motivo, finche il Prepara successivo la chiude.
+    const confermate = new Set(
+        (await Fattura.find({ _id: { $in: cartacee.map((consegna) => consegna.fattura) } }, { stato: 1, confermata: 1 }).lean())
+            .filter(fatturaConfermata)
+            .map((fattura) => String(fattura._id))
+    );
+    const daStampare = cartacee.filter((consegna) => confermate.has(String(consegna.fattura)));
+    const inBozza = cartacee.filter((consegna) => !confermate.has(String(consegna.fattura)));
+
+    if (inBozza.length) {
+        await Consegna.updateMany({ _id: { $in: inBozza.map((consegna) => consegna._id) } }, { $set: { ultimo_errore: FATTURA_IN_BOZZA } });
+    }
+    // E una fattura confermata di nuovo perde il segno che una stampa precedente
+    // le aveva lasciato: anche quelle chieste dalla scheda di una fattura del
+    // vecchio programma, che il Prepara generale non aggiorna.
+    await Consegna.updateMany(
+        { _id: { $in: daStampare.map((consegna) => consegna._id) }, ultimo_errore: FATTURA_IN_BOZZA },
+        { $unset: { ultimo_errore: '' } }
+    );
 
     if (daStampare.length === 0) {
-        throw unprocessable('Non c’è niente da stampare: la coda delle consegne cartacee è vuota.');
+        const bozze = inBozza.length === 1
+            ? 'la fattura in coda è una bozza: va confermata prima di consegnarla.'
+            : 'le fatture in coda sono bozze: vanno confermate prima di consegnarle.';
+        throw unprocessable(`Non c’è niente da stampare: ${inBozza.length ? bozze : 'la coda delle consegne cartacee è vuota.'}`);
     }
 
     const inCoda = await Consegna.countDocuments({

@@ -91,10 +91,13 @@ classDiagram
         String stato
         Boolean automatica
         Number tentativi
+        String problema
         String ultimo_errore
         Date data_invio
+        Date ultimo_tentativo
         String riferimento
-        Boolean simulata
+        Boolean su_richiesta
+        Boolean chiusa_dal_piano
         String[] allegati
         String note
         Ref _id

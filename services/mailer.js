@@ -116,8 +116,8 @@ const inviaEmail = async ({ a, oggetto, testo, allegati = [] }) => {
     }
 
     if (mancanti.length) {
-        // Modalita prova: il messaggio non esce, ma la consegna viene comunque
-        // registrata come simulata, cosi il conteggio nell'interfaccia e reale.
+        // Modalita prova: il messaggio non esce. `simulata` lo dice a chi
+        // chiama, che non deve dare la consegna per fatta.
         return {
             simulata: true,
             destinatario: a,
@@ -140,11 +140,13 @@ const inviaEmail = async ({ a, oggetto, testo, allegati = [] }) => {
         })),
     });
 
+    // Deviato sull'indirizzo di prova il messaggio e uscito, ma il cliente non
+    // l'ha ricevuto: anche questa e una prova.
     return {
         simulata: deviato,
         destinatario: deviato ? config.destinatarioProva : a,
         riferimento: risultato.messageId || null,
-        motivo: deviato ? `Deviata su ${config.destinatarioProva}` : null,
+        motivo: deviato ? `deviata su ${config.destinatarioProva}` : null,
     };
 };
 

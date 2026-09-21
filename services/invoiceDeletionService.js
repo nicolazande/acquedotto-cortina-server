@@ -86,7 +86,7 @@ const deleteInvoiceInSession = async (fatturaId, session, unlock) => {
     // Prima di cancellarle, le consegne dicono se il documento e gia uscito: e
     // l'unico modo di sapere cosa fare del suo numero.
     const consegneDelDocumento = await withSession(Consegna.find({ fattura: fatturaId }), session)
-        .select('tipo stato simulata progressivo')
+        .select('tipo stato progressivo')
         .lean();
 
     // Le consegne appartengono al documento: senza di lui non hanno significato.

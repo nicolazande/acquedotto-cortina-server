@@ -288,17 +288,26 @@ ne ha al massimo due: la **copia di cortesia** (il canale scelto sul cliente) e 
 **fattura elettronica** (il canale dedotto da codice destinatario e PEC).
 
 ```text
-POST /api/consegne/pianifica   { fatture: [id], anno, limite }
+POST /api/consegne/pianifica   { fatture: [id] }
 POST /api/consegne/elabora     { fatture: [id], tipo, limite }
 ```
 
-`pianifica` mette in coda le fatture confermate che non hanno ancora una consegna
-e non recapita nulla. `elabora` percorre la coda e recapita le consegne
-**automatiche** (email e PEC); i canali manuali restano in elenco finche qualcuno
-non li chiude con `POST /api/consegne/:id/evasa`.
+`pianifica` mette in coda le consegne mancanti e non recapita nulla. Senza
+`fatture` guarda tutte le fatture confermate emesse dal gestionale, piu quelle
+con una consegna ancora aperta, e chiude le consegne che il piano non prevede
+piu; con `fatture` guarda quelle indicate, anche del vecchio programma, e
+riapre una consegna annullata. Risponde con i conteggi: `create`, `aggiornate`,
+`riaperte`, `annullate`, `saltate`, e i `problemi` del documento. Le regole sono
+in [Come esce una fattura](consegne.md).
 
-Senza un server di posta configurato l'elaborazione non fallisce: registra le
-consegne come **simulate**, senza spedire nulla e senza datare la fattura.
+`elabora` percorre la coda e recapita le consegne **automatiche** (email e PEC);
+i canali manuali restano in elenco finche qualcuno non li chiude con
+`POST /api/consegne/:id/evasa`. Una fattura che nel frattempo e tornata bozza non
+esce: la consegna va in errore con il motivo.
+
+Senza un server di posta configurato l'elaborazione non fallisce: e una
+**prova**. Non spedisce nulla, non data la fattura, e lascia la consegna in coda
+con l'esito scritto sulla riga (`simulate` nei conteggi).
 `GET /api/consegne/riepilogo` riporta lo stato del trasporto in `trasporto`.
 
 Viste disponibili con `?vista=`: `in-coda`, `da-stampare`, `automatiche`,

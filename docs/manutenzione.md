@@ -257,9 +257,9 @@ sostituzioni, 11 condominiali - tutti valori che prima erano zero.
 
 Fino al 21/09/2026 confermare una fattura dalla sua scheda la lasciava con
 `confermata: true` e `stato: 'bozza'`. Contano entrambi, ma chi cerca guarda lo
-**stato**: l'elenco *Confermate* e la coda delle consegne
-(`pianificaConsegne` filtra `stato: 'confermata'`). Quella fattura spariva da
-tutti e due, e sembrava che confermarla non avesse fatto niente.
+**stato**: l'elenco *Confermate* e la coda delle consegne, che prepara solo
+fatture confermate. Quella fattura spariva da tutti e due, e sembrava che
+confermarla non avesse fatto niente.
 
 Due cause, corrette insieme:
 
@@ -274,6 +274,39 @@ Due cause, corrette insieme:
 **Sui documenti gia salvati cosi** il rimedio e
 `npm run maintenance:allinea-dati -- --fix`, che porta lo stato al valore della
 spunta. Da eseguire in produzione dopo aver pubblicato la correzione.
+
+### La coda delle consegne prima del 22/09/2026
+
+Tre difetti, corretti insieme (le regole di oggi sono in
+[Come esce una fattura](consegne.md)):
+
+- *Prepara* guardava le **500 fatture piu recenti**, storico compreso. Una
+  fatturazione di Zuel ne fa circa 670 con la stessa data: circa 170 restavano
+  senza consegna anche ripremendo, e le consegne aperte fuori da quella finestra
+  non si chiudevano (a Zuel 3 copie gia spedite restavano fra quelle da stampare);
+- guardando lo storico, proponeva consegne che il vecchio programma aveva lasciato
+  apposta: le 7 fatture elettroniche di dicembre 2025 di clienti che ogni anno
+  partono per altra via, e 13 copie cartacee delle fatture singole del 2026, gia
+  trasmesse come elettroniche;
+- una **prova di invio**, senza posta attiva, chiudeva la consegna come inviata
+  (`simulata: true`): a posta attiva il cliente non avrebbe ricevuto niente.
+
+Scoperto per strada: con Mongoose 8 un campo messo a `undefined` in un `$set`
+viene ignorato, non cancellato. Il vecchio problema restava sulla riga anche
+dopo la correzione in anagrafica. Gli aggiornamenti che devono togliere un campo
+passano da `setOrUnset` (`utils/mongo.js`).
+
+Dopo aver pubblicato la correzione:
+
+```bash
+npm run maintenance:allinea-dati -- --remoto         # mostra cosa cambierebbe
+npm run maintenance:allinea-dati -- --fix --remoto   # rimette in coda le consegne chiuse da una prova, toglie `simulata`
+```
+
+e un *Prepara* dalla pagina Consegne. A Zuel, simulato in sola lettura il
+21/09/2026: chiude le 499 consegne del vecchio programma in coda - 488 "Già
+consegnata il ...", 11 "Fattura del vecchio programma" - e mette in coda le 2
+della fattura di prova 2026/A/1.
 
 ### Il ritardo delle scadenze e un valore derivato
 

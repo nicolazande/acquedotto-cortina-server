@@ -15,7 +15,7 @@
 
 const Fattura = require('../models/Fattura');
 const InvoiceCounter = require('../models/InvoiceCounter');
-const { INVOICE_SERIES } = require('../config/invoicing');
+const { INVOICE_SERIES, emessaDalGestionale } = require('../config/invoicing');
 const { prossimoNumero, scopeDellaSerie } = require('./counters');
 const { withSession } = require('../utils/mongo');
 const { numberOrZero } = require('../utils/values');
@@ -49,7 +49,7 @@ const reserveInvoiceNumber = async (anno, session, serie = INVOICE_SERIES) => {
 };
 
 const haNumeroDiSerie = (fattura) => (
-    Boolean(fattura?.serie) && Boolean(fattura?.anno) && Number(fattura?.numero) > 0
+    emessaDalGestionale(fattura) && Boolean(fattura?.anno) && Number(fattura?.numero) > 0
 );
 
 // Il numero di una fattura cancellata si puo dare alla prossima solo se il
@@ -68,7 +68,7 @@ const numeroRiusabile = ({ fattura, consegne = [] }) => {
     }
 
     return !consegne.some((consegna) => (
-        (consegna.stato === 'inviata' && !consegna.simulata)
+        consegna.stato === 'inviata'
         || (consegna.tipo === 'elettronica' && Boolean(consegna.progressivo))
     ));
 };

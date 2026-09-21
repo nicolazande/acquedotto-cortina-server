@@ -13,17 +13,17 @@ test('una fattura mai uscita libera il suo numero', () => {
     assert.equal(numeroRiusabile({ fattura: fattura(), consegne: [{ tipo: 'cortesia', stato: 'in_coda' }] }), true);
 });
 
-test('una consegna simulata non e uscita', () => {
-    // Senza server di posta l'invio viene registrato come simulato: niente e
-    // partito, quindi il numero non e in mano a nessuno.
-    const consegne = [{ tipo: 'cortesia', stato: 'inviata', simulata: true }];
+test('una prova di invio non fa uscire niente', () => {
+    // Senza server di posta la prova lascia la consegna in coda con il suo
+    // esito: niente e partito, quindi il numero non e in mano a nessuno.
+    const consegne = [{ tipo: 'cortesia', stato: 'in_coda', note: 'Prova del 21/09/2026: il cliente non l\'ha ricevuta.' }];
     assert.equal(numeroRiusabile({ fattura: fattura(), consegne }), true);
 });
 
-test('una consegna evasa davvero tiene il numero', () => {
+test('una consegna evasa tiene il numero', () => {
     // La busta imbucata, la fattura ritirata allo sportello: il cliente ha un
     // documento con quel numero, e un altro non puo averlo.
-    const consegne = [{ tipo: 'cortesia', stato: 'inviata', simulata: false }];
+    const consegne = [{ tipo: 'cortesia', stato: 'inviata' }];
     assert.equal(numeroRiusabile({ fattura: fattura(), consegne }), false);
 });
 

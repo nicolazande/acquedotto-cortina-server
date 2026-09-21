@@ -63,13 +63,35 @@ Una consegna e un record della collezione `consegne`: una fattura, un tipo
 ```
 in_coda ──> inviata
    │  └───> errore ──> (riprova) ──> in_coda
-   └──────> annullata
+   └──────> annullata ──> (Prepara) ──> in_coda
 ```
 
 Esiste come record separato, e non come una data sulla fattura, perche i due
 canali sono indipendenti: la copia di cortesia puo essere partita mentre la
 fattura elettronica e ancora da trasmettere, e un tentativo fallito deve restare
 visibile con il suo motivo invece di sparire.
+
+Su una consegna si leggono due cose diverse, tenute in due campi:
+
+| Campo | Cosa dice | Chi lo scrive e chi lo toglie |
+|-------|-----------|-------------------------------|
+| `problema` | cosa manca perche parta, secondo il piano di oggi: un recapito, un cliente estero | lo scrive e lo toglie *Prepara* |
+| `ultimo_errore` | cosa e andato storto all'ultimo tentativo di farla uscire: l'invio, il file XML, la stampa | lo toglie un tentativo riuscito, *Riprova* o *Evasa*; *Prepara* no |
+
+Tenerli in un campo solo faceva si che *Prepara* cancellasse l'errore di un file
+XML, o che la stampa scrivesse sopra un indirizzo mancante. La colonna *Esito*
+mostra prima l'errore, poi il problema, poi la nota; su una riga annullata, il
+motivo della chiusura.
+
+Tre segni servono alla coda per ricordarsi come ci e arrivata una consegna:
+
+- `su_richiesta` - messa in coda dalla scheda della fattura, o rimessa in coda
+  con *Riprova*: una richiesta esplicita, che il *Prepara* generale rispetta;
+- `chiusa_dal_piano` - annullata da *Prepara* perche il piano non la prevedeva
+  piu, e non da una persona: se il piano torna a prevederla, *Prepara* la riapre;
+- `ultimo_tentativo` - l'ultimo tentativo che non l'ha consegnata, una prova o un
+  errore: l'elaborazione parte da quelle mai tentate, poi da quelle tentate da
+  piu tempo, cosi non riprova sempre le stesse.
 
 > Le due date che il gestionale precedente teneva sulla fattura
 > (`data_invio_fattura` e `data_fattura_elettronica`) continuano a essere
@@ -81,11 +103,31 @@ ha significato e continuerebbe a comparire fra le fatture da recapitare.
 
 ### Le tre operazioni
 
-1. **Pianifica** (`POST /api/consegne/pianifica`) guarda le fatture confermate e
-   crea le consegne mancanti, con il recapito ricavato dall'anagrafica. Non
-   recapita nulla. Una consegna gia inviata non viene mai riscritta.
+1. **Pianifica** (`POST /api/consegne/pianifica`) mette in coda le consegne
+   mancanti, con il recapito ricavato dall'anagrafica, e tiene la coda in pari
+   con il piano. Non recapita nulla. Lavora in due modi:
+   - dalla **pagina Consegne**, il pulsante *Prepara*: guarda **tutte** le fatture
+     confermate emesse dal gestionale (quelle con la serie), piu quelle che hanno
+     ancora una consegna aperta. Le fatture del vecchio programma restano fuori -
+     vedi sotto;
+   - dalla **scheda di una fattura**, con `{ fatture: [id] }`: guarda quella
+     fattura, di qualunque provenienza, e riapre anche una consegna annullata,
+     perche chi preme *Prepara* su quella fattura vuole che parta.
+
+   Una consegna inviata non si tocca mai. Una aperta prende il recapito di oggi
+   senza perdere l'errore del suo ultimo tentativo. Una che il piano non prevede
+   piu si chiude con il motivo scritto; se l'ha chiusa il piano e il piano torna a
+   prevederla - la fattura riportata a bozza e poi confermata - si riapre. Una
+   annullata a mano resta annullata. Le regole sono in `aggiornamentoCoda`
+   (`services/deliveryPlan.js`), senza database, e hanno i loro test.
+
+   Fino al 21/09/2026 *Prepara* guardava le 500 fatture piu recenti, storico
+   compreso. Una fatturazione di Zuel ne fa circa 670 con la stessa data: le altre
+   restavano fuori per sempre, anche ripremendo, e le consegne aperte fuori da
+   quella finestra non si chiudevano.
 2. **Elabora** (`POST /api/consegne/elabora`) percorre la coda e recapita quelle
-   automatiche, allegando il PDF della fattura.
+   automatiche, allegando il PDF della fattura. Prende prima quelle mai tentate,
+   poi quelle tentate da piu tempo.
 3. **Evadi** (`POST /api/consegne/:id/evasa`) chiude a mano una consegna che una
    persona ha portato a termine: la busta imbucata, la fattura ritirata.
 
@@ -111,6 +153,18 @@ esserci (`canaleSdiTesto`, lato client).
 
 ### Cosa la coda non prepara
 
+**Le fatture del vecchio programma.** Il *Prepara* della pagina Consegne guarda
+solo le fatture emesse dal gestionale; quelle importate da Gesco le ha
+consegnate Gesco. Il loro storico e pieno di eccezioni che qui diventerebbero
+lavoro da fare: a Zuel le fatture di dicembre del Comune, di Servizi Ampezzo e di
+pochi altri non risultano mai trasmesse dal vecchio programma, ogni anno dal
+2021, perche partono per altra via; le fatture singole del 2026 sono tutte
+trasmesse come elettroniche, ma il vecchio programma non segnava la copia
+cartacea. Il *Prepara* di prima ne proponeva venti. Le consegne aperte di queste
+fatture si chiudono al *Prepara* successivo, con il motivo scritto, tranne quelle
+chieste apposta dalla scheda: una singola fattura del vecchio programma si mette
+in coda da li.
+
 **Cio che e gia uscito.** Una fattura che ha gia la data di invio della copia
 (`data_invio_fattura`) o di trasmissione allo SdI (`data_fattura_elettronica`)
 non viene preparata di nuovo in quel modo (`CAMPO_DATA_CONSEGNA` in
@@ -131,6 +185,15 @@ motivo invece di produrre un file da privato italiano. Vanno emesse a parte.
 > codice destinatario generico `0000000`: finche non gli si scrive il suo codice
 > IPA, il gestionale non puo riconoscerlo come tale.
 
+### Una bozza non esce
+
+Una fattura si consegna solo confermata. Il piano lo controlla quando la mette in
+coda, e il controllo si ripete a ogni uscita, perche nel frattempo la fattura si
+puo riportare a bozza: l'invio la mette in errore, l'XML si rifiuta, la stampa la
+salta e lo scrive sulla riga (`fatturaConfermata` e `FATTURA_IN_BOZZA` in
+`services/deliveryPlan.js`). Il *Prepara* successivo chiude le sue consegne; se la
+fattura viene confermata di nuovo, le riapre.
+
 ## Niente parte per sbaglio
 
 Perche un messaggio esca servono **due condizioni insieme**:
@@ -139,9 +202,12 @@ Perche un messaggio esca servono **due condizioni insieme**:
 INVIO_EMAIL_ABILITATO=true      e      SMTP_HOST configurato
 ```
 
-Se ne manca una, l'elaborazione non fallisce: compone il messaggio, lo registra
-come **simulato** e non lo consegna. Il conteggio nell'interfaccia resta reale e
-si vede esattamente quante fatture sarebbero partite e verso dove.
+Se ne manca una, l'elaborazione non fallisce: e una **prova**. Compone il
+messaggio e il PDF ma non lo consegna, e la consegna **resta in coda** con l'esito
+scritto sulla riga: partira davvero quando la posta sara attiva. Fino al
+21/09/2026 una prova chiudeva la consegna come inviata (`simulata: true`): non
+tornava piu in coda, e a posta attiva il cliente non avrebbe ricevuto niente.
+`npm run maintenance:allinea-dati -- --fix` rimette in coda quelle chiuse cosi.
 
 E deliberatamente scomodo. Una spedizione massiva partita per errore non si
 annulla, e i destinatari sono i clienti dell'acquedotto.
@@ -151,8 +217,9 @@ messaggio va a quell'indirizzo invece che al cliente, con il destinatario vero
 scritto nell'oggetto. Serve a provare l'invio completo, allegati compresi, senza
 scrivere a nessuno.
 
-Una consegna simulata **non** scrive la data di invio sulla fattura: direbbe il
-falso.
+Una prova **non** scrive la data di invio sulla fattura: direbbe il falso. Anche
+una consegna deviata sull'indirizzo di prova e una prova: il messaggio e uscito,
+ma il cliente non l'ha ricevuto.
 
 ### Configurazione
 
@@ -214,24 +281,22 @@ globalmente.
 ### Per quali clienti
 
 Una consegna elettronica viene preparata solo per chi la riceve, cioe per i
-clienti con `fattura_elettronica: true`. Sui dati importati il flag e falso su
-tutti e 900, quindi oggi non ne viene preparata nessuna.
-
-Quando la decisione sara presa ci sono due strade:
-
-- accendere il flag sui clienti interessati, dall'anagrafica;
-- oppure `FATTURA_ELETTRONICA_PREDEFINITA=true`, che la attiva per tutti senza
-  toccare 900 anagrafiche.
+clienti con `fattura_elettronica: true`. La spunta viene da Gesco: l'import
+vecchio non la leggeva, e dal 21/09/2026 e stata riletta (`npm run gesco:spunte`,
+vedi [manutenzione](manutenzione.md)). `FATTURA_ELETTRONICA_PREDEFINITA=true` la
+attiva per tutti senza toccare le anagrafiche.
 
 ## Cosa dicono i dati oggi
 
+Zuel, produzione, 21/09/2026:
+
 | Dato                                    | Valore    |
 |-----------------------------------------|-----------|
-| Clienti con consegna `postale`          | 900 (100%) |
-| Clienti con un indirizzo email          | 213 (24%)  |
+| Clienti con consegna `postale`          | 901 su 902 |
+| Clienti con un indirizzo email          | 215 (24%)  |
 | Clienti con una PEC                     | 35 (4%)    |
 | Clienti con un codice destinatario reale | 145 (16%) |
-| Clienti con `fattura_elettronica` attivo | 0         |
+| Clienti con `fattura_elettronica` attivo | 899       |
 
 La conseguenza pratica: **la consegna per email oggi coprirebbe un quarto dei
 clienti**. Prima di passare all'invio automatico su larga scala il lavoro vero non
@@ -242,7 +307,7 @@ e tecnico, e raccogliere gli indirizzi.
 | File                             | Cosa contiene                                  |
 |----------------------------------|------------------------------------------------|
 | `config/delivery.js`             | modalita, canali, testi dei messaggi           |
-| `services/deliveryPlan.js`       | dove deve andare una fattura (nessun database) |
+| `services/deliveryPlan.js`       | dove deve andare una fattura, e come cambia la coda (nessun database) |
 | `services/deliveryService.js`    | la coda: pianifica, elabora, registra          |
 | `services/documentiConsegna.js`  | i file: PDF, XML, stampa delle buste, archivio |
 | `services/mailer.js`             | l'unico punto in cui un messaggio esce         |

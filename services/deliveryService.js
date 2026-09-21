@@ -21,16 +21,17 @@ const {
 } = require('../config/delivery');
 const { AZIENDA } = require('../config/azienda');
 const { allegatoPdf, allegatoXml, fatturaDellaConsegna } = require('./documentiConsegna');
-const { pianoConsegne } = require('./deliveryPlan');
+const { FATTURA_IN_BOZZA, aggiornamentoCoda, fatturaConfermata, pianoConsegne } = require('./deliveryPlan');
 const { inviaEmail, statoTrasporto } = require('./mailer');
 const { badRequest, notFound, unprocessable } = require('../utils/errors');
 const { formatItalianDate } = require('../utils/dates');
+const { setOrUnset } = require('../utils/mongo');
 const { parsePositiveInteger } = require('../utils/values');
 
-// Tetto alle fatture toccate da una sola richiesta: la pianificazione legge
-// anagrafiche e la elaborazione costruisce PDF, quindi il costo per documento
-// non e trascurabile.
-const MAX_FATTURE_PER_LOTTO = 500;
+// Tetto a un elenco esplicito di fatture: la scheda di una fattura ne chiede
+// una, e un elenco senza limite sarebbe una richiesta di dimensione arbitraria.
+const MAX_FATTURE_PER_RICHIESTA = 500;
+// L'elaborazione costruisce un PDF per consegna: si procede a scaglioni.
 const MAX_CONSEGNE_PER_ELABORAZIONE = 200;
 
 // Chi firma il messaggio di cortesia: lo stesso profilo delle fatture.
@@ -39,123 +40,62 @@ const mittente = () => ({
     recapito: AZIENDA.contatti.email,
 });
 
-const chiave = (fatturaId, tipo) => `${fatturaId}:${tipo}`;
-
 // ---------------------------------------------------------------------------
 // Pianificazione
 // ---------------------------------------------------------------------------
 
-const caricaFatture = async ({ fatture, anno, limite }) => {
-    const filtro = { stato: 'confermata' };
+// Le fatture emesse da questo gestionale, cioe con una serie
+// (`emessaDalGestionale` in config/invoicing.js, scritto come filtro).
+const EMESSE_DAL_GESTIONALE = { serie: { $type: 'string', $ne: '' } };
 
-    if (Array.isArray(fatture) && fatture.length) {
-        filtro._id = { $in: fatture };
-    } else if (anno) {
-        filtro.anno = Number(anno);
+// Le fatture che guarda "Prepara".
+//
+// Dalla scheda di una fattura: quelle chieste, di qualunque provenienza.
+// Dalla pagina Consegne: tutte le confermate emesse dal gestionale, piu quelle -
+// di qualunque provenienza e in qualunque stato - che hanno ancora una consegna
+// aperta, perche la coda torni in pari: una fattura riportata a bozza deve
+// vedersi chiudere le sue. Cosa toccare lo decide poi `aggiornamentoCoda`, che
+// lascia stare le consegne chieste dalla scheda di una fattura del vecchio
+// programma. Prima guardava le 500 fatture piu recenti, storico compreso: una
+// fatturazione ne fa circa 670 con la stessa data, e le altre restavano fuori
+// per sempre, anche ripremendo.
+const fattureDaGuardare = async (richieste) => {
+    if (richieste) {
+        return Fattura.find({ _id: { $in: richieste.slice(0, MAX_FATTURE_PER_RICHIESTA) } })
+            .populate('cliente')
+            .lean();
     }
 
-    return Fattura.find(filtro)
+    const conConsegneAperte = await Consegna.distinct('fattura', { stato: { $in: STATI_APERTI } });
+
+    return Fattura.find({
+        $or: [
+            { stato: 'confermata', ...EMESSE_DAL_GESTIONALE },
+            { _id: { $in: conConsegneAperte } },
+        ],
+    })
         .populate('cliente')
-        .populate('scadenza')
-        .sort({ data_fattura: -1 })
-        .limit(Math.min(parsePositiveInteger(limite, MAX_FATTURE_PER_LOTTO), MAX_FATTURE_PER_LOTTO))
         .lean();
 };
 
-// Il documento da salvare sulla consegna. Tenere qui l'etichetta e il nome del
-// cliente evita di ripopolare due relazioni ogni volta che si guarda la coda.
-const documentoConsegna = (piano, consegna) => ({
-    fattura: piano.fattura,
-    cliente: piano.cliente,
-    tipo: consegna.tipo,
-    canale: consegna.canale,
-    destinatario: consegna.destinatario,
-    documento: piano.documento,
-    intestatario: piano.intestatario,
-    automatica: consegna.automatico,
-    stato: 'in_coda',
-    ultimo_errore: consegna.problema || undefined,
-    note: consegna.nota || undefined,
-});
+const pianificaConsegne = async ({ fatture } = {}) => {
+    const richieste = Array.isArray(fatture) && fatture.length ? fatture : null;
+    const documenti = await fattureDaGuardare(richieste);
+    const esistenti = documenti.length
+        ? await Consegna.find({ fattura: { $in: documenti.map((fattura) => fattura._id) } }).lean()
+        : [];
 
-const pianificaConsegne = async ({ fatture, anno, limite } = {}) => {
-    const documenti = await caricaFatture({ fatture, anno, limite });
-
-    if (!documenti.length) {
-        return { esaminate: 0, create: 0, aggiornate: 0, annullate: 0, saltate: 0, problemi: [] };
-    }
-
-    const esistenti = await Consegna.find({ fattura: { $in: documenti.map((f) => f._id) } }).lean();
-    const perChiave = new Map(esistenti.map((c) => [chiave(c.fattura, c.tipo), c]));
-
-    const operazioni = [];
-    const problemi = [];
-    let create = 0;
-    let aggiornate = 0;
-    let annullate = 0;
-    let saltate = 0;
-
-    documenti.forEach((fattura) => {
-        const piano = pianoConsegne({ cliente: fattura.cliente, fattura });
-
-        piano.ostacoli.forEach((ostacolo) => problemi.push({
-            fattura: fattura._id,
-            documento: piano.documento,
-            messaggio: ostacolo,
-        }));
-
-        const previste = new Set(piano.consegne.map((consegna) => consegna.tipo));
-
-        piano.consegne.forEach((consegna) => {
-            const esistente = perChiave.get(chiave(fattura._id, consegna.tipo));
-
-            if (!esistente) {
-                operazioni.push({ insertOne: { document: documentoConsegna(piano, consegna) } });
-                create += 1;
-                return;
-            }
-
-            if (!STATI_APERTI.includes(esistente.stato)) {
-                saltate += 1;
-                return;
-            }
-
-            operazioni.push({
-                updateOne: {
-                    filter: { _id: esistente._id },
-                    update: { $set: documentoConsegna(piano, consegna) },
-                },
-            });
-            aggiornate += 1;
-        });
-
-        // Una consegna che il piano non prevede piu (il cliente e passato a
-        // "nessuna copia", oppure ha perso il recapito) non va lasciata in coda
-        // a far numero: viene chiusa dichiarando il motivo.
-        esistenti
-            .filter((c) => String(c.fattura) === String(fattura._id))
-            .filter((c) => STATI_APERTI.includes(c.stato) && !previste.has(c.tipo))
-            .forEach((c) => {
-                const fatta = piano.giaConsegnate.find((consegna) => consegna.tipo === c.tipo);
-                const note = fatta
-                    ? `Già consegnata il ${formatItalianDate(fatta.data)}: non va ripetuta.`
-                    : 'Non più prevista dal piano di consegna.';
-
-                operazioni.push({
-                    updateOne: {
-                        filter: { _id: c._id },
-                        update: { $set: { stato: 'annullata', note } },
-                    },
-                });
-                annullate += 1;
-            });
+    const { operazioni, ...esito } = aggiornamentoCoda({
+        fatture: documenti,
+        esistenti,
+        suRichiesta: Boolean(richieste),
     });
 
     if (operazioni.length) {
         await Consegna.bulkWrite(operazioni, { ordered: false });
     }
 
-    return { esaminate: documenti.length, create, aggiornate, annullate, saltate, problemi };
+    return { esaminate: documenti.length, ...esito };
 };
 
 // Anteprima non persistente: cosa succederebbe a questa fattura.
@@ -232,37 +172,51 @@ const trasportoPer = (consegna) => TRASPORTI[`${consegna.tipo}:${consegna.canale
 // Elaborazione della coda
 // ---------------------------------------------------------------------------
 
-// La data che il gestionale precedente teneva sulla fattura continua a essere
-// popolata (`CAMPO_DATA_CONSEGNA`): chi guarda la fattura vede subito quando e
-// uscita, senza aprire l'elenco delle consegne.
-
+// Una consegna arrivata al cliente. La data che il gestionale precedente teneva
+// sulla fattura continua a essere popolata (`CAMPO_DATA_CONSEGNA`): chi guarda
+// la fattura vede subito quando e uscita, senza aprire l'elenco delle consegne.
 const registraEsito = async ({ consegna, esito, quando }) => {
     await Consegna.updateOne({ _id: consegna._id }, {
-        $set: {
+        ...setOrUnset({
             stato: 'inviata',
             data_invio: quando,
             destinatario: esito.destinatario || consegna.destinatario,
-            riferimento: esito.riferimento || undefined,
-            simulata: Boolean(esito.simulata),
+            riferimento: esito.riferimento,
             allegati: esito.allegati || [],
-            note: esito.motivo || undefined,
-            ultimo_errore: undefined,
-        },
+            // L'esito di una prova precedente, un errore gia superato, un problema
+            // del piano: niente di questo descrive piu una consegna arrivata.
+            note: null,
+            problema: null,
+            ultimo_errore: null,
+            ultimo_tentativo: null,
+        }),
         $inc: { tentativi: 1 },
     });
 
-    // Una consegna simulata non e uscita: la data sulla fattura direbbe il falso.
-    if (!esito.simulata) {
-        await Fattura.updateOne(
-            { _id: consegna.fattura },
-            { $set: { [CAMPO_DATA_CONSEGNA[consegna.tipo]]: quando } }
-        );
-    }
+    await Fattura.updateOne(
+        { _id: consegna.fattura },
+        { $set: { [CAMPO_DATA_CONSEGNA[consegna.tipo]]: quando } }
+    );
 };
 
-const registraErrore = async ({ consegna, errore }) => {
+// Una prova: senza posta attiva il messaggio non esce, oppure va all'indirizzo
+// di prova invece che al cliente. Il cliente non ha ricevuto niente, quindi la
+// consegna resta da fare, e partira davvero quando la posta sara attiva; sulla
+// riga resta scritto com'e andata. Prima la prova la chiudeva come inviata: non
+// tornava piu in coda, e il cliente restava senza copia anche a posta attiva.
+const registraProva = async ({ consegna, esito, quando }) => {
+    await Consegna.updateOne({ _id: consegna._id }, setOrUnset({
+        stato: 'in_coda',
+        allegati: esito.allegati || [],
+        note: `Prova del ${formatItalianDate(quando)}: il cliente non l'ha ricevuta (${esito.motivo}). Resta in coda.`,
+        ultimo_errore: null,
+        ultimo_tentativo: quando,
+    }));
+};
+
+const registraErrore = async ({ consegna, errore, quando }) => {
     await Consegna.updateOne({ _id: consegna._id }, {
-        $set: { stato: 'errore', ultimo_errore: errore.message },
+        $set: { stato: 'errore', ultimo_errore: errore.message, ultimo_tentativo: quando },
         $inc: { tentativi: 1 },
     });
 };
@@ -275,8 +229,11 @@ const elaboraCoda = async ({ limite, tipo, fatture } = {}) => {
         ...(Array.isArray(fatture) && fatture.length ? { fattura: { $in: fatture } } : {}),
     };
 
+    // Prima quelle mai tentate, poi quelle tentate da piu tempo: una prova o un
+    // errore le lasciano aperte, e ripartire sempre dalle piu vecchie vorrebbe
+    // dire ritentare ogni volta le stesse. Senza tentativi una consegna viene prima.
     const daFare = await Consegna.find(filtro)
-        .sort({ createdAt: 1 })
+        .sort({ ultimo_tentativo: 1, createdAt: 1 })
         .limit(Math.min(parsePositiveInteger(limite, 50), MAX_CONSEGNE_PER_ELABORAZIONE))
         .lean();
 
@@ -299,10 +256,20 @@ const elaboraCoda = async ({ limite, tipo, fatture } = {}) => {
                 throw notFound('Fattura non trovata.');
             }
 
-            const esito = await trasporto({ consegna, fattura });
-            await registraEsito({ consegna, esito, quando: new Date() });
+            if (!fatturaConfermata(fattura)) {
+                throw unprocessable(FATTURA_IN_BOZZA);
+            }
 
-            if (esito.simulata) simulate += 1; else inviate += 1;
+            const esito = await trasporto({ consegna, fattura });
+
+            if (esito.simulata) {
+                await registraProva({ consegna, esito, quando: new Date() });
+                simulate += 1;
+            } else {
+                await registraEsito({ consegna, esito, quando: new Date() });
+                inviate += 1;
+            }
+
             esiti.push({
                 consegna: consegna._id,
                 documento: consegna.documento,
@@ -311,7 +278,7 @@ const elaboraCoda = async ({ limite, tipo, fatture } = {}) => {
                 motivo: esito.motivo || null,
             });
         } catch (errore) {
-            await registraErrore({ consegna, errore });
+            await registraErrore({ consegna, errore, quando: new Date() });
             errori += 1;
             esiti.push({
                 consegna: consegna._id,
@@ -349,9 +316,19 @@ const segnaConsegnata = async (id, { note } = {}) => {
         throw badRequest('La consegna risulta già evasa.');
     }
 
+    // La nota di prima - l'esito di una prova, il motivo di un annullamento -
+    // descriveva una consegna ancora da fare: da evasa direbbe il falso.
     const quando = new Date();
     await Consegna.updateOne({ _id: consegna._id }, {
-        $set: { stato: 'inviata', data_invio: quando, simulata: false, note: note || consegna.note, ultimo_errore: undefined },
+        ...setOrUnset({
+            stato: 'inviata',
+            data_invio: quando,
+            note: note || null,
+            problema: null,
+            ultimo_errore: null,
+            ultimo_tentativo: null,
+            chiusa_dal_piano: null,
+        }),
         $inc: { tentativi: 1 },
     });
     await Fattura.updateOne(
@@ -362,16 +339,22 @@ const segnaConsegnata = async (id, { note } = {}) => {
     return Consegna.findById(consegna._id).lean();
 };
 
+// L'annullamento di una persona e una decisione: Prepara non la rimette in coda
+// da solo, a differenza di cio che aveva chiuso lui.
 const annullaConsegna = async (id, { note } = {}) => {
     const consegna = await caricaConsegna(id);
     await Consegna.updateOne({ _id: consegna._id }, {
         $set: { stato: 'annullata', note: note || 'Annullata manualmente.' },
+        $unset: { chiusa_dal_piano: '', problema: '', ultimo_errore: '' },
     });
 
     return Consegna.findById(consegna._id).lean();
 };
 
-// Rimette in coda una consegna fallita, azzerandone l'errore.
+// Rimette in coda una consegna fallita, azzerandone l'errore. Chi la rimette
+// ha corretto qualcosa: torna fra le prime da tentare. Ed e una richiesta
+// esplicita, come Prepara dalla scheda: per una fattura del vecchio programma il
+// Prepara generale non deve richiuderla.
 const rimettiInCoda = async (id) => {
     const consegna = await caricaConsegna(id);
 
@@ -380,8 +363,8 @@ const rimettiInCoda = async (id) => {
     }
 
     await Consegna.updateOne({ _id: consegna._id }, {
-        $set: { stato: 'in_coda' },
-        $unset: { ultimo_errore: '' },
+        $set: { stato: 'in_coda', su_richiesta: true },
+        $unset: { ultimo_errore: '', ultimo_tentativo: '', chiusa_dal_piano: '' },
     });
 
     return Consegna.findById(consegna._id).lean();

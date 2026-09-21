@@ -9,7 +9,7 @@ const {
     modalitaConsegna,
     normalizzaModalita,
 } = require('../config/delivery');
-const { indirizzoPostale, pianoConsegne } = require('../services/deliveryPlan');
+const { aggiornamentoCoda, indirizzoPostale, pianoConsegne } = require('../services/deliveryPlan');
 
 const cliente = (campi = {}) => ({
     _id: 'cliente-1',
@@ -262,4 +262,287 @@ test('in coda una fattura per l estero dice subito perche non uscira', () => {
     });
 
     assert.match(consegnaDi(piano, 'elettronica').problema, /cliente estero \(D\)/);
+});
+
+// --- la coda: cosa fa "Prepara" -------------------------------------------
+
+// Una fattura con il suo cliente, come arriva dal database con populate.
+const daGuardare = (campiFattura = {}, campiCliente = {}) => ({
+    ...fattura(campiFattura),
+    cliente: cliente(campiCliente),
+});
+
+const vecchia = (campi = {}) => ({ serie: undefined, anno: 2025, numero: 11, ...campi });
+
+const inCoda = (campi = {}) => ({
+    _id: 'consegna-1',
+    fattura: 'fattura-1',
+    tipo: 'cortesia',
+    canale: 'postale',
+    stato: 'in_coda',
+    ...campi,
+});
+
+const inserite = (esito) => esito.operazioni.filter((op) => op.insertOne).map((op) => op.insertOne.document);
+const aggiornamentoDi = (esito, id) => esito.operazioni.find((op) => op.updateOne?.filter._id === id)?.updateOne.update;
+
+test('una fattura emessa dal gestionale entra in coda con il recapito del cliente', () => {
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare({}, { stampa_cortesia: 'email', email: 'ada@rossi.it' })],
+        esistenti: [],
+    });
+
+    assert.equal(esito.create, 1);
+    assert.deepEqual(inserite(esito).map(({ tipo, canale, destinatario }) => ({ tipo, canale, destinatario })), [
+        { tipo: 'cortesia', canale: 'email', destinatario: 'ada@rossi.it' },
+    ]);
+    // Dalla pagina Consegne la consegna non e "su richiesta", e un campo vuoto
+    // non finisce scritto come null.
+    assert.equal(inserite(esito)[0].su_richiesta, undefined);
+    assert.equal('ultimo_errore' in inserite(esito)[0], false);
+    assert.equal('problema' in inserite(esito)[0], false);
+});
+
+test('la coda generale non prepara le fatture del vecchio programma', () => {
+    // Come le fatture di dicembre di Zuel, che il vecchio programma non ha mai
+    // trasmesso perche partono ogni anno per altra via.
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare(vecchia(), { fattura_elettronica: true, codice_destinatario: 'TULURSB' })],
+        esistenti: [],
+    });
+
+    assert.equal(esito.operazioni.length, 0);
+    assert.deepEqual(esito.problemi, []);
+});
+
+test('la scheda di una fattura del vecchio programma la mette in coda apposta', () => {
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare(vecchia(), { fattura_elettronica: true, codice_destinatario: 'TULURSB' })],
+        esistenti: [],
+        suRichiesta: true,
+    });
+
+    assert.deepEqual(inserite(esito).map(({ tipo, su_richiesta: suRichiesta }) => ({ tipo, suRichiesta })), [
+        { tipo: 'cortesia', suRichiesta: true },
+        { tipo: 'elettronica', suRichiesta: true },
+    ]);
+});
+
+test('una copia gia spedita dal vecchio programma esce dalla coda con la sua data', () => {
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare(vecchia({ data_invio_fattura: new Date('2026-01-22T00:00:00Z') }))],
+        esistenti: [inCoda()],
+    });
+
+    assert.equal(esito.annullate, 1);
+    assert.deepEqual(aggiornamentoDi(esito, 'consegna-1'), {
+        $set: { stato: 'annullata', note: 'Già consegnata il 22/01/2026: non va ripetuta.', chiusa_dal_piano: true },
+        // Sulla riga chiusa si legge il motivo, non il problema di quando era aperta.
+        $unset: { problema: '', ultimo_errore: '' },
+    });
+});
+
+test('una consegna del vecchio programma mai segnata esce dalla coda dicendo perche', () => {
+    // Le copie cartacee delle fatture singole del 2026: il vecchio programma non
+    // segnava di averle spedite, e il Prepara di prima le metteva in stampa.
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare(vecchia({ data_invio_fattura: new Date('1900-01-01T00:00:00Z') }))],
+        esistenti: [inCoda()],
+    });
+
+    assert.match(aggiornamentoDi(esito, 'consegna-1').$set.note, /^Fattura del vecchio programma/);
+});
+
+test('la coda generale non toglie cio che e stato chiesto dalla scheda', () => {
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare(vecchia())],
+        esistenti: [inCoda({ su_richiesta: true })],
+    });
+
+    assert.equal(esito.operazioni.length, 0);
+});
+
+test('un problema risolto in anagrafica non resta scritto sulla riga', () => {
+    // Mongoose scarta i valori undefined di un $set: il vecchio messaggio
+    // restava accanto a un recapito ormai giusto.
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare({}, { stampa_cortesia: 'email', email: 'ada@rossi.it' })],
+        esistenti: [inCoda({ canale: 'email', problema: 'Il cliente non ha un indirizzo email.' })],
+    });
+
+    const aggiornamento = aggiornamentoDi(esito, 'consegna-1');
+    assert.equal(esito.aggiornate, 1);
+    assert.equal(aggiornamento.$set.destinatario, 'ada@rossi.it');
+    assert.equal(aggiornamento.$unset.problema, '');
+});
+
+test("Prepara non cancella l'errore di un file XML", () => {
+    // Il file non si e potuto fare: la riga resta in coda con il motivo, e il
+    // motivo lo toglie solo un file fatto.
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare({}, { fattura_elettronica: true, codice_destinatario: 'TULURSB', stampa_cortesia: 'nessuna' })],
+        esistenti: [inCoda({ tipo: 'elettronica', canale: 'sdi', ultimo_errore: 'La fattura non ha righe.' })],
+    });
+
+    const aggiornamento = aggiornamentoDi(esito, 'consegna-1');
+    assert.equal('ultimo_errore' in aggiornamento.$set, false);
+    assert.equal(aggiornamento.$unset?.ultimo_errore, undefined);
+});
+
+test('una fattura confermata di nuovo perde il segno della bozza', () => {
+    // La bozza e una condizione, non un guasto: se il piano prevede la
+    // consegna, la fattura e confermata.
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare({}, { stampa_cortesia: 'email', email: 'ada@rossi.it' })],
+        esistenti: [inCoda({ canale: 'email', stato: 'errore', ultimo_errore: 'La fattura è una bozza: va confermata prima di consegnarla.' })],
+    });
+
+    const aggiornamento = aggiornamentoDi(esito, 'consegna-1');
+    assert.equal(aggiornamento.$set.stato, 'in_coda');
+    assert.equal(aggiornamento.$unset.ultimo_errore, '');
+});
+
+test('ogni scrittura vale solo se la consegna e ancora nello stato letto', () => {
+    // Una consegna partita mentre Prepara lavorava non va chiusa ne riaperta.
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare(vecchia()), daGuardare({ _id: 'fattura-2' })],
+        esistenti: [inCoda(), inCoda({ _id: 'consegna-2', fattura: 'fattura-2', stato: 'annullata', chiusa_dal_piano: true })],
+    });
+
+    const filtroDi = (id) => esito.operazioni.find((op) => op.updateOne?.filter._id === id).updateOne.filter;
+    assert.deepEqual(filtroDi('consegna-1').stato, { $in: ['in_coda', 'errore'] });
+    assert.deepEqual(filtroDi('consegna-2').stato, { $in: ['annullata'] });
+});
+
+test('la coda generale non riapre una consegna annullata', () => {
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare()],
+        esistenti: [inCoda({ stato: 'annullata', note: 'Annullata manualmente.' })],
+    });
+
+    assert.equal(esito.saltate, 1);
+    assert.equal(esito.operazioni.length, 0);
+});
+
+test('dalla scheda Prepara rimette in coda una consegna annullata', () => {
+    // Le fatture di dicembre chiuse dalla coda generale: se si decide di
+    // mandarle da qui, la loro scheda deve poterle rimettere in coda.
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare(vecchia())],
+        esistenti: [inCoda({ stato: 'annullata', note: 'Fattura del vecchio programma: ...' })],
+        suRichiesta: true,
+    });
+
+    const aggiornamento = aggiornamentoDi(esito, 'consegna-1');
+    assert.equal(esito.riaperte, 1);
+    assert.equal(aggiornamento.$set.stato, 'in_coda');
+    assert.equal(aggiornamento.$set.su_richiesta, true);
+    assert.equal(aggiornamento.$unset.note, '');
+});
+
+test('la coda generale riapre cio che aveva chiuso lei, quando il piano torna a prevederlo', () => {
+    // La fattura riportata a bozza si e vista chiudere le consegne; confermata
+    // di nuovo, deve riaverle senza che qualcuno se ne ricordi fattura per fattura.
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare()],
+        esistenti: [inCoda({ stato: 'annullata', note: 'La fattura è una bozza: va confermata prima di consegnarla.', chiusa_dal_piano: true })],
+    });
+
+    const aggiornamento = aggiornamentoDi(esito, 'consegna-1');
+    assert.equal(esito.riaperte, 1);
+    assert.equal(aggiornamento.$set.stato, 'in_coda');
+    assert.equal(aggiornamento.$unset.note, '');
+    assert.equal(aggiornamento.$unset.chiusa_dal_piano, '');
+    assert.equal(aggiornamento.$set.su_richiesta, undefined);
+});
+
+test('Prepara non fa sparire un errore di invio', () => {
+    // Il server di posta ha rifiutato l'indirizzo: la riga resta fra gli errori,
+    // con il motivo, finche l'invio non riesce o una persona non la rimette in coda.
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare({}, { stampa_cortesia: 'email', email: 'ada@rossi.it' })],
+        esistenti: [inCoda({ canale: 'email', stato: 'errore', ultimo_errore: '550 casella inesistente' })],
+    });
+
+    const aggiornamento = aggiornamentoDi(esito, 'consegna-1');
+    assert.equal(aggiornamento.$set.destinatario, 'ada@rossi.it');
+    assert.equal('stato' in aggiornamento.$set, false);
+    assert.equal('ultimo_errore' in aggiornamento.$set, false);
+    assert.equal(aggiornamento.$unset?.ultimo_errore, undefined);
+});
+
+test('un problema del piano si scrive accanto a un errore di invio, senza cancellarlo', () => {
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare({}, { stampa_cortesia: 'email', email: '' })],
+        esistenti: [inCoda({ canale: 'email', stato: 'errore', ultimo_errore: '550 casella inesistente' })],
+    });
+
+    const aggiornamento = aggiornamentoDi(esito, 'consegna-1');
+    assert.equal(aggiornamento.$set.problema, 'Il cliente non ha un indirizzo email.');
+    assert.equal('ultimo_errore' in aggiornamento.$set, false);
+});
+
+test("l'esito di una prova resta sulla riga dopo Prepara", () => {
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare({}, { stampa_cortesia: 'email', email: 'ada@rossi.it' })],
+        esistenti: [inCoda({ canale: 'email', note: 'Prova del 21/09/2026: il cliente non l\'ha ricevuta. Resta in coda.' })],
+    });
+
+    const aggiornamento = aggiornamentoDi(esito, 'consegna-1');
+    assert.equal('note' in aggiornamento.$set, false);
+    assert.equal(aggiornamento.$unset?.note, undefined);
+});
+
+test('una consegna inviata non si tocca, nemmeno dalla scheda', () => {
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare()],
+        esistenti: [inCoda({ stato: 'inviata' })],
+        suRichiesta: true,
+    });
+
+    assert.equal(esito.saltate, 1);
+    assert.equal(esito.operazioni.length, 0);
+});
+
+test('dalla scheda una bozza non entra in coda', () => {
+    // Il pulsante Prepara della scheda c'e anche sulle bozze: il piano deve
+    // fermarle, altrimenti un "Invia" successivo spedirebbe un documento non
+    // confermato.
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare({ stato: 'bozza', confermata: false }, { stampa_cortesia: 'email', email: 'ada@rossi.it' })],
+        esistenti: [],
+        suRichiesta: true,
+    });
+
+    assert.equal(esito.operazioni.length, 0);
+    assert.match(esito.problemi[0].messaggio, /bozza/);
+});
+
+test('una fattura del gestionale tornata bozza chiude anche le consegne chieste dalla scheda', () => {
+    // La protezione di cio che e stato chiesto dalla scheda vale per le fatture
+    // del vecchio programma, che la coda generale non prepara: una fattura del
+    // gestionale riportata a bozza non deve lasciare in coda un documento che
+    // un "Invia" spedirebbe.
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare({ stato: 'bozza', confermata: false })],
+        esistenti: [inCoda({ su_richiesta: true })],
+    });
+
+    assert.equal(esito.annullate, 1);
+    assert.match(aggiornamentoDi(esito, 'consegna-1').$set.note, /bozza/);
+});
+
+test('una fattura tornata bozza lascia la coda con il motivo', () => {
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare({ stato: 'bozza', confermata: false })],
+        esistenti: [inCoda()],
+    });
+
+    assert.match(aggiornamentoDi(esito, 'consegna-1').$set.note, /bozza/);
+    assert.equal(esito.problemi.length, 1);
+});
+
+test('il piano dice se la fattura viene dal vecchio programma', () => {
+    assert.equal(pianoConsegne({ cliente: cliente(), fattura: fattura() }).emessaDalGestionale, true);
+    assert.equal(pianoConsegne({ cliente: cliente(), fattura: fattura(vecchia()) }).emessaDalGestionale, false);
 });

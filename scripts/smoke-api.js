@@ -606,8 +606,8 @@ const testInvoiceDeletionCascade = async () => {
 };
 
 // La catena della consegna, dal recapito scritto in anagrafica alla riga in
-// coda. Il messaggio non parte davvero: senza server di posta configurato la
-// consegna viene registrata come simulata, ed e proprio quello che si verifica.
+// coda. Il messaggio non parte davvero: senza server di posta configurato e una
+// prova, che lascia la consegna da fare con il suo esito scritto sulla riga.
 const testInvoiceDelivery = async () => {
     if (skipMutation) {
         console.log('skipped');
@@ -668,14 +668,18 @@ const testInvoiceDelivery = async () => {
 
         const dopo = await request(`/fatture/${fattura._id}/consegne`);
         const registrata = dopo.body.registrate.find((consegna) => consegna.tipo === 'cortesia');
-        assert(registrata.stato === 'inviata', 'the delivery should be marked as sent');
+        assert(registrata.su_richiesta === true, 'a delivery queued from the invoice page should say so');
         assert(registrata.allegati.some((nome) => nome.endsWith('.pdf')), 'the invoice PDF should be attached');
 
-        // Una consegna simulata non e uscita: scrivere la data di invio sulla
-        // fattura direbbe il falso.
+        // Una prova non consegna niente: la consegna resta da fare e partira a
+        // posta attiva, e la data di invio sulla fattura direbbe il falso.
         const documento = await request(`/fatture/${fattura._id}`);
-        if (registrata.simulata) {
-            assert(!documento.body.data_invio_fattura, 'a simulated delivery must not date the invoice');
+        if (elaborate.body.simulate === 1) {
+            assert(registrata.stato === 'in_coda', 'a test run must leave the delivery to be done');
+            assert(/^Prova del /.test(registrata.note || ''), 'the row should say how the test went');
+            assert(!documento.body.data_invio_fattura, 'a test run must not date the invoice');
+        } else {
+            assert(registrata.stato === 'inviata', 'the delivery should be marked as sent');
         }
 
         // La stampa in blocco: un PDF solo con dentro le fatture da imbustare.
@@ -728,7 +732,9 @@ const testInvoiceDelivery = async () => {
         const cancellata = await request(`/fatture/${fattura._id}?sbloccoConfermato=true`, { method: 'DELETE' });
         assert(cancellata.response.status === 204, 'the confirmed invoice was not deleted');
 
-        const orfane = await request('/consegne?page=1&limit=200&vista=inviate');
+        // Le piu recenti per prime: quelle della prova, se fossero rimaste, sarebbero
+        // qui, qualunque sia il loro stato.
+        const orfane = await request('/consegne?page=1&limit=50&sortField=createdAt&sortOrder=desc');
         const rimaste = orfane.body.data.filter((consegna) => consegna.fattura === fattura._id);
         assert(rimaste.length === 0, 'deleting an invoice must remove its deliveries');
     } finally {
@@ -1213,7 +1219,7 @@ const testArchivioConClienteEstero = async () => {
         const elettronicaDi = async (fattura) => (await request(`/fatture/${fattura._id}/consegne`)).body.registrate
             .find((voce) => voce.tipo === 'elettronica');
         const perEstero = await elettronicaDi(fatture[1]);
-        assert(/cliente estero/.test(perEstero?.ultimo_errore || ''), 'the queue row should say why a foreign invoice will not go out');
+        assert(/cliente estero/.test(perEstero?.problema || ''), 'the queue row should say why a foreign invoice will not go out');
 
         // Lo scarico dell'archivio prende tutte le fatture elettroniche in coda,
         // e a ognuna da un progressivo nuovo: si prova solo se in coda ci sono
