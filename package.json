@@ -21,6 +21,7 @@
     "report:quota-fissa": "node scripts/verify-fixed-charge-actions.js",
     "report:operazioni": "node scripts/verify-invoice-operations.js",
     "report:integrita": "node scripts/verify-invoice-integrity.js",
+    "report:dati": "node scripts/verify-data-quality.js",
     "maintenance:user-indexes": "node scripts/ensure-user-indexes.js",
     "maintenance:allinea-dati": "node scripts/allinea-dati.js",
     "maintenance:password": "node scripts/reimposta-password.js",

@@ -55,10 +55,12 @@ RIFERIMENTI = [
 ]
 
 
-def indice(collezione, chiave):
+def indice(collezione, chiave, escludi=frozenset()):
     """Chiave di Gesco -> documento, saltando chi la chiave non ce l'ha."""
     trovati = {}
     for documento in collezione.find({}):
+        if documento["_id"] in escludi:
+            continue
         valore = chiave(documento)
         if valore:
             trovati.setdefault(valore, documento)
@@ -77,10 +79,10 @@ class Allineamento:
     def conta(self, voce, quanti=1):
         self.resoconto[voce] += quanti
 
-    def collega(self, nome, chiave):
+    def collega(self, nome, chiave, escludi=frozenset()):
         """Associa i documenti delle due parti e ricorda chi corrisponde a chi."""
         da_gesco = indice(self.origine[nome], chiave)
-        in_uso = indice(self.destinazione[nome], chiave)
+        in_uso = indice(self.destinazione[nome], chiave, escludi)
 
         for valore, documento in da_gesco.items():
             gemello = in_uso.get(valore)
@@ -178,9 +180,23 @@ class Allineamento:
                 self.aggiorna("fatture", gemella["_id"], {"numero": fattura.get("numero")})
                 self.conta("numeri di fattura corretti")
 
+    def scadenze_del_gestionale(self):
+        """Le scadenze delle fatture emesse da qui.
+
+        Non hanno la serie, ma hanno anno e numero del loro documento: la
+        scadenza della 2026/A/1 dice 2026/1, come la 2026/1 di Gesco. Riconoscerle
+        per anno e numero le confondeva - ed e successo, con una prima versione di
+        questo script. Sono di chi le ha create, e si lasciano fuori.
+        """
+        return frozenset(
+            documento["scadenza"]
+            for documento in self.destinazione.fatture.find({"serie": {"$exists": True}}, {"scadenza": 1})
+            if documento.get("scadenza")
+        )
+
     def scadenze(self):
         chiave = COLLEZIONI["scadenze"]["chiave"]
-        da_gesco, in_uso = self.collega("scadenze", chiave)
+        da_gesco, in_uso = self.collega("scadenze", chiave, self.scadenze_del_gestionale())
 
         for valore, scadenza in da_gesco.items():
             if valore in in_uso:
@@ -188,25 +204,31 @@ class Allineamento:
             self.inserisci("scadenze", scadenza, [])
             self.conta("scadenze aggiunte")
 
-        # Il legame con la fattura: anno e numero, che dopo il passo sui numeri
-        # tornano da entrambe le parti. Si corregge anche dove il legame c'e ma
-        # punta altrove: con i numeri sbagliati due fatture di pari importo
-        # finivano sulla stessa scadenza, e le altre restavano orfane.
-        per_documento = {
-            (s["anno"], s["numero"]): s["_id"]
-            for s in self.destinazione.scadenze.find({}, {"anno": 1, "numero": 1})
-        }
+    def legami_fattura_scadenza(self):
+        """Ogni fattura venuta da Gesco punta alla scadenza che ha in Gesco.
 
-        for fattura in self.destinazione.fatture.find(
-            {"serie": {"$exists": False}, "numero": {"$ne": None}}, {"anno": 1, "numero": 1, "scadenza": 1}
-        ):
-            attesa = per_documento.get((fattura.get("anno"), fattura.get("numero")))
-            if not attesa or fattura.get("scadenza") == attesa:
+        E a nessuna, se in Gesco non ne ha: con il numero sbagliato due fatture
+        di pari importo finivano sulla stessa scadenza, e dare a una delle due la
+        scadenza di un'altra e peggio che lasciarla senza.
+        """
+        da_gesco, in_uso = self.collega("fatture", COLLEZIONI["fatture"]["chiave"])
+
+        for valore, fattura in da_gesco.items():
+            gemella = in_uso.get(valore)
+            if not gemella or gemella.get("serie"):
                 continue
 
-            self.aggiorna("fatture", fattura["_id"], {"scadenza": attesa})
-            self.conta("fatture ricollegate alla loro scadenza" if not fattura.get("scadenza")
-                       else "fatture che puntavano alla scadenza di un'altra")
+            attesa = self.corrispondenze.get(fattura["scadenza"]) if fattura.get("scadenza") else None
+            if gemella.get("scadenza") == attesa:
+                continue
+
+            self.aggiorna("fatture", gemella["_id"], {"scadenza": attesa})
+            if attesa is None:
+                self.conta("fatture staccate da una scadenza non loro (in Gesco non ne hanno)")
+            elif gemella.get("scadenza"):
+                self.conta("fatture che puntavano alla scadenza di un'altra")
+            else:
+                self.conta("fatture ricollegate alla loro scadenza")
 
     def fatture_mancanti(self):
         chiave = COLLEZIONI["fatture"]["chiave"]
@@ -256,9 +278,10 @@ class Allineamento:
                     originale = self.origine[verso].find_one({"_id": documento[campo]})
                     if originale:
                         chiave = COLLEZIONI[verso]["chiave"](originale)
+                        esclusi = self.scadenze_del_gestionale() if verso == "scadenze" else frozenset()
                         gemello = next(
                             (d for d in self.destinazione[verso].find({})
-                             if COLLEZIONI[verso]["chiave"](d) == chiave),
+                             if d["_id"] not in esclusi and COLLEZIONI[verso]["chiave"](d) == chiave),
                             None,
                         )
                         corretto = gemello["_id"] if gemello else None
@@ -273,6 +296,7 @@ class Allineamento:
         self.numeri_delle_fatture()
         self.scadenze()
         self.fatture_mancanti()
+        self.legami_fattura_scadenza()
         self.ripara_riferimenti()
         return self.resoconto
 

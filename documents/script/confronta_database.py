@@ -92,18 +92,31 @@ def confrontabile(valore):
     return valore
 
 
-def indicizza(collezione, chiave):
+def indicizza(collezione, chiave, escludi=frozenset()):
     per_chiave = defaultdict(list)
     for documento in collezione.find({}):
-        per_chiave[chiave(documento)].append(documento)
+        if documento["_id"] not in escludi:
+            per_chiave[chiave(documento)].append(documento)
     per_chiave.pop("", None)
     return per_chiave
 
 
+def scadenze_del_gestionale(db):
+    """Le scadenze delle fatture emesse da qui: portano anno e numero del loro
+    documento, che coincidono con quelli di una fattura di Gesco (la 2026/A/1
+    ha la scadenza 2026/1). Non sono di Gesco e non si confrontano con Gesco."""
+    return frozenset(
+        documento["scadenza"]
+        for documento in db.fatture.find({"serie": {"$exists": True}}, {"scadenza": 1})
+        if documento.get("scadenza")
+    )
+
+
 def confronta(nome, origine, destinazione, esempi=3):
     regole = COLLEZIONI[nome]
+    esclusi = scadenze_del_gestionale(destinazione) if nome == "scadenze" else frozenset()
     da_gesco = indicizza(origine[nome], regole["chiave"])
-    in_uso = indicizza(destinazione[nome], regole["chiave"])
+    in_uso = indicizza(destinazione[nome], regole["chiave"], esclusi)
 
     solo_gesco = sorted(set(da_gesco) - set(in_uso))
     solo_destinazione = sorted(set(in_uso) - set(da_gesco))
@@ -132,10 +145,6 @@ def confronta(nome, origine, destinazione, esempi=3):
         print(f"   {campo}: {quante} diversi")
         for esempio in campioni[campo]:
             print(f"      {esempio}")
-
-
-def conta_righe_per_fattura(db):
-    return Counter(str(s.get("fattura")) for s in db.servizi.find({}, {"fattura": 1}))
 
 
 def main() -> int:
