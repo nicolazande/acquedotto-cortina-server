@@ -62,15 +62,37 @@ fatturaSchema.pre('save', function normalizzaStato(next) {
     next();
 });
 
-fatturaSchema.pre(['findOneAndUpdate', 'updateOne', 'updateMany'], function normalizzaStatoUpdate(next) {
-    const update = this.getUpdate() || {};
-    const set = update.$set || update;
+// Lo stesso allineamento, su un aggiornamento invece che su un documento.
+//
+// Con i timestamp attivi Mongoose riscrive l'aggiornamento in forma mista: i
+// campi passati dal chiamante restano in cima e accanto compare un `$set` con
+// `updatedAt`. Guardare solo dentro `$set` - come si faceva - voleva dire non
+// vedere la spunta "Confermata": la fattura risultava confermata ma con lo
+// stato rimasto "bozza", quindi fuori dall'elenco delle confermate e fuori
+// dalla coda delle consegne, che le cerca per stato.
+//
+// Esportata perche e logica pura e si verifica da sola, senza database.
+const allineaStatoNellAggiornamento = (update = {}) => {
+    const set = update.$set;
+    // I due campi stanno dove li ha messi il chiamante: in cima, oppure dentro
+    // $set. Si sceglie quel contenitore e non si esce piu, cosi lo stesso campo
+    // non finisce scritto in due punti dello stesso aggiornamento.
+    const dentroSet = Boolean(set) && (set.stato !== undefined || set.confermata !== undefined);
+    const contenitore = dentroSet ? set : update;
 
-    if (set.stato !== undefined || set.confermata !== undefined) {
-        allineaStato(set);
-        this.setUpdate(update.$set ? { ...update, $set: set } : set);
+    const campi = { stato: contenitore.stato, confermata: contenitore.confermata };
+    if (campi.stato === undefined && campi.confermata === undefined) {
+        return update;
     }
 
+    allineaStato(campi);
+    Object.assign(contenitore, campi);
+
+    return update;
+};
+
+fatturaSchema.pre(['findOneAndUpdate', 'updateOne', 'updateMany'], function normalizzaStatoUpdate(next) {
+    this.setUpdate(allineaStatoNellAggiornamento(this.getUpdate() || {}));
     next();
 });
 
@@ -87,3 +109,4 @@ fatturaSchema.index({ scadenza: 1 });
 fatturaSchema.index({ data_fattura: -1 });
 
 module.exports = mongoose.model('Fattura', fatturaSchema);
+module.exports.allineaStatoNellAggiornamento = allineaStatoNellAggiornamento;

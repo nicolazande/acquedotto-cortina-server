@@ -45,9 +45,12 @@ const invoiceStatus = (confermata) => (parseOptionalBoolean(confermata) ? 'confe
 const normalizeInvoicePayload = (body = {}) => {
     const payload = { ...body };
 
+    // La spunta "Confermata" decide. La maschera rispedisce l'intero record,
+    // quindi insieme alla spunta arriva anche lo stato di prima: tenerlo
+    // significava confermare una fattura che restava fra le bozze.
     if (payload.confermata !== undefined) {
         payload.confermata = parseOptionalBoolean(payload.confermata);
-        payload.stato = payload.stato || invoiceStatus(payload.confermata);
+        payload.stato = invoiceStatus(payload.confermata);
     }
 
     return payload;

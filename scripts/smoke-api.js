@@ -37,6 +37,14 @@ const apiUrl = normalizeApiUrl(process.env.SMOKE_API_URL || process.env.API_URL)
 const skipMutation = ['1', 'true', 'yes'].includes(String(process.env.SMOKE_SKIP_MUTATION).toLowerCase());
 let authToken = process.env.SMOKE_TOKEN || '';
 
+// Una richiesta con corpo JSON: method, intestazione e corpo insieme, perche
+// scriverli separati ogni volta e tre righe di rumore attorno a un dato.
+const json = (method, body = {}) => ({
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+});
+
 const request = async (path, options = {}) => {
     const { skipAuth, ...requestOptions } = options;
     const controller = new AbortController();
@@ -1119,6 +1127,54 @@ const testManualInvoiceLines = async () => {
 // La storia di un punto di fornitura. Un contatore e solo il pezzo montato in
 // un certo periodo: quando viene sostituito ne compare uno nuovo, e senza il
 // legame fra i due la storia si spezza a ogni cambio.
+const testConfermaDallaMaschera = async () => {
+    if (skipMutation) {
+        console.log('skipped');
+        return;
+    }
+
+    const createdRecords = [];
+
+    try {
+        const cliente = await createTrackedRecord(createdRecords, 'clienti', {
+            cognome: 'Smoke', nome: 'Conferma', ragione_sociale: 'Smoke Conferma',
+        });
+        const articoli = await request('/articoli?limit=100');
+        const acqua = articoli.body.data.find((articolo) => articolo.codice === 'ACQUA');
+
+        const fattura = await createRecord('fatture', {
+            cliente: cliente._id, articolo: acqua._id, imponibile: 25,
+            tipo_documento: 'Fattura', data_fattura: OGGI,
+        });
+        createdRecords.push({ resource: 'fatture', id: fattura._id });
+        createdRecords.push({ resource: 'scadenze', id: fattura.scadenza });
+
+        // La maschera rispedisce l'intero record con la spunta appena messa:
+        // dentro c'e anche lo stato di prima, ed era quello a vincere. La
+        // fattura risultava confermata e restava fra le bozze, quindi fuori
+        // dall'elenco delle confermate e fuori dalla coda delle consegne.
+        const { body: confermata } = await request(`/fatture/${fattura._id}`, json('PUT', {
+            ...fattura,
+            confermata: true,
+        }));
+        assert(confermata.stato === 'confermata', `confirming should set the state, got ${confermata.stato}`);
+
+        const { body: elenco } = await request(`/fatture?view=confermate&search=Smoke Conferma&limit=50`);
+        const trovata = (elenco.data || []).some((documento) => documento._id === fattura._id);
+        assert(trovata, 'a confirmed invoice must appear among the confirmed ones');
+
+        // E togliendo la spunta torna bozza, senza restare "confermata" a meta.
+        const { body: riaperta } = await request(`/fatture/${fattura._id}`, json('PUT', {
+            ...confermata,
+            confermata: false,
+            sbloccoConfermato: true,
+        }));
+        assert(riaperta.stato === 'bozza', `unconfirming should go back to draft, got ${riaperta.stato}`);
+    } finally {
+        await deleteCreatedRecords(createdRecords);
+    }
+};
+
 const testCounterHistory = async () => {
     if (skipMutation) {
         console.log('skipped');
@@ -1248,11 +1304,6 @@ const testDeliveryRollback = async () => {
     }
 
     const createdRecords = [];
-    const json = (method, body = {}) => ({
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-    });
     const rifiutata = async (promessa, stato) => {
         try {
             await promessa;
@@ -1395,6 +1446,7 @@ const main = async () => {
     await step('referential integrity', testReferentialIntegrity);
     await step('late fee charged once', testDelayFeeChargedOnce);
     await step('manual invoice lines and totals', testManualInvoiceLines);
+    await step('confirming an invoice from the form', testConfermaDallaMaschera);
     await step('counter history across a replacement', testCounterHistory);
     await step('note attachments create/list/file/delete', testAttachments);
 

@@ -189,6 +189,28 @@ Le fatture che l'import lascia senza cliente si collegano con
 `npm run maintenance:allinea-dati -- --fix`, quando la ragione sociale e di un
 solo cliente.
 
+### Una fattura confermata dalla maschera restava una bozza
+
+Fino al 21/09/2026 confermare una fattura dalla sua scheda la lasciava con
+`confermata: true` e `stato: 'bozza'`. Contano entrambi, ma chi cerca guarda lo
+**stato**: l'elenco *Confermate* e la coda delle consegne
+(`pianificaConsegne` filtra `stato: 'confermata'`). Quella fattura spariva da
+tutti e due, e sembrava che confermarla non avesse fatto niente.
+
+Due cause, corrette insieme:
+
+- con i timestamp attivi Mongoose riscrive l'aggiornamento in forma mista - i
+  campi passati in cima, un `$set` con `updatedAt` accanto - e il gancio del
+  modello guardava solo dentro `$set`: la spunta non la vedeva
+  (`allineaStatoNellAggiornamento` in `models/Fattura.js`);
+- la maschera rispedisce l'intero record, quindi insieme alla spunta arrivava
+  lo stato di prima, e il controller teneva quello. Ora, se la richiesta porta
+  `confermata`, e quella a decidere.
+
+**Sui documenti gia salvati cosi** il rimedio e
+`npm run maintenance:allinea-dati -- --fix`, che porta lo stato al valore della
+spunta. Da eseguire in produzione dopo aver pubblicato la correzione.
+
 ### Il ritardo delle scadenze e un valore derivato
 
 Il ritardo **non e un campo salvato**: cresce di un giorno al giorno per le scadenze
