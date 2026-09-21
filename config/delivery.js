@@ -120,6 +120,30 @@ const codiceDestinatarioValido = (valore) => {
     return /^[A-Z0-9]{6,7}$/.test(codice) && codice !== CODICE_DESTINATARIO_ASSENTE ? codice : null;
 };
 
+// Chi il tracciato non sa ancora servire. Un cliente estero ha regole proprie -
+// paese e identificativo esteri, codice destinatario XXXXXXX, una procedura a
+// parte per San Marino - e un ufficio pubblico vuole il formato FPA12 con il suo
+// codice IPA di sei caratteri. Emettere per loro un file da privato italiano
+// vorrebbe dire un documento sbagliato, anche quando lo SdI lo accettasse: meglio
+// dirlo e lasciarlo emettere a parte. Restituisce il motivo, o null.
+const NAZIONE_ITALIA = new Set(['', 'IT', 'ITA', 'ITALIA']);
+const CODICE_DESTINATARIO_ESTERO = 'XXXXXXX';
+
+const destinatarioNonGestito = (cliente) => {
+    const nazione = String(cliente?.nazione_fatturazione || cliente?.nazione_residenza || '').trim().toUpperCase();
+    const codice = String(cliente?.codice_destinatario || '').trim().toUpperCase();
+
+    if (codice === CODICE_DESTINATARIO_ESTERO || !NAZIONE_ITALIA.has(nazione)) {
+        return `cliente estero (${nazione || 'codice XXXXXXX'}): la fattura elettronica per l'estero non è ancora gestita`;
+    }
+
+    if (/^[A-Z0-9]{6}$/.test(codice)) {
+        return 'ufficio della pubblica amministrazione (codice IPA): serve il formato FPA12, non ancora gestito';
+    }
+
+    return null;
+};
+
 // Il canale della fattura elettronica, dedotto dai dati del cliente nell'ordine
 // che il tracciato impone.
 const canaleFatturaElettronica = (cliente) => {
@@ -152,15 +176,25 @@ const canaleFatturaElettronica = (cliente) => {
 
 // Se una fattura elettronica va prodotta per questo cliente.
 //
-// Il flag `fattura_elettronica` arriva dal gestionale precedente ed e false su
-// tutti i clienti importati. Finche non si sa come l'acquedotto trasmette allo
-// SdI, la scelta resta esplicita; quando la risposta arriva basta accendere
-// FATTURA_ELETTRONICA_PREDEFINITA invece di toccare 900 anagrafiche.
+// Il flag `fattura_elettronica` arriva dal gestionale precedente. L'import non lo
+// leggeva - era una casella di spunta - e per mesi e risultato falso su tutti:
+// dal 21/09/2026 e riletto da Gesco (897 clienti su 901 a Zuel).
+// FATTURA_ELETTRONICA_PREDEFINITA lo accende per tutti senza toccare le
+// anagrafiche.
 const FATTURA_ELETTRONICA_PREDEFINITA = parseBoolean(process.env.FATTURA_ELETTRONICA_PREDEFINITA);
 
 const richiedeFatturaElettronica = (cliente) => (
     cliente?.fattura_elettronica === true || FATTURA_ELETTRONICA_PREDEFINITA
 );
+
+// Dove la fattura tiene la data in cui e uscita, per ogni tipo di consegna. La
+// scrive il gestionale quando una consegna e evasa, e la scriveva il gestionale
+// precedente: una fattura con quella data e gia stata consegnata in quel modo, e
+// non va preparata di nuovo.
+const CAMPO_DATA_CONSEGNA = {
+    cortesia: 'data_invio_fattura',
+    elettronica: 'data_fattura_elettronica',
+};
 
 // Chi trasmette allo SdI.
 //
@@ -192,12 +226,14 @@ const testoEmailCortesia = ({ cliente, documento, scadenza, mittente }) => ({
 
 module.exports = {
     ALIAS_MODALITA,
+    CAMPO_DATA_CONSEGNA,
     CANALE_TRASMISSIONE_SDI,
     CODICE_DESTINATARIO_ASSENTE,
     MODALITA_CONSEGNA,
     MODALITA_PREDEFINITA,
     canaleFatturaElettronica,
     codiceDestinatarioValido,
+    destinatarioNonGestito,
     modalitaConsegna,
     normalizzaModalita,
     richiedeFatturaElettronica,

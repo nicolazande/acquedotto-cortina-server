@@ -12,7 +12,7 @@
 const { invoiceCode, modalitaPagamentoXml, naturaPerIva, tipoDocumentoXml } = require('../config/invoicing');
 const { AZIENDA } = require('../config/azienda');
 const { abiDellIban, cabDellIban } = require('../utils/iban');
-const { CODICE_DESTINATARIO_ASSENTE, codiceDestinatarioValido } = require('../config/delivery');
+const { CODICE_DESTINATARIO_ASSENTE, codiceDestinatarioValido, destinatarioNonGestito } = require('../config/delivery');
 const { customerLabel } = require('../utils/customer');
 const { getTaxRate } = require('./billingCalculator');
 const { applyRate, fromCents, toCents } = require('../utils/money');
@@ -199,6 +199,10 @@ const buildInvoiceXml = ({ cliente, fattura, progressivo, scadenza, servizi }) =
     }
 
     const anagrafica = anagraficaCliente(cliente, fattura);
+    const nonGestito = destinatarioNonGestito(cliente);
+    if (nonGestito) {
+        throw unprocessable(`${anagrafica.denominazione}: ${nonGestito}. La fattura va emessa a parte.`);
+    }
     const sede = indirizzoCliente(cliente);
     // Lo stesso criterio con cui si sceglie il canale della consegna: un codice
     // malformato non va scritto nel tracciato, vale come codice assente.

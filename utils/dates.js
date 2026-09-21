@@ -17,10 +17,14 @@ const toDate = (value) => {
 // esatto, regge anche un import che la riporti con un'ora diversa.
 const DATA_IMPLAUSIBILE = new Date('2090-01-01T00:00:00.000Z');
 
-// Una data vera, oppure null se manca, non e valida o e la sentinella.
+// L'altra sentinella, all'indietro: sulle date di invio della fattura "mai
+// inviata" era 01/01/1900. Nessun documento dell'acquedotto e di quell'anno.
+const PRIMA_DATA_REALE = new Date('1901-01-01T00:00:00.000Z');
+
+// Una data vera, oppure null se manca, non e valida o e una delle due sentinelle.
 const dataReale = (value) => {
     const date = toDate(value);
-    return date && date < DATA_IMPLAUSIBILE ? date : null;
+    return date && date >= PRIMA_DATA_REALE && date < DATA_IMPLAUSIBILE ? date : null;
 };
 
 // Restituisce sempre una Date: valori assenti o non validi diventano "adesso".

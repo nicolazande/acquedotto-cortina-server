@@ -270,3 +270,26 @@ test('chi paga con addebito dichiara il proprio conto, non quello dell acquedott
     assert.match(xml, /<IBAN>IT60X0542811101000000123456<\/IBAN>/);
     assert.doesNotMatch(xml, /<IstitutoFinanziario>/);
 });
+
+// Chi il tracciato non sa ancora servire: meglio un rifiuto con il motivo che un
+// file da privato italiano intestato a un cliente di Malta.
+
+test('un cliente estero non riceve un tracciato da privato italiano', () => {
+    const estero = { ...cliente, nazione_residenza: 'MALTA', nazione_fatturazione: 'MALTA', codice_destinatario: 'XXXXXXX' };
+
+    assert.throws(() => genera({ cliente: estero }), /cliente estero \(MALTA\)/);
+});
+
+test('il codice XXXXXXX basta a riconoscere un cliente estero', () => {
+    assert.throws(() => genera({ cliente: { ...cliente, codice_destinatario: 'XXXXXXX' } }), /cliente estero/);
+});
+
+test('un codice di sei caratteri e un ufficio pubblico: serve il formato FPA12', () => {
+    assert.throws(() => genera({ cliente: { ...cliente, codice_destinatario: 'UFABCD' } }), /FPA12/);
+});
+
+test('un cliente italiano, comunque scritta la nazione, resta emettibile', () => {
+    ['ITA', 'IT', 'Italia', ''].forEach((nazione) => {
+        assert.doesNotThrow(() => genera({ cliente: { ...cliente, nazione_residenza: nazione } }));
+    });
+});

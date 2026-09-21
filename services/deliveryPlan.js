@@ -7,13 +7,16 @@
 // la coda vera.
 
 const {
+    CAMPO_DATA_CONSEGNA,
     CANALE_TRASMISSIONE_SDI,
     canaleFatturaElettronica,
+    destinatarioNonGestito,
     modalitaConsegna,
     richiedeFatturaElettronica,
 } = require('../config/delivery');
 const { customerLabel } = require('../utils/customer');
 const { invoiceCode } = require('../config/invoicing');
+const { dataReale } = require('../utils/dates');
 
 // Controllo volutamente permissivo: serve a intercettare i campi rimasti vuoti
 // o con del testo al posto dell'indirizzo, non a validare le RFC.
@@ -106,7 +109,8 @@ const consegnaElettronica = (cliente) => {
         // il file e lo mette in elenco, ma non lo inoltra: e una scelta di
         // configurazione, non un limite del codice.
         automatico: CANALE_TRASMISSIONE_SDI !== 'intermediario',
-        problema: null,
+        // Sulla riga della coda si legge subito perche quel file non uscira.
+        problema: destinatarioNonGestito(cliente),
         nota: CANALE_TRASMISSIONE_SDI === 'intermediario'
             ? 'Trasmissione affidata a un intermediario: il file va scaricato e inoltrato.'
             : null,
@@ -130,11 +134,21 @@ const ostacoliDocumento = ({ cliente, fattura }) => {
 };
 
 // Il piano completo di una fattura: cosa deve partire, dove, e cosa lo blocca.
+// Le consegne che la fattura ha gia avuto, con la loro data. Quasi tutte le
+// fatture importate da Gesco sono gia state trasmesse allo SdI e spedite:
+// prepararle di nuovo voleva dire ristamparle o, peggio, ritrasmetterle.
+const consegneGiaFatte = (fattura) => Object.entries(CAMPO_DATA_CONSEGNA)
+    .map(([tipo, campo]) => ({ tipo, data: dataReale(fattura?.[campo]) }))
+    .filter(({ data }) => data);
+
 const pianoConsegne = ({ cliente, fattura }) => {
     const ostacoli = ostacoliDocumento({ cliente, fattura });
+    const giaConsegnate = consegneGiaFatte(fattura);
     const consegne = ostacoli.length
         ? []
-        : [consegnaCortesia(cliente), consegnaElettronica(cliente)].filter(Boolean);
+        : [consegnaCortesia(cliente), consegnaElettronica(cliente)]
+            .filter(Boolean)
+            .filter((consegna) => !giaConsegnate.some((fatta) => fatta.tipo === consegna.tipo));
 
     return {
         fattura: fattura?._id,
@@ -145,6 +159,7 @@ const pianoConsegne = ({ cliente, fattura }) => {
         intestatario: customerLabel(cliente, fattura),
         ostacoli,
         consegne,
+        giaConsegnate,
         pronta: ostacoli.length === 0 && consegne.some((consegna) => !consegna.problema),
     };
 };

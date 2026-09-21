@@ -109,6 +109,28 @@ pagina dice perche - nessun cliente impostato per la fattura elettronica, oppure
 coda momentaneamente vuota - invece di lasciar cercare un pulsante che non puo
 esserci (`canaleSdiTesto`, lato client).
 
+### Cosa la coda non prepara
+
+**Cio che e gia uscito.** Una fattura che ha gia la data di invio della copia
+(`data_invio_fattura`) o di trasmissione allo SdI (`data_fattura_elettronica`)
+non viene preparata di nuovo in quel modo (`CAMPO_DATA_CONSEGNA` in
+`config/delivery.js`). Quasi tutte le fatture importate da Gesco sono gia state
+spedite e trasmesse: prima della regola *Prepara* le rimetteva in coda - a Zuel
+488 copie di cortesia su 499 erano di fatture gia spedite, e l'XML sarebbe
+toccato a documenti gia passati dallo SdI. Le consegne aperte di questo tipo si
+chiudono da sole alla successiva *Prepara*, con il motivo scritto: "Già
+consegnata il ...". La data 01/01/1900 del vecchio programma vale "mai inviata".
+
+**Chi il tracciato non sa servire.** Un cliente estero (nazione diversa
+dall'Italia, o codice destinatario `XXXXXXX`) e un ufficio pubblico (codice IPA di
+sei caratteri, formato FPA12) hanno regole proprie che il gestionale non gestisce
+ancora. La riga in coda lo dice, e lo scarico dell'XML si rifiuta con lo stesso
+motivo invece di produrre un file da privato italiano. Vanno emesse a parte.
+
+> Il **Comune di Cortina** e una pubblica amministrazione, ma in anagrafica ha il
+> codice destinatario generico `0000000`: finche non gli si scrive il suo codice
+> IPA, il gestionale non puo riconoscerlo come tale.
+
 ## Niente parte per sbaglio
 
 Perche un messaggio esca servono **due condizioni insieme**:

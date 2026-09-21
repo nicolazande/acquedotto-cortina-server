@@ -221,3 +221,45 @@ test('i due canali convivono e sono indipendenti', () => {
     assert.equal(consegnaDi(piano, 'cortesia').destinatario, 'ada@rossi.it');
     assert.equal(consegnaDi(piano, 'elettronica').destinatario, 'ada@pec.it');
 });
+
+// --- consegne gia fatte -----------------------------------------------------
+
+test('una fattura gia trasmessa allo SdI non si prepara di nuovo', () => {
+    // Quasi tutte le fatture importate da Gesco sono gia state trasmesse:
+    // rimetterle in coda voleva dire rischiare di ritrasmetterle.
+    const piano = pianoConsegne({
+        cliente: cliente({ fattura_elettronica: true, codice_destinatario: 'TULURSB' }),
+        fattura: fattura({ data_fattura_elettronica: new Date('2025-12-05') }),
+    });
+
+    assert.equal(consegnaDi(piano, 'elettronica'), undefined);
+    assert.deepEqual(piano.giaConsegnate.map((fatta) => fatta.tipo), ['elettronica']);
+});
+
+test('una copia gia spedita non si ristampa', () => {
+    const piano = pianoConsegne({
+        cliente: cliente({ stampa_cortesia: 'postale' }),
+        fattura: fattura({ data_invio_fattura: new Date('2025-12-05') }),
+    });
+
+    assert.equal(consegnaDi(piano, 'cortesia'), undefined);
+});
+
+test('la data 01/01/1900 del vecchio programma vuol dire "mai inviata"', () => {
+    const piano = pianoConsegne({
+        cliente: cliente({ fattura_elettronica: true, codice_destinatario: 'TULURSB' }),
+        fattura: fattura({ data_fattura_elettronica: new Date('1900-01-01T00:00:00.000Z') }),
+    });
+
+    assert.ok(consegnaDi(piano, 'elettronica'));
+    assert.deepEqual(piano.giaConsegnate, []);
+});
+
+test('in coda una fattura per l estero dice subito perche non uscira', () => {
+    const piano = pianoConsegne({
+        cliente: cliente({ fattura_elettronica: true, codice_destinatario: 'XXXXXXX', nazione_residenza: 'D' }),
+        fattura: fattura(),
+    });
+
+    assert.match(consegnaDi(piano, 'elettronica').problema, /cliente estero \(D\)/);
+});

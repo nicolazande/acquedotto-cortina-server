@@ -14,7 +14,7 @@ const Cliente = require('../models/Cliente');
 const Consegna = require('../models/Consegna');
 const Fattura = require('../models/Fattura');
 const { righeDellaFattura } = require('./righeFattura');
-const { CANALE_TRASMISSIONE_SDI, testoEmailCortesia } = require('../config/delivery');
+const { CAMPO_DATA_CONSEGNA, CANALE_TRASMISSIONE_SDI, testoEmailCortesia } = require('../config/delivery');
 const { pianoConsegne } = require('./deliveryPlan');
 const { generateInvoicePdf, generateInvoicesPdf } = require('./invoicePdf');
 const { buildInvoiceXml } = require('./invoiceXml');
@@ -137,10 +137,15 @@ const pianificaConsegne = async ({ fatture, anno, limite } = {}) => {
             .filter((c) => String(c.fattura) === String(fattura._id))
             .filter((c) => STATI_APERTI.includes(c.stato) && !previste.has(c.tipo))
             .forEach((c) => {
+                const fatta = piano.giaConsegnate.find((consegna) => consegna.tipo === c.tipo);
+                const note = fatta
+                    ? `Già consegnata il ${formatItalianDate(fatta.data)}: non va ripetuta.`
+                    : 'Non più prevista dal piano di consegna.';
+
                 operazioni.push({
                     updateOne: {
                         filter: { _id: c._id },
-                        update: { $set: { stato: 'annullata', note: 'Non più prevista dal piano di consegna.' } },
+                        update: { $set: { stato: 'annullata', note } },
                     },
                 });
                 annullate += 1;
@@ -262,13 +267,9 @@ const trasportoPer = (consegna) => TRASPORTI[`${consegna.tipo}:${consegna.canale
 // Elaborazione della coda
 // ---------------------------------------------------------------------------
 
-// La data che il gestionale precedente teneva sulla fattura. Continua a essere
-// popolata: chi guarda la fattura vede subito quando e uscita, senza aprire
-// l'elenco delle consegne.
-const CAMPO_DATA_FATTURA = {
-    cortesia: 'data_invio_fattura',
-    elettronica: 'data_fattura_elettronica',
-};
+// La data che il gestionale precedente teneva sulla fattura continua a essere
+// popolata (`CAMPO_DATA_CONSEGNA`): chi guarda la fattura vede subito quando e
+// uscita, senza aprire l'elenco delle consegne.
 
 const registraEsito = async ({ consegna, esito, quando }) => {
     await Consegna.updateOne({ _id: consegna._id }, {
@@ -289,7 +290,7 @@ const registraEsito = async ({ consegna, esito, quando }) => {
     if (!esito.simulata) {
         await Fattura.updateOne(
             { _id: consegna.fattura },
-            { $set: { [CAMPO_DATA_FATTURA[consegna.tipo]]: quando } }
+            { $set: { [CAMPO_DATA_CONSEGNA[consegna.tipo]]: quando } }
         );
     }
 };
@@ -491,7 +492,7 @@ const segnaConsegnata = async (id, { note } = {}) => {
     });
     await Fattura.updateOne(
         { _id: consegna.fattura },
-        { $set: { [CAMPO_DATA_FATTURA[consegna.tipo]]: quando } }
+        { $set: { [CAMPO_DATA_CONSEGNA[consegna.tipo]]: quando } }
     );
 
     return Consegna.findById(consegna._id).lean();
