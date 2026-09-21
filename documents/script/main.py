@@ -204,10 +204,24 @@ def parse_number(value: str) -> float | int | None:
     except ValueError:
         return None
 
+def valore_della_cella(cella):
+    """Il valore di una cella: il testo, o lo stato della casella che contiene.
+
+    Le caselle di spunta non hanno testo. Lette come testo tornavano vuote, il
+    campo spariva dal risultato e `parse_bool(None)` lo dava per "no": tutte le
+    spunte importate da Gesco - socio, fattura elettronica, contatore inattivo,
+    subentro, sostituzione, condominiale - risultavano false su ogni record.
+    """
+    spunta = cella.find('input', attrs={'type': 'checkbox'})
+    if spunta is not None:
+        return 'true' if spunta.has_attr('checked') else 'false'
+
+    return clean_text(cella)
+
 def coppie_del_gruppo(group):
     columns = group.find_all('div', class_=lambda x: x and x.startswith('col-sm-'))
     for index in range(0, len(columns) - 1, 2):
-        yield clean_text(columns[index]), clean_text(columns[index + 1])
+        yield clean_text(columns[index]), valore_della_cella(columns[index + 1])
 
 def gruppo_che_inizia_con(soup, etichetta: str) -> dict:
     """Etichette e valori del solo gruppo che si apre con `etichetta`.
