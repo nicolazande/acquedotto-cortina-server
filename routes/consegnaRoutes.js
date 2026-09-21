@@ -9,6 +9,7 @@ router.post('/elabora', ConsegnaController.elabora);
 router.post('/stampa', ConsegnaController.stampa);
 router.post('/xml', ConsegnaController.scaricaXml);
 router.post('/prova-trasporto', ConsegnaController.provaTrasporto);
+router.get('/:id/xml', ConsegnaController.scaricaXmlSingolo);
 router.post('/:id/evasa', ConsegnaController.segnaConsegnata);
 router.post('/:id/coda', ConsegnaController.rimettiInCoda);
 router.post('/:id/annulla', ConsegnaController.annulla);

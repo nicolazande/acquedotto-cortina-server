@@ -177,13 +177,25 @@ const allegatoPdf = async (fatturaId) => {
     return { nome: filename, contenuto: buffer, tipo: 'application/pdf' };
 };
 
+// La fattura di una consegna, con addosso quello che serve per scriverla: il
+// cliente e la scadenza, che nel tracciato dice entro quando pagare.
+const fatturaDellaConsegna = (consegna) => (
+    Fattura.findById(consegna.fattura).populate('cliente scadenza').lean()
+);
+
 // Ogni trasmissione si prende un progressivo nuovo, anche quando e un secondo
 // tentativo sulla stessa fattura: lo SdI rifiuta un file il cui nome ha gia
 // visto, quindi rispedire lo stesso nome vorrebbe dire non poter rispedire.
 const allegatoXml = async (consegna, fattura) => {
     const servizi = await righeDellaFattura(fattura._id);
     const progressivo = await riservaProgressivoInvio();
-    const { filename, xml } = buildInvoiceXml({ cliente: fattura.cliente, fattura, progressivo, servizi });
+    const { filename, xml } = buildInvoiceXml({
+        cliente: fattura.cliente,
+        fattura,
+        progressivo,
+        scadenza: fattura.scadenza,
+        servizi,
+    });
 
     await Consegna.updateOne({ _id: consegna._id }, { $set: { progressivo } });
 
@@ -408,16 +420,13 @@ const xmlDaTrasmettere = async ({ limite } = {}) => {
 
     const file = [];
     for (const consegna of daInviare) {
-        const fattura = await Fattura.findById(consegna.fattura).populate('cliente').lean();
+        const fattura = await fatturaDellaConsegna(consegna);
         if (!fattura) {
             continue;
         }
 
-        const servizi = await righeDellaFattura(fattura._id);
-        const progressivo = await riservaProgressivoInvio();
-        const { filename, xml } = buildInvoiceXml({ cliente: fattura.cliente, fattura, progressivo, servizi });
-        await Consegna.updateOne({ _id: consegna._id }, { $set: { progressivo } });
-        file.push({ nome: filename, contenuto: xml });
+        const allegato = await allegatoXml(consegna, fattura);
+        file.push({ nome: allegato.nome, contenuto: allegato.contenuto });
     }
 
     return {
@@ -426,6 +435,30 @@ const xmlDaTrasmettere = async ({ limite } = {}) => {
         quante: file.length,
         consegne: daInviare.map((consegna) => consegna._id),
     };
+};
+
+// Il file di una singola consegna, per chi trasmette una fattura per volta:
+// stesso contenuto e stesso nome che avrebbe dentro l'archivio, senza passare
+// da uno zip da aprire e da rinominare.
+const xmlDellaConsegna = async (consegnaId) => {
+    const consegna = await Consegna.findById(consegnaId).lean();
+
+    if (!consegna) {
+        throw notFound('Consegna non trovata.');
+    }
+
+    if (consegna.tipo !== 'elettronica') {
+        throw unprocessable('Questa consegna e una copia di cortesia, non una fattura elettronica.');
+    }
+
+    const fattura = await fatturaDellaConsegna(consegna);
+    if (!fattura) {
+        throw unprocessable('La fattura di questa consegna non esiste piu.');
+    }
+
+    const allegato = await allegatoXml(consegna, fattura);
+
+    return { filename: allegato.nome, contenuto: allegato.contenuto };
 };
 
 // ---------------------------------------------------------------------------
@@ -538,4 +571,5 @@ module.exports = {
     segnaConsegnata,
     stampaDaConsegnare,
     xmlDaTrasmettere,
+    xmlDellaConsegna,
 };

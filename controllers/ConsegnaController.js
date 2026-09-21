@@ -13,6 +13,7 @@ const {
     segnaConsegnata,
     stampaDaConsegnare,
     xmlDaTrasmettere,
+    xmlDellaConsegna,
 } = require('../services/deliveryService');
 const { consegnaViews } = require('../config/listViews');
 
@@ -133,6 +134,23 @@ const scaricaXml = async (req, res) => {
     }
 };
 
+// Il file di una sola consegna. Chi trasmette una fattura per volta scaricava
+// l'archivio di tutte e poi ne estraeva una: qui esce gia il file che serve.
+const scaricaXmlSingolo = async (req, res) => {
+    try {
+        const { contenuto, filename } = await xmlDellaConsegna(req.params.id);
+
+        await registra(req, req.params.id, 'consegna.xml_scaricati', `Scaricato il file XML ${filename}`, { quante: 1 });
+
+        res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Length', contenuto.length);
+        res.status(200).send(contenuto);
+    } catch (error) {
+        sendServiceError(res, error, 'Error exporting the electronic invoice', error.status || 400);
+    }
+};
+
 const provaTrasporto = async (req, res) => {
     try {
         res.status(200).json(await verificaTrasporto());
@@ -151,6 +169,7 @@ module.exports = {
     provaTrasporto,
     rimettiInCoda: azione(rimettiInCoda, 'consegna.riaccodata', 'Rimessa in coda la consegna'),
     scaricaXml,
+    scaricaXmlSingolo,
     stampa,
     segnaConsegnata: azione(segnaConsegnata, 'consegna.evasa', 'Evasa consegna'),
 };

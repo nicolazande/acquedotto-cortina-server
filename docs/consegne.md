@@ -97,6 +97,11 @@ Due operazioni servono a portare fuori cio che non parte da solo:
    ripetere.
 5. **XML** (`POST /api/consegne/xml`) restituisce un archivio zip con un file per
    fattura elettronica da trasmettere, per chi la inoltra.
+6. **XML della singola consegna** (`GET /api/consegne/:id/xml`), il pulsante
+   *XML* sulla riga: lo stesso file dell'archivio, uno solo. Chi trasmette una
+   fattura per volta scaricava lo zip di tutte per poi estrarne una, aprirla con
+   un programma di compressione e rinominarla. Il file esce gia col nome della
+   trasmissione.
 
 ## Niente parte per sbaglio
 

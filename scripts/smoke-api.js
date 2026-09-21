@@ -1388,6 +1388,19 @@ const testDeliveryRollback = async () => {
             console.log(`  (scarico XML non provato: ${primaInCoda} fatture elettroniche gia in coda)`);
         }
 
+        // Una consegna per volta: il file esce singolo e gia col nome della
+        // trasmissione, senza passare dall'archivio di tutte.
+        const singolo = await request(`/consegne/${elettronica._id}/xml`);
+        const contenuto = Buffer.from(singolo.body).toString('utf8');
+        const nomeFile = /filename="([^"]+)"/.exec(singolo.response.headers.get('content-disposition') || '')?.[1];
+
+        assert(contenuto.startsWith('<?xml'), 'a single delivery must return its XML file');
+        assert(contenuto.includes('<DatiPagamento>'), 'the file must say where and when to pay');
+        assert(
+            /^IT\d{11}_\w+\.xml$/.test(nomeFile || ''),
+            `the file should carry the transmission name, got ${nomeFile}`
+        );
+
         await request(`/consegne/${elettronica._id}/annulla`, json('POST', { note: 'smoke' }));
         assert((await consegna()).stato === 'annullata', 'the delivery should be cancelled');
         await request(`/consegne/${elettronica._id}/coda`, json('POST'));
