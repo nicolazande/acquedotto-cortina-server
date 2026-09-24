@@ -53,13 +53,13 @@ const mittente = () => ({
 //
 // Dalla scheda di una fattura: quelle chieste, di qualunque provenienza.
 // Dalla pagina Consegne: tutte le confermate emesse dal gestionale, piu quelle -
-// di qualunque provenienza e in qualunque stato - che hanno ancora una consegna
-// aperta, perche la coda torni in pari: una fattura riportata a bozza deve
-// vedersi chiudere le sue. Cosa toccare lo decide poi `aggiornamentoCoda`, che
-// lascia stare le consegne chieste dalla scheda di una fattura del vecchio
-// programma. Prima guardava le 500 fatture piu recenti, storico compreso: una
-// fatturazione ne fa circa 670 con la stessa data, e le altre restavano fuori
-// per sempre, anche ripremendo.
+// di qualunque provenienza e in qualunque stato - che hanno una consegna da
+// rimettere in pari, perche la coda resti vera: una fattura riportata a bozza
+// deve vedersi chiudere le sue, una riconfermata riaverle. Cosa toccare lo
+// decide `aggiornamentoCoda`: di una fattura del vecchio programma guarda solo
+// le righe chieste dalla sua scheda. Prima guardava le 500 fatture piu recenti,
+// storico compreso: una fatturazione ne fa circa 670 con la stessa data, e le
+// altre restavano fuori per sempre, anche ripremendo.
 const fattureDaGuardare = async (richieste) => {
     if (richieste) {
         return Fattura.find({ _id: { $in: richieste.slice(0, MAX_FATTURE_PER_RICHIESTA) } })
@@ -67,12 +67,19 @@ const fattureDaGuardare = async (richieste) => {
             .lean();
     }
 
-    const conConsegneAperte = await Consegna.distinct('fattura', { stato: { $in: STATI_APERTI } });
+    // Le fatture con una consegna da rimettere in pari: una aperta, oppure una
+    // chiesta dalla scheda e chiusa dal piano, che il piano deve poter riaprire.
+    const daRimettereInPari = await Consegna.distinct('fattura', {
+        $or: [
+            { stato: { $in: STATI_APERTI } },
+            { stato: 'annullata', chiusa_dal_piano: true, su_richiesta: true },
+        ],
+    });
 
     return Fattura.find({
         $or: [
             { stato: 'confermata', ...FILTRO_EMESSE_DAL_GESTIONALE },
-            { _id: { $in: conConsegneAperte } },
+            { _id: { $in: daRimettereInPari } },
         ],
     })
         .populate('cliente')
@@ -86,7 +93,7 @@ const pianificaConsegne = async ({ fatture } = {}) => {
         ? await Consegna.find({ fattura: { $in: documenti.map((fattura) => fattura._id) } }).lean()
         : [];
 
-    const { operazioni, ...esito } = aggiornamentoCoda({
+    const { operazioni, decise, ...esito } = aggiornamentoCoda({
         fatture: documenti,
         esistenti,
         suRichiesta: Boolean(richieste),
@@ -94,6 +101,12 @@ const pianificaConsegne = async ({ fatture } = {}) => {
 
     if (operazioni.length) {
         await Consegna.bulkWrite(operazioni, { ordered: false });
+    }
+
+    // Il segno sulle fatture appena decise: da qui in avanti la coda tiene in
+    // pari le loro consegne senza aggiungerne di nuove.
+    if (decise.length) {
+        await Fattura.updateMany({ _id: { $in: decise } }, { $set: { consegne_decise_il: new Date() } });
     }
 
     return { esaminate: documenti.length, ...esito };
@@ -343,8 +356,8 @@ const annullaConsegna = async (id, { note } = {}) => {
 
 // Rimette in coda una consegna fallita, azzerandone l'errore. Chi la rimette
 // ha corretto qualcosa: torna fra le prime da tentare. Ed e una richiesta
-// esplicita, come Prepara dalla scheda: per una fattura del vecchio programma il
-// Prepara generale non deve richiuderla.
+// esplicita, come Prepara dalla scheda: di una fattura del vecchio programma la
+// coda generale terra in pari anche questa riga, invece di ignorarla.
 const rimettiInCoda = async (id) => {
     const consegna = await caricaConsegna(id);
 

@@ -57,7 +57,8 @@ const pianifica = async (req, res) => {
             req,
             null,
             'consegna.pianificata',
-            `Pianificate ${esito.create} consegne, rimesse in coda ${esito.riaperte}, chiuse ${esito.annullate} non più da fare`,
+            `Pianificate ${esito.create} consegne, rimesse in coda ${esito.riaperte}, chiuse ${esito.annullate} non più da fare, `
+            + `non aggiunte ${esito.nonAggiunte.length} per un canale acceso dopo`,
             esito
         );
         res.status(200).json(esito);

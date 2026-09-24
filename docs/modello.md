@@ -172,6 +172,7 @@ classDiagram
         Number totale_fattura
         Date data_fattura_elettronica
         Date data_invio_fattura
+        Date consegne_decise_il
         String tipo_pagamento
         String nome_cliente
         String stato

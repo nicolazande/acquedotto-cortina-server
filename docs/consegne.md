@@ -121,6 +121,16 @@ ha significato e continuerebbe a comparire fra le fatture da recapitare.
    annullata a mano resta annullata. Le regole sono in `aggiornamentoCoda`
    (`services/deliveryPlan.js`), senza database, e hanno i loro test.
 
+   **I canali di una fattura si decidono una volta sola**, la prima volta che il
+   Prepara generale la guarda: da allora la fattura porta il segno
+   (`consegne_decise_il`). Un canale acceso dopo - il cliente passa alla fattura
+   elettronica a fatturazione gia fatta - vale per le fatture da li in avanti:
+   quelle gia emesse non si trasmettono a mesi di distanza. Quelle non aggiunte
+   vengono contate e dette, perche una correzione in anagrafica non sembri non
+   aver fatto niente; per una di quelle fatture si usa *Prepara* dalla sua
+   scheda, che e una richiesta esplicita. Una fattura non pronta - una bozza, un
+   cliente mancante - non prende il segno: la si guardera di nuovo.
+
    Fino al 21/09/2026 *Prepara* guardava le 500 fatture piu recenti, storico
    compreso. Una fatturazione di Zuel ne fa circa 670 con la stessa data: le altre
    restavano fuori per sempre, anche ripremendo, e le consegne aperte fuori da
@@ -136,9 +146,13 @@ Due operazioni servono a portare fuori cio che non parte da solo:
 4. **Stampa** (`POST /api/consegne/stampa`) restituisce un solo PDF con dentro
    tutte le fatture da consegnare a mano, una per pagina. Lavora a lotti di
    duecento e dice quante ne restano; non segna nulla come evaso, quindi si puo
-   ripetere.
+   ripetere. Le fatture e le loro righe si leggono in blocco: chiederle una per
+   volta erano quattrocento andate e ritorni al database per un lotto di
+   duecento (misurato su sessanta fatture: 423 interrogazioni contro 10).
 5. **XML** (`POST /api/consegne/xml`) restituisce un archivio zip con un file per
-   fattura elettronica da trasmettere, per chi la inoltra.
+   fattura elettronica da trasmettere, per chi la inoltra. Anche qui documenti e
+   righe si leggono in blocco (58 file: 419 interrogazioni contro 124, quelle che
+   restano sono il progressivo e la riga di ogni consegna).
 6. **XML della singola consegna** (`GET /api/consegne/:id/xml`), il pulsante
    *XML* sulla riga: lo stesso file dell'archivio, uno solo. Chi trasmette una
    fattura per volta scaricava lo zip di tutte per poi estrarne una, aprirla con
@@ -163,7 +177,9 @@ trasmesse come elettroniche, ma il vecchio programma non segnava la copia
 cartacea. Il *Prepara* di prima ne proponeva venti. Le consegne aperte di queste
 fatture si chiudono al *Prepara* successivo, con il motivo scritto, tranne quelle
 chieste apposta dalla scheda: una singola fattura del vecchio programma si mette
-in coda da li.
+in coda da li. Quelle chieste a mano restano, e il *Prepara* generale le tiene in
+pari come tutte le altre - il recapito di una riga in coda non deve invecchiare -
+chiudendole quando il piano non le prevede piu, per il motivo vero.
 
 **Cio che e gia uscito.** Una fattura che ha gia la data di invio della copia
 (`data_invio_fattura`) o di trasmissione allo SdI (`data_fattura_elettronica`)

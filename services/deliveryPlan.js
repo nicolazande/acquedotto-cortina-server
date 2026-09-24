@@ -288,11 +288,34 @@ const motivoDellaChiusura = ({ piano, consegna, dalloStorico }) => {
 //    previste. Il suo storico e pieno di eccezioni che qui diventerebbero
 //    lavoro da fare: le fatture di dicembre che ogni anno partono per altra
 //    via, le copie cartacee che il vecchio programma non segnava. Le sue
-//    consegne aperte si chiudono, tranne quelle chieste apposta dalla scheda.
+//    consegne aperte si chiudono, tranne quelle chieste apposta dalla scheda,
+//    che restano e vengono tenute in pari come tutte le altre: il recapito di
+//    una riga chiesta a mano non deve invecchiare;
+//  - i canali di una fattura si decidono la prima volta che qualcuno la prepara,
+//    dalla coda o dalla sua scheda, e da allora la fattura porta il segno
+//    (`consegne_decise_il`). Un canale acceso dopo - il cliente passa alla
+//    fattura elettronica - vale per le fatture da li in avanti, non per quelle
+//    gia emesse, che verrebbero trasmesse a mesi di distanza. La coda generale
+//    elenca quelle che ha lasciato fuori; per una di loro si usa Prepara dalla
+//    sua scheda, che e una richiesta esplicita e le aggiunge.
 const aggiornamentoCoda = ({ fatture, esistenti, suRichiesta = false }) => {
     const perFattura = Map.groupBy(esistenti, (consegna) => String(consegna.fattura));
 
-    const esito = { operazioni: [], problemi: [], create: 0, aggiornate: 0, riaperte: 0, annullate: 0, saltate: 0 };
+    const esito = {
+        operazioni: [],
+        problemi: [],
+        // Le fatture di cui la coda ha deciso i canali adesso: chi scrive ci mette
+        // il segno, cosi la prossima volta non ne aggiunge di nuovi.
+        decise: [],
+        create: 0,
+        aggiornate: 0,
+        riaperte: 0,
+        annullate: 0,
+        // Le consegne lasciate fuori perche il canale e stato acceso dopo: chi
+        // guarda deve poterle ritrovare, non solo sapere quante sono.
+        nonAggiunte: [],
+        saltate: 0,
+    };
     // Ogni scrittura vale solo se la consegna e ancora nello stato letto: una
     // partita mentre Prepara lavorava non va riaperta, aggiornata o chiusa.
     const scrivi = (esistente, stati, update) => esito.operazioni.push({
@@ -303,10 +326,15 @@ const aggiornamentoCoda = ({ fatture, esistenti, suRichiesta = false }) => {
         const piano = pianoConsegne({ cliente: fattura.cliente, fattura });
         const sue = perFattura.get(String(fattura._id)) || [];
         const dalloStorico = !suRichiesta && !piano.emessaDalGestionale;
-        const previste = dalloStorico ? [] : piano.consegne;
+        // Di una fattura del vecchio programma la coda generale si occupa solo
+        // di cio che qualcuno le ha chiesto dalla scheda.
+        const chiesteAMano = new Set(sue.filter((voce) => voce.su_richiesta).map((voce) => voce.tipo));
+        const previste = dalloStorico
+            ? piano.consegne.filter((consegna) => chiesteAMano.has(consegna.tipo))
+            : piano.consegne;
         const richiesta = suRichiesta ? { su_richiesta: true } : {};
 
-        if (!dalloStorico) {
+        if (!dalloStorico || chiesteAMano.size) {
             piano.ostacoli.forEach((messaggio) => esito.problemi.push({
                 fattura: fattura._id,
                 documento: piano.documento,
@@ -318,6 +346,13 @@ const aggiornamentoCoda = ({ fatture, esistenti, suRichiesta = false }) => {
             const esistente = sue.find((voce) => voce.tipo === consegna.tipo);
 
             if (!esistente) {
+                // Gia decisa: il canale e stato acceso dopo, e questa fattura e
+                // uscita per un'altra strada.
+                if (!suRichiesta && fattura.consegne_decise_il) {
+                    esito.nonAggiunte.push({ fattura: fattura._id, documento: piano.documento, tipo: consegna.tipo });
+                    return;
+                }
+
                 esito.operazioni.push({ insertOne: { document: soloValorizzati({ ...daCapo(piano, consegna), ...richiesta }) } });
                 esito.create += 1;
             } else if (STATI_APERTI.includes(esistente.stato)) {
@@ -337,11 +372,25 @@ const aggiornamentoCoda = ({ fatture, esistenti, suRichiesta = false }) => {
         sue
             .filter((consegna) => STATI_APERTI.includes(consegna.stato))
             .filter((consegna) => !previste.some((voce) => voce.tipo === consegna.tipo))
-            .filter((consegna) => !(dalloStorico && consegna.su_richiesta))
             .forEach((consegna) => {
-                scrivi(consegna, STATI_APERTI, chiusura(motivoDellaChiusura({ piano, consegna, dalloStorico }), true));
+                // "Vecchio programma" solo per le righe che nessuno ha chiesto:
+                // una chiesta a mano si chiude per il motivo del piano, come le altre.
+                const motivo = motivoDellaChiusura({
+                    piano,
+                    consegna,
+                    dalloStorico: dalloStorico && !consegna.su_richiesta,
+                });
+                scrivi(consegna, STATI_APERTI, chiusura(motivo, true));
                 esito.annullate += 1;
             });
+
+        // Decisa adesso, da qui o dalla scheda: la prossima volta si tengono in
+        // pari le righe che ci sono, senza aggiungerne. Una fattura non pronta -
+        // una bozza, un cliente mancante - non conta come decisa: la si guardera
+        // di nuovo.
+        if (piano.emessaDalGestionale && !fattura.consegne_decise_il && !piano.ostacoli.length) {
+            esito.decise.push(fattura._id);
+        }
     });
 
     return esito;

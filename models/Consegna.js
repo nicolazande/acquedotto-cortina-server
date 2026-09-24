@@ -57,10 +57,10 @@ const consegnaSchema = new Schema(
         // Identificativo restituito dal trasporto: message-id della mail o
         // protocollo dello SdI. Serve per ritrovare la consegna fuori di qui.
         riferimento: { type: String },
-        // Messa in coda dalla scheda della fattura, per quella fattura, e non
-        // dal Prepara generale. Conta per le fatture del vecchio programma: la
-        // coda generale non le prepara, e non deve togliere quelle che una
-        // persona ha chiesto apposta.
+        // Messa in coda dalla scheda della fattura, o rimessa in coda con
+        // "Riprova": una richiesta esplicita su quel documento. Conta per le
+        // fatture del vecchio programma, che la coda generale non prepara: di
+        // loro tiene in pari solo le righe chieste cosi, invece di chiuderle.
         su_richiesta: { type: Boolean },
         // Annullata da Prepara perche il piano non la prevedeva piu - fattura
         // riportata a bozza, cliente senza recapito, gia consegnata - e non da una

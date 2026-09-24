@@ -9,7 +9,7 @@
 
 const Consegna = require('../models/Consegna');
 const Fattura = require('../models/Fattura');
-const { righeDellaFattura } = require('./righeFattura');
+const { righeDelleFatture, righeDellaFattura } = require('./righeFattura');
 const { FATTURA_IN_BOZZA } = require('./deliveryPlan');
 const { isConfirmedInvoice } = require('../config/invoicing');
 const { STATI_APERTI } = require('../config/delivery');
@@ -35,15 +35,26 @@ const fatturaDellaConsegna = (consegna) => (
     Fattura.findById(consegna.fattura).populate('cliente scadenza').lean()
 );
 
+// Le fatture di piu consegne in una lettura sola, per id.
+const fattureDelleConsegne = async (consegne) => {
+    const trovate = await Fattura.find({ _id: { $in: consegne.map((consegna) => consegna.fattura) } })
+        .populate('cliente scadenza')
+        .lean();
+
+    return new Map(trovate.map((fattura) => [String(fattura._id), fattura]));
+};
+
 // Ogni trasmissione si prende un progressivo nuovo, anche quando e un secondo
 // tentativo sulla stessa fattura: lo SdI rifiuta un file il cui nome ha gia
 // visto, quindi rispedire lo stesso nome vorrebbe dire non poter rispedire.
-const allegatoXml = async (consegna, fattura) => {
+const allegatoXml = async (consegna, fattura, righe) => {
     if (!isConfirmedInvoice(fattura)) {
         throw unprocessable(FATTURA_IN_BOZZA);
     }
 
-    const servizi = await righeDellaFattura(fattura._id);
+    // Le righe arrivano gia lette quando si sta facendo un archivio: leggerle di
+    // nuovo, una fattura per volta, e il costo che rende lento lo scarico.
+    const servizi = righe || await righeDellaFattura(fattura._id);
     const dati = { cliente: fattura.cliente, fattura, scadenza: fattura.scadenza, servizi };
 
     // Prima si controlla che il file si possa fare, poi si prende il progressivo.
@@ -102,8 +113,7 @@ const stampaDaConsegnare = async ({ limite } = {}) => {
         await Consegna.updateMany({ _id: { $in: inBozza.map((consegna) => consegna._id) } }, { $set: { ultimo_errore: FATTURA_IN_BOZZA } });
     }
     // E una fattura confermata di nuovo perde il segno che una stampa precedente
-    // le aveva lasciato: anche quelle chieste dalla scheda di una fattura del
-    // vecchio programma, che il Prepara generale non aggiorna.
+    // le aveva lasciato, senza aspettare il Prepara successivo.
     const confermateDiNuovo = daStampare.filter((consegna) => consegna.ultimo_errore === FATTURA_IN_BOZZA);
     if (confermateDiNuovo.length) {
         await Consegna.updateMany(
@@ -142,18 +152,22 @@ const xmlDaTrasmettere = async ({ limite } = {}) => {
         throw unprocessable('Non c’è nessuna fattura elettronica in attesa di trasmissione.');
     }
 
+    // Le fatture e le loro righe in due letture, non due per consegna.
+    const fatture = await fattureDelleConsegne(daInviare);
+    const righe = await righeDelleFatture([...fatture.keys()]);
+
     const file = [];
     const incluse = [];
     const saltate = [];
     for (const consegna of daInviare) {
-        const fattura = await fatturaDellaConsegna(consegna);
+        const fattura = fatture.get(String(consegna.fattura));
         if (!fattura) {
             saltate.push({ documento: consegna.documento, motivo: 'la fattura non esiste piu' });
             continue;
         }
 
         try {
-            const allegato = await allegatoXml(consegna, fattura);
+            const allegato = await allegatoXml(consegna, fattura, righe.get(String(fattura._id)) || []);
             file.push({ nome: allegato.nome, contenuto: allegato.contenuto });
             incluse.push(consegna._id);
         } catch (errore) {

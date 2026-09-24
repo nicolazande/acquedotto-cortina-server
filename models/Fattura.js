@@ -23,6 +23,12 @@ const fatturaSchema = new Schema(
         totale_fattura: { type: Number, required: false },
         data_fattura_elettronica: { type: Date, required: false },
         data_invio_fattura: { type: Date, required: false },
+        // Quando la coda ha deciso i canali di questa fattura. Li decide una
+        // volta sola, la prima che la guarda: un canale acceso dopo - il cliente
+        // che passa alla fattura elettronica - vale per le fatture da li in
+        // avanti, non per quelle gia emesse. Vuoto anche dopo un Prepara vuol
+        // dire che la fattura non era pronta (una bozza, un cliente mancante).
+        consegne_decise_il: { type: Date },
         tipo_pagamento: { type: String, required: false },
         nome_cliente: { type: String, required: false },
         // Unica verita sullo stato del documento. Il campo booleano `confermata`

@@ -10,7 +10,7 @@ require('../models/Lettura');
 require('../models/Listino');
 require('../models/Scadenza');
 const { getLineTaxRate } = require('./billingCalculator');
-const { righeConOrigine } = require('./righeFattura');
+const { righeDeiDocumenti, righeDelDocumento } = require('./righeFattura');
 const { applyRate, fromCents, toCents } = require('../utils/money');
 const { AZIENDA } = require('../config/azienda');
 const { ibanLeggibile } = require('../utils/iban');
@@ -684,15 +684,19 @@ const drawFooter = (pdf) => {
     pdf.text(`${companyConfig.website} - ${companyConfig.email}`, 195, y + 10, { font: 'bold', size: 5.8 });
 };
 
+const invoiceNotFound = () => {
+    const error = new Error('Fattura non trovata.');
+    error.status = 404;
+    return error;
+};
+
 const loadInvoicePdfData = async (fatturaId) => {
     const fattura = await Fattura.findById(fatturaId).populate('cliente scadenza').lean();
     if (!fattura) {
-        const error = new Error('Fattura not found');
-        error.status = 404;
-        throw error;
+        throw invoiceNotFound();
     }
 
-    const servizi = await righeConOrigine(fatturaId);
+    const servizi = await righeDelDocumento(fatturaId);
 
     return {
         fattura,
@@ -736,12 +740,22 @@ const generateInvoicesPdf = async (fatturaIds) => {
         throw unprocessable('Nessuna fattura da stampare.');
     }
 
+    // Tutte le fatture e tutte le righe in due letture: una fattura per volta
+    // erano quattrocento andate e ritorni al database per un blocco di duecento.
+    const trovate = await Fattura.find({ _id: { $in: fatturaIds } }).populate('cliente scadenza').lean();
+    const fatture = new Map(trovate.map((fattura) => [String(fattura._id), fattura]));
+    const righe = await righeDeiDocumenti(fatturaIds);
+
     const pdf = new PdfDocument();
     registerInvoiceAssets(pdf);
 
     let stampate = 0;
     for (const fatturaId of fatturaIds) {
-        const { fattura, servizi } = await loadInvoicePdfData(fatturaId);
+        const fattura = fatture.get(String(fatturaId));
+        if (!fattura) {
+            throw invoiceNotFound();
+        }
+        const servizi = righe.get(String(fatturaId)) || [];
 
         // Le pagine si aggiungono fra una fattura e l'altra, mai prima della
         // prima: il documento nasce gia con una pagina bianca.

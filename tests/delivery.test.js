@@ -358,13 +358,73 @@ test('una consegna del vecchio programma mai segnata esce dalla coda dicendo per
     assert.match(aggiornamentoDi(esito, 'consegna-1').$set.note, /^Fattura del vecchio programma/);
 });
 
-test('la coda generale non toglie cio che e stato chiesto dalla scheda', () => {
+test('la coda generale tiene in pari cio che e stato chiesto dalla scheda, invece di toglierlo', () => {
+    // Di una fattura del vecchio programma la coda generale si occupa solo delle
+    // righe chieste a mano: le lascia in coda, ma con il recapito di oggi. Prima
+    // non le guardava affatto, e il recapito invecchiava.
     const esito = aggiornamentoCoda({
         fatture: [daGuardare(vecchia())],
         esistenti: [inCoda({ su_richiesta: true })],
     });
 
-    assert.equal(esito.operazioni.length, 0);
+    assert.equal(esito.annullate, 0);
+    assert.equal(esito.aggiornate, 1);
+    assert.match(aggiornamentoDi(esito, 'consegna-1').$set.destinatario, /Via Roma 3/);
+});
+
+test('una riga chiesta a mano si chiude quando il piano non la prevede piu', () => {
+    // E si chiude per il motivo vero - gia consegnata - non per "vecchio programma".
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare(vecchia({ data_invio_fattura: new Date('2026-01-22T00:00:00Z') }))],
+        esistenti: [inCoda({ su_richiesta: true })],
+    });
+
+    assert.equal(esito.annullate, 1);
+    assert.match(aggiornamentoDi(esito, 'consegna-1').$set.note, /^Già consegnata il 22\/01\/2026/);
+});
+
+test('la coda generale non aggiunge un canale acceso dopo', () => {
+    // Il cliente passa alla fattura elettronica a fatturazione gia fatta: le
+    // fatture gia emesse non si trasmettono a mesi di distanza. Vale da qui in
+    // avanti. Il segno sta sulla fattura, non nelle righe che ha: un cliente
+    // senza copia di cortesia e senza fattura elettronica non ne ha nessuna, e
+    // sarebbe passato per "mai guardata".
+    const cliente = perEmail({ fattura_elettronica: true, codice_destinatario: 'TULURSB' });
+    const decisa = daGuardare({ consegne_decise_il: new Date('2026-09-01') }, cliente);
+    const esistenti = [inCoda({ canale: 'email', destinatario: 'ada@rossi.it' })];
+
+    const generale = aggiornamentoCoda({ fatture: [decisa], esistenti });
+    assert.equal(generale.create, 0);
+    assert.deepEqual(generale.nonAggiunte.map((voce) => voce.tipo), ['elettronica']);
+
+    const senzaNessunaRiga = aggiornamentoCoda({
+        fatture: [daGuardare({ consegne_decise_il: new Date('2026-09-01') }, { stampa_cortesia: 'nessuna', fattura_elettronica: true, codice_destinatario: 'TULURSB' })],
+        esistenti: [],
+    });
+    assert.equal(senzaNessunaRiga.create, 0);
+    assert.equal(senzaNessunaRiga.nonAggiunte.length, 1);
+
+    // Dalla scheda invece si puo: e una richiesta esplicita su quella fattura.
+    const dallaScheda = aggiornamentoCoda({ fatture: [decisa], esistenti, suRichiesta: true });
+    assert.deepEqual(inserite(dallaScheda).map((voce) => voce.tipo), ['elettronica']);
+});
+
+test('la prima volta che guarda una fattura, la coda generale prepara tutti i canali e ci mette il segno', () => {
+    const fatturaNuova = daGuardare({}, perEmail({ fattura_elettronica: true, codice_destinatario: 'TULURSB' }));
+    const esito = aggiornamentoCoda({ fatture: [fatturaNuova], esistenti: [] });
+
+    assert.deepEqual(inserite(esito).map((voce) => voce.tipo), ['cortesia', 'elettronica']);
+    assert.deepEqual(esito.decise, ['fattura-1']);
+});
+
+test('una fattura non pronta, o del vecchio programma, non viene segnata come decisa', () => {
+    // Una bozza si guardera di nuovo quando sara confermata; una fattura del
+    // vecchio programma la coda generale non la prepara affatto.
+    const bozza = aggiornamentoCoda({ fatture: [daGuardare(inBozza, perEmail())], esistenti: [] });
+    assert.deepEqual(bozza.decise, []);
+
+    const storico = aggiornamentoCoda({ fatture: [daGuardare(vecchia(), perEmail())], esistenti: [] });
+    assert.deepEqual(storico.decise, []);
 });
 
 test('un problema risolto in anagrafica non resta scritto sulla riga', () => {

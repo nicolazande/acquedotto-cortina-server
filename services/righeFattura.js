@@ -16,25 +16,47 @@ const { withSession } = require('../utils/mongo');
 // numero decide l'ordine di creazione.
 const ORDINE = { riga: 1, _id: 1 };
 
-// Le righe come le mostra un documento: descrizione, importo e articolo, che e
-// quello che porta l'aliquota.
-const righeDellaFattura = (fatturaId, session) => withSession(
-    Servizio.find({ fattura: fatturaId }),
-    session
-).populate('articolo').sort(ORDINE).lean();
-
-// Le righe con tutto cio da cui sono nate, per ricalcolarle o verificarle.
-const righeConOrigine = (fatturaId, session) => withSession(
-    Servizio.find({ fattura: fatturaId }),
-    session
-).populate([
+// Cosa si tira su insieme alle righe: l'articolo porta l'aliquota, il resto
+// serve solo a chi deve ricalcolarle o verificarle.
+const CON_ARTICOLO = 'articolo';
+const CON_LETTURA = [{ path: 'articolo' }, { path: 'lettura', populate: { path: 'contatore' } }];
+const CON_ORIGINE = [
     { path: 'articolo' },
     { path: 'listino' },
     { path: 'fascia' },
     { path: 'lettura', populate: { path: 'contatore' } },
-]).sort(ORDINE).lean();
+];
+
+const righe = (filtro, popolamento, session) => withSession(Servizio.find(filtro), session)
+    .populate(popolamento)
+    .sort(ORDINE)
+    .lean();
+
+// Le righe come le mostra un documento: descrizione, importo e articolo.
+const righeDellaFattura = (fatturaId, session) => righe({ fattura: fatturaId }, CON_ARTICOLO, session);
+
+// Le righe con tutto cio da cui sono nate, per ricalcolarle o verificarle.
+const righeConOrigine = (fatturaId, session) => righe({ fattura: fatturaId }, CON_ORIGINE, session);
+
+// Le righe come le disegna il PDF: l'articolo per l'aliquota e la lettura con il
+// suo contatore, che sulla riga compare come matricola. Listino e fascia il
+// disegno non li guarda, e tirarli su erano due letture in piu per ogni blocco.
+const righeDelDocumento = (fatturaId, session) => righe({ fattura: fatturaId }, CON_LETTURA, session);
+
+// Le righe di piu fatture in una lettura sola, raggruppate per fattura. La
+// stampa in blocco e l'archivio degli XML le chiedevano una fattura per volta:
+// con duecento documenti sono duecento andate e ritorni al database, e la
+// distanza fra Render e il database si sente tutta.
+const raggruppate = (trovate) => Map.groupBy(trovate, (riga) => String(riga.fattura));
+
+const righeDelleFatture = async (fatturaIds) => raggruppate(await righe({ fattura: { $in: fatturaIds } }, CON_ARTICOLO));
+
+const righeDeiDocumenti = async (fatturaIds) => raggruppate(await righe({ fattura: { $in: fatturaIds } }, CON_LETTURA));
 
 module.exports = {
     righeConOrigine,
+    righeDeiDocumenti,
+    righeDelDocumento,
+    righeDelleFatture,
     righeDellaFattura,
 };
