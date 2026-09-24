@@ -412,7 +412,8 @@ const riapriConsegneProvate = async () => {
     provate.forEach((consegna) => console.log(`    ${consegna.documento || consegna._id} ${consegna.intestatario || ''}`));
     console.log(`  con il campo \`simulata\` da togliere: ${conIlCampo}`);
 
-    if (!applica || (provate.length + conIlCampo) === 0) {
+    // Ogni consegna provata ha il campo: se non c'e su nessuna, non c'e niente da fare.
+    if (!applica || conIlCampo === 0) {
         return;
     }
 

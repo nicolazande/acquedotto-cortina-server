@@ -9,7 +9,7 @@ const {
     modalitaConsegna,
     normalizzaModalita,
 } = require('../config/delivery');
-const { aggiornamentoCoda, indirizzoPostale, pianoConsegne } = require('../services/deliveryPlan');
+const { FATTURA_IN_BOZZA, aggiornamentoCoda, indirizzoPostale, pianoConsegne } = require('../services/deliveryPlan');
 
 const cliente = (campi = {}) => ({
     _id: 'cliente-1',
@@ -283,12 +283,17 @@ const inCoda = (campi = {}) => ({
     ...campi,
 });
 
+// Chi riceve la copia per email, e una fattura non confermata.
+const perEmail = (campi = {}) => ({ stampa_cortesia: 'email', email: 'ada@rossi.it', ...campi });
+const inBozza = { stato: 'bozza', confermata: false };
+
 const inserite = (esito) => esito.operazioni.filter((op) => op.insertOne).map((op) => op.insertOne.document);
-const aggiornamentoDi = (esito, id) => esito.operazioni.find((op) => op.updateOne?.filter._id === id)?.updateOne.update;
+const operazioneDi = (esito, id) => esito.operazioni.find((op) => op.updateOne?.filter._id === id)?.updateOne;
+const aggiornamentoDi = (esito, id) => operazioneDi(esito, id)?.update;
 
 test('una fattura emessa dal gestionale entra in coda con il recapito del cliente', () => {
     const esito = aggiornamentoCoda({
-        fatture: [daGuardare({}, { stampa_cortesia: 'email', email: 'ada@rossi.it' })],
+        fatture: [daGuardare({}, perEmail())],
         esistenti: [],
     });
 
@@ -366,7 +371,7 @@ test('un problema risolto in anagrafica non resta scritto sulla riga', () => {
     // Mongoose scarta i valori undefined di un $set: il vecchio messaggio
     // restava accanto a un recapito ormai giusto.
     const esito = aggiornamentoCoda({
-        fatture: [daGuardare({}, { stampa_cortesia: 'email', email: 'ada@rossi.it' })],
+        fatture: [daGuardare({}, perEmail())],
         esistenti: [inCoda({ canale: 'email', problema: 'Il cliente non ha un indirizzo email.' })],
     });
 
@@ -374,6 +379,25 @@ test('un problema risolto in anagrafica non resta scritto sulla riga', () => {
     assert.equal(esito.aggiornate, 1);
     assert.equal(aggiornamento.$set.destinatario, 'ada@rossi.it');
     assert.equal(aggiornamento.$unset.problema, '');
+});
+
+test('Prepara non riscrive una consegna che non cambia', () => {
+    // Ogni Prepara riscriveva tutte le consegne aperte e le contava come
+    // aggiornate: a una fatturazione, 1.341 scritture per niente.
+    const piano = pianoConsegne({ cliente: cliente(perEmail()), fattura: fattura() });
+    const uguale = inCoda({
+        cliente: 'cliente-1',
+        canale: 'email',
+        destinatario: 'ada@rossi.it',
+        documento: piano.documento,
+        intestatario: piano.intestatario,
+        automatica: true,
+    });
+
+    const esito = aggiornamentoCoda({ fatture: [daGuardare({}, perEmail())], esistenti: [uguale] });
+
+    assert.equal(esito.aggiornate, 0);
+    assert.equal(esito.operazioni.length, 0);
 });
 
 test("Prepara non cancella l'errore di un file XML", () => {
@@ -393,8 +417,8 @@ test('una fattura confermata di nuovo perde il segno della bozza', () => {
     // La bozza e una condizione, non un guasto: se il piano prevede la
     // consegna, la fattura e confermata.
     const esito = aggiornamentoCoda({
-        fatture: [daGuardare({}, { stampa_cortesia: 'email', email: 'ada@rossi.it' })],
-        esistenti: [inCoda({ canale: 'email', stato: 'errore', ultimo_errore: 'La fattura è una bozza: va confermata prima di consegnarla.' })],
+        fatture: [daGuardare({}, perEmail())],
+        esistenti: [inCoda({ canale: 'email', stato: 'errore', ultimo_errore: FATTURA_IN_BOZZA })],
     });
 
     const aggiornamento = aggiornamentoDi(esito, 'consegna-1');
@@ -409,9 +433,8 @@ test('ogni scrittura vale solo se la consegna e ancora nello stato letto', () =>
         esistenti: [inCoda(), inCoda({ _id: 'consegna-2', fattura: 'fattura-2', stato: 'annullata', chiusa_dal_piano: true })],
     });
 
-    const filtroDi = (id) => esito.operazioni.find((op) => op.updateOne?.filter._id === id).updateOne.filter;
-    assert.deepEqual(filtroDi('consegna-1').stato, { $in: ['in_coda', 'errore'] });
-    assert.deepEqual(filtroDi('consegna-2').stato, { $in: ['annullata'] });
+    assert.deepEqual(operazioneDi(esito, 'consegna-1').filter.stato, { $in: ['in_coda', 'errore'] });
+    assert.deepEqual(operazioneDi(esito, 'consegna-2').filter.stato, { $in: ['annullata'] });
 });
 
 test('la coda generale non riapre una consegna annullata', () => {
@@ -445,7 +468,7 @@ test('la coda generale riapre cio che aveva chiuso lei, quando il piano torna a 
     // di nuovo, deve riaverle senza che qualcuno se ne ricordi fattura per fattura.
     const esito = aggiornamentoCoda({
         fatture: [daGuardare()],
-        esistenti: [inCoda({ stato: 'annullata', note: 'La fattura è una bozza: va confermata prima di consegnarla.', chiusa_dal_piano: true })],
+        esistenti: [inCoda({ stato: 'annullata', note: FATTURA_IN_BOZZA, chiusa_dal_piano: true })],
     });
 
     const aggiornamento = aggiornamentoDi(esito, 'consegna-1');
@@ -460,7 +483,7 @@ test('Prepara non fa sparire un errore di invio', () => {
     // Il server di posta ha rifiutato l'indirizzo: la riga resta fra gli errori,
     // con il motivo, finche l'invio non riesce o una persona non la rimette in coda.
     const esito = aggiornamentoCoda({
-        fatture: [daGuardare({}, { stampa_cortesia: 'email', email: 'ada@rossi.it' })],
+        fatture: [daGuardare({}, perEmail())],
         esistenti: [inCoda({ canale: 'email', stato: 'errore', ultimo_errore: '550 casella inesistente' })],
     });
 
@@ -473,7 +496,7 @@ test('Prepara non fa sparire un errore di invio', () => {
 
 test('un problema del piano si scrive accanto a un errore di invio, senza cancellarlo', () => {
     const esito = aggiornamentoCoda({
-        fatture: [daGuardare({}, { stampa_cortesia: 'email', email: '' })],
+        fatture: [daGuardare({}, perEmail({ email: '' }))],
         esistenti: [inCoda({ canale: 'email', stato: 'errore', ultimo_errore: '550 casella inesistente' })],
     });
 
@@ -484,7 +507,7 @@ test('un problema del piano si scrive accanto a un errore di invio, senza cancel
 
 test("l'esito di una prova resta sulla riga dopo Prepara", () => {
     const esito = aggiornamentoCoda({
-        fatture: [daGuardare({}, { stampa_cortesia: 'email', email: 'ada@rossi.it' })],
+        fatture: [daGuardare({}, perEmail())],
         esistenti: [inCoda({ canale: 'email', note: 'Prova del 21/09/2026: il cliente non l\'ha ricevuta. Resta in coda.' })],
     });
 
@@ -509,7 +532,7 @@ test('dalla scheda una bozza non entra in coda', () => {
     // fermarle, altrimenti un "Invia" successivo spedirebbe un documento non
     // confermato.
     const esito = aggiornamentoCoda({
-        fatture: [daGuardare({ stato: 'bozza', confermata: false }, { stampa_cortesia: 'email', email: 'ada@rossi.it' })],
+        fatture: [daGuardare(inBozza, perEmail())],
         esistenti: [],
         suRichiesta: true,
     });
@@ -524,7 +547,7 @@ test('una fattura del gestionale tornata bozza chiude anche le consegne chieste 
     // gestionale riportata a bozza non deve lasciare in coda un documento che
     // un "Invia" spedirebbe.
     const esito = aggiornamentoCoda({
-        fatture: [daGuardare({ stato: 'bozza', confermata: false })],
+        fatture: [daGuardare(inBozza)],
         esistenti: [inCoda({ su_richiesta: true })],
     });
 
@@ -534,7 +557,7 @@ test('una fattura del gestionale tornata bozza chiude anche le consegne chieste 
 
 test('una fattura tornata bozza lascia la coda con il motivo', () => {
     const esito = aggiornamentoCoda({
-        fatture: [daGuardare({ stato: 'bozza', confermata: false })],
+        fatture: [daGuardare(inBozza)],
         esistenti: [inCoda()],
     });
 

@@ -32,7 +32,8 @@ const describe = (audit, record) => (
 // mostrato al client a meno che l'errore non porti con se uno status, cioe a
 // meno che non sia un errore scritto da noi (utils/errors.js). Cosi un errore
 // del driver o di Mongoose non finisce nell'interfaccia con dentro nomi di
-// campi, indici o frammenti di query.
+// campi, indici o frammenti di query. Il testo di ripiego invece si legge
+// nell'interfaccia, quindi e in italiano come tutto il resto.
 //
 // `sendServiceError` e per i gestori scritti a mano attorno ai servizi, dove il
 // messaggio e in italiano ed e esattamente cio che l'utente deve leggere
@@ -62,7 +63,7 @@ const createRecord = (Model, { audit, name, mapBody = (body) => body, transform 
             });
             res.status(201).json(transform(record));
         } catch (error) {
-            sendError(res, error, `Error creating ${lowerFirst(name)}`, 400);
+            sendError(res, error, `Creazione non riuscita (${lowerFirst(name)}).`, 400);
         }
     }
 );
@@ -72,11 +73,11 @@ const getRecord = (Model, { name, populate, transform = (record) => record }) =>
         try {
             const record = await applyPopulate(Model.findById(req.params.id), populate);
             if (!record) {
-                return res.status(404).json({ error: `${name} not found` });
+                return res.status(404).json({ error: `${name}: record non trovato.` });
             }
             return res.status(200).json(transform(record));
         } catch (error) {
-            return sendError(res, error, `Error fetching ${lowerFirst(name)}`);
+            return sendError(res, error, `Lettura non riuscita (${lowerFirst(name)}).`);
         }
     }
 );
@@ -91,7 +92,7 @@ const updateRecord = (Model, { audit, name, mapBody = (body) => body, transform 
                 runValidators: true,
             });
             if (!record) {
-                return res.status(404).json({ error: `${name} not found` });
+                return res.status(404).json({ error: `${name}: record non trovato.` });
             }
             await auditRecord({
                 action: 'modificato',
@@ -104,7 +105,7 @@ const updateRecord = (Model, { audit, name, mapBody = (body) => body, transform 
             });
             return res.status(200).json(transform(record));
         } catch (error) {
-            return sendError(res, error, `Error updating ${lowerFirst(name)}`, 400);
+            return sendError(res, error, `Modifica non riuscita (${lowerFirst(name)}).`, 400);
         }
     }
 );
@@ -118,7 +119,7 @@ const deleteRecord = (Model, { audit, cascata = false, name }) => (
         try {
             const record = await Model.findById(req.params.id);
             if (!record) {
-                return res.status(404).json({ error: `${name} not found` });
+                return res.status(404).json({ error: `${name}: record non trovato.` });
             }
 
             await assertCancellabile(Model.modelName, record._id, `${name} ${describe(audit, record)}`.trim());
@@ -131,7 +132,7 @@ const deleteRecord = (Model, { audit, cascata = false, name }) => (
             // 204 non prevede corpo nella risposta.
             return res.status(204).send();
         } catch (error) {
-            return sendError(res, error, `Error deleting ${lowerFirst(name)}`);
+            return sendError(res, error, `Cancellazione non riuscita (${lowerFirst(name)}).`);
         }
     }
 );
@@ -156,7 +157,7 @@ const associateRecords = ({
             ]);
 
             if (!source || !target) {
-                return res.status(404).json({ error: `${sourceName} or ${targetName} not found` });
+                return res.status(404).json({ error: `${sourceName} o ${targetName}: record non trovato.` });
             }
 
             const savedRecord = setOn === 'source' ? source : target;
@@ -175,7 +176,7 @@ const associateRecords = ({
                 [responseKey || lowerFirst(bodyRecord.constructor.modelName)]: bodyRecord,
             });
         } catch (error) {
-            return sendError(res, error, `Error associating ${lowerFirst(targetName)} to ${lowerFirst(sourceName)}`);
+            return sendError(res, error, `Collegamento non riuscito (${lowerFirst(targetName)} a ${lowerFirst(sourceName)}).`);
         }
     }
 );
@@ -185,12 +186,12 @@ const getPopulatedRelation = ({ Model, name, path, transform = (record) => recor
         try {
             const record = await Model.findById(req.params.id).populate(path);
             if (!record) {
-                return res.status(404).json({ error: `${name} not found` });
+                return res.status(404).json({ error: `${name}: record non trovato.` });
             }
             const relation = record[path];
             return res.status(200).json(relation ? transform(relation) : null);
         } catch (error) {
-            return sendError(res, error, `Error fetching ${path} associato`);
+            return sendError(res, error, `Lettura non riuscita (${path} associato).`);
         }
     }
 );
@@ -201,7 +202,7 @@ const getManyByField = ({ Model, field, idParam = 'id', populate, errorMessage }
             const records = await applyPopulate(Model.find({ [field]: req.params[idParam] }), populate);
             res.status(200).json(records);
         } catch (error) {
-            sendError(res, error, errorMessage || `Error fetching ${field} records`);
+            sendError(res, error, errorMessage || `Lettura non riuscita (${field}).`);
         }
     }
 );

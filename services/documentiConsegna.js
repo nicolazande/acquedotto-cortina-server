@@ -10,7 +10,8 @@
 const Consegna = require('../models/Consegna');
 const Fattura = require('../models/Fattura');
 const { righeDellaFattura } = require('./righeFattura');
-const { FATTURA_IN_BOZZA, fatturaConfermata } = require('./deliveryPlan');
+const { FATTURA_IN_BOZZA } = require('./deliveryPlan');
+const { isConfirmedInvoice } = require('../config/invoicing');
 const { STATI_APERTI } = require('../config/delivery');
 const { generateInvoicePdf, generateInvoicesPdf } = require('./invoicePdf');
 const { buildInvoiceXml } = require('./invoiceXml');
@@ -38,7 +39,7 @@ const fatturaDellaConsegna = (consegna) => (
 // tentativo sulla stessa fattura: lo SdI rifiuta un file il cui nome ha gia
 // visto, quindi rispedire lo stesso nome vorrebbe dire non poter rispedire.
 const allegatoXml = async (consegna, fattura) => {
-    if (!fatturaConfermata(fattura)) {
+    if (!isConfirmedInvoice(fattura)) {
         throw unprocessable(FATTURA_IN_BOZZA);
     }
 
@@ -91,7 +92,7 @@ const stampaDaConsegnare = async ({ limite } = {}) => {
     // la sua riga resta, con il motivo, finche il Prepara successivo la chiude.
     const confermate = new Set(
         (await Fattura.find({ _id: { $in: cartacee.map((consegna) => consegna.fattura) } }, { stato: 1, confermata: 1 }).lean())
-            .filter(fatturaConfermata)
+            .filter(isConfirmedInvoice)
             .map((fattura) => String(fattura._id))
     );
     const daStampare = cartacee.filter((consegna) => confermate.has(String(consegna.fattura)));
@@ -103,10 +104,13 @@ const stampaDaConsegnare = async ({ limite } = {}) => {
     // E una fattura confermata di nuovo perde il segno che una stampa precedente
     // le aveva lasciato: anche quelle chieste dalla scheda di una fattura del
     // vecchio programma, che il Prepara generale non aggiorna.
-    await Consegna.updateMany(
-        { _id: { $in: daStampare.map((consegna) => consegna._id) }, ultimo_errore: FATTURA_IN_BOZZA },
-        { $unset: { ultimo_errore: '' } }
-    );
+    const confermateDiNuovo = daStampare.filter((consegna) => consegna.ultimo_errore === FATTURA_IN_BOZZA);
+    if (confermateDiNuovo.length) {
+        await Consegna.updateMany(
+            { _id: { $in: confermateDiNuovo.map((consegna) => consegna._id) } },
+            { $unset: { ultimo_errore: '' } }
+        );
+    }
 
     if (daStampare.length === 0) {
         const bozze = inBozza.length === 1

@@ -12,10 +12,10 @@ const {
     roundMoney,
     sumMoneyBy,
 } = require('../utils/values');
-const { addDays, dataCompatta, daysBetween, formatItalianDate, getDate, startOfDay, toDate } = require('../utils/dates');
+const { addDays, dataCompatta, daysBetween, formatItalianDate, getDate, nelFuturo, startOfDay, toDate } = require('../utils/dates');
 const { customerLabel } = require('../utils/customer');
 const { conflict, createError, notFound, unprocessable } = require('../utils/errors');
-const { recordId, setOrUnset, uniqueById } = require('../utils/mongo');
+const { recordId, setOrUnset, soloValorizzati, uniqueById } = require('../utils/mongo');
 
 test('numberOrZero: accetta la virgola come separatore decimale', () => {
     assert.equal(numberOrZero('1,5'), 1.5);
@@ -187,4 +187,22 @@ test('setOrUnset: nessun operatore vuoto', () => {
     // Il database rifiuta un $unset o un $set senza campi.
     assert.deepEqual(setOrUnset({ stato: 'inviata' }), { $set: { stato: 'inviata' } });
     assert.deepEqual(setOrUnset({ note: null }), { $unset: { note: '' } });
+});
+
+test('soloValorizzati: in un documento nuovo non si scrivono campi vuoti', () => {
+    assert.deepEqual(soloValorizzati({ a: 1, b: null, c: undefined, d: '', e: false }), { a: 1, d: '', e: false });
+});
+
+test('nelFuturo: il giorno di oggi in Italia non e futuro, il giorno dopo si', () => {
+    // Un incasso o una lettura di oggi sono validi a qualunque ora, anche con il
+    // server in UTC e la mezzanotte gia passata in Italia.
+    const oggiInItalia = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date());
+    const domani = toDate(oggiInItalia);
+    domani.setUTCDate(domani.getUTCDate() + 1);
+
+    assert.equal(nelFuturo(new Date()), false);
+    assert.equal(nelFuturo(toDate(oggiInItalia)), false);
+    assert.equal(nelFuturo(domani), true);
+    // Un anno scritto con una cifra in piu, come arriva da un campo data.
+    assert.equal(nelFuturo(toDate('20266-09-21')), true);
 });

@@ -2,10 +2,14 @@
 //
 // Tre operazioni, in quest'ordine:
 //
-//   1. PIANIFICA  - guarda le fatture confermate e crea le consegne mancanti,
-//                   una per canale, con il recapito ricavato dall'anagrafica;
+//   1. PIANIFICA  - crea le consegne mancanti, una per canale, con il recapito
+//                   ricavato dall'anagrafica, e tiene la coda in pari con il
+//                   piano: chiude quelle non piu previste, riapre quelle che il
+//                   piano aveva chiuso e torna a prevedere (deliveryPlan.js);
 //   2. ELABORA    - percorre la coda e recapita quelle automatiche;
-//   3. REGISTRA   - segna il risultato sulla consegna e la data sulla fattura.
+//   3. REGISTRA   - segna il risultato sulla consegna e, se e arrivata al
+//                   cliente, la data sulla fattura. Una prova lascia la
+//                   consegna in coda.
 //
 // I canali non automatici (posta, sportello) restano in coda: sono l'elenco di
 // cosa stampare, e si chiudono quando una persona dichiara di averlo fatto.
@@ -20,8 +24,9 @@ const {
     testoEmailCortesia,
 } = require('../config/delivery');
 const { AZIENDA } = require('../config/azienda');
+const { FILTRO_EMESSE_DAL_GESTIONALE, isConfirmedInvoice } = require('../config/invoicing');
 const { allegatoPdf, allegatoXml, fatturaDellaConsegna } = require('./documentiConsegna');
-const { FATTURA_IN_BOZZA, aggiornamentoCoda, fatturaConfermata, pianoConsegne } = require('./deliveryPlan');
+const { FATTURA_IN_BOZZA, aggiornamentoCoda, chiusura, pianoConsegne } = require('./deliveryPlan');
 const { inviaEmail, statoTrasporto } = require('./mailer');
 const { badRequest, notFound, unprocessable } = require('../utils/errors');
 const { formatItalianDate } = require('../utils/dates');
@@ -43,10 +48,6 @@ const mittente = () => ({
 // ---------------------------------------------------------------------------
 // Pianificazione
 // ---------------------------------------------------------------------------
-
-// Le fatture emesse da questo gestionale, cioe con una serie
-// (`emessaDalGestionale` in config/invoicing.js, scritto come filtro).
-const EMESSE_DAL_GESTIONALE = { serie: { $type: 'string', $ne: '' } };
 
 // Le fatture che guarda "Prepara".
 //
@@ -70,7 +71,7 @@ const fattureDaGuardare = async (richieste) => {
 
     return Fattura.find({
         $or: [
-            { stato: 'confermata', ...EMESSE_DAL_GESTIONALE },
+            { stato: 'confermata', ...FILTRO_EMESSE_DAL_GESTIONALE },
             { _id: { $in: conConsegneAperte } },
         ],
     })
@@ -172,23 +173,23 @@ const trasportoPer = (consegna) => TRASPORTI[`${consegna.tipo}:${consegna.canale
 // Elaborazione della coda
 // ---------------------------------------------------------------------------
 
-// Una consegna arrivata al cliente. La data che il gestionale precedente teneva
-// sulla fattura continua a essere popolata (`CAMPO_DATA_CONSEGNA`): chi guarda
-// la fattura vede subito quando e uscita, senza aprire l'elenco delle consegne.
-const registraEsito = async ({ consegna, esito, quando }) => {
+// Una consegna arrivata al cliente: recapitata dal gestionale, o evasa a mano da
+// una persona. L'esito di una prova precedente, un errore gia superato, un
+// problema del piano, il motivo di un annullamento: niente di questo descrive
+// piu una consegna arrivata. La data che il gestionale precedente teneva sulla
+// fattura continua a essere popolata (`CAMPO_DATA_CONSEGNA`): chi guarda la
+// fattura vede subito quando e uscita, senza aprire l'elenco delle consegne.
+const chiudiComeInviata = async ({ consegna, quando, campi = {} }) => {
     await Consegna.updateOne({ _id: consegna._id }, {
         ...setOrUnset({
             stato: 'inviata',
             data_invio: quando,
-            destinatario: esito.destinatario || consegna.destinatario,
-            riferimento: esito.riferimento,
-            allegati: esito.allegati || [],
-            // L'esito di una prova precedente, un errore gia superato, un problema
-            // del piano: niente di questo descrive piu una consegna arrivata.
             note: null,
             problema: null,
             ultimo_errore: null,
             ultimo_tentativo: null,
+            chiusa_dal_piano: null,
+            ...campi,
         }),
         $inc: { tentativi: 1 },
     });
@@ -198,6 +199,16 @@ const registraEsito = async ({ consegna, esito, quando }) => {
         { $set: { [CAMPO_DATA_CONSEGNA[consegna.tipo]]: quando } }
     );
 };
+
+const registraEsito = ({ consegna, esito, quando }) => chiudiComeInviata({
+    consegna,
+    quando,
+    campi: {
+        destinatario: esito.destinatario || consegna.destinatario,
+        riferimento: esito.riferimento,
+        allegati: esito.allegati || [],
+    },
+});
 
 // Una prova: senza posta attiva il messaggio non esce, oppure va all'indirizzo
 // di prova invece che al cliente. Il cliente non ha ricevuto niente, quindi la
@@ -256,7 +267,7 @@ const elaboraCoda = async ({ limite, tipo, fatture } = {}) => {
                 throw notFound('Fattura non trovata.');
             }
 
-            if (!fatturaConfermata(fattura)) {
+            if (!isConfirmedInvoice(fattura)) {
                 throw unprocessable(FATTURA_IN_BOZZA);
             }
 
@@ -316,25 +327,7 @@ const segnaConsegnata = async (id, { note } = {}) => {
         throw badRequest('La consegna risulta già evasa.');
     }
 
-    // La nota di prima - l'esito di una prova, il motivo di un annullamento -
-    // descriveva una consegna ancora da fare: da evasa direbbe il falso.
-    const quando = new Date();
-    await Consegna.updateOne({ _id: consegna._id }, {
-        ...setOrUnset({
-            stato: 'inviata',
-            data_invio: quando,
-            note: note || null,
-            problema: null,
-            ultimo_errore: null,
-            ultimo_tentativo: null,
-            chiusa_dal_piano: null,
-        }),
-        $inc: { tentativi: 1 },
-    });
-    await Fattura.updateOne(
-        { _id: consegna.fattura },
-        { $set: { [CAMPO_DATA_CONSEGNA[consegna.tipo]]: quando } }
-    );
+    await chiudiComeInviata({ consegna, quando: new Date(), campi: { note: note || null } });
 
     return Consegna.findById(consegna._id).lean();
 };
@@ -343,10 +336,7 @@ const segnaConsegnata = async (id, { note } = {}) => {
 // da solo, a differenza di cio che aveva chiuso lui.
 const annullaConsegna = async (id, { note } = {}) => {
     const consegna = await caricaConsegna(id);
-    await Consegna.updateOne({ _id: consegna._id }, {
-        $set: { stato: 'annullata', note: note || 'Annullata manualmente.' },
-        $unset: { chiusa_dal_piano: '', problema: '', ultimo_errore: '' },
-    });
+    await Consegna.updateOne({ _id: consegna._id }, chiusura(note || 'Annullata manualmente.'));
 
     return Consegna.findById(consegna._id).lean();
 };

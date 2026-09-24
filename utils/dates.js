@@ -73,7 +73,21 @@ const dataCompatta = (value) => formatItalianDate(value).replace(/\//g, '');
 
 const daysBetween = (from, to) => Math.floor((startOfDay(to) - startOfDay(from)) / MS_PER_DAY);
 
+// Una data oltre il giorno di oggi: per chi la scrive e nel futuro. Un incasso o
+// una lettura non possono esserlo, e di solito e un errore di battitura.
+//
+// Si confrontano giorni di calendario, ed e il calendario italiano: le date del
+// gestionale sono salvate a mezzanotte UTC, il server di produzione lavora in
+// UTC e chi scrive sta in Italia. Misurando sull'ora del server, fra mezzanotte
+// e le due di notte una data di oggi risultava gia domani.
+const OGGI_IN_ITALIA = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' });
+
+const giornoDi = (data) => Date.UTC(data.getUTCFullYear(), data.getUTCMonth(), data.getUTCDate());
+
+const nelFuturo = (data) => giornoDi(data) > Date.parse(`${OGGI_IN_ITALIA.format(new Date())}T00:00:00.000Z`);
+
 module.exports = {
+    nelFuturo,
     addDays,
     DATA_IMPLAUSIBILE,
     dataCompatta,

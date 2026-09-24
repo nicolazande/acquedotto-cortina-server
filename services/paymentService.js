@@ -12,7 +12,7 @@
 const Scadenza = require('../models/Scadenza');
 const { dataPagamento } = require('./deadlineService');
 const { NON_SALDATA } = require('../models/Scadenza');
-const { toDate } = require('../utils/dates');
+const { nelFuturo, toDate } = require('../utils/dates');
 const { badRequest } = require('../utils/errors');
 const { sumMoneyBy } = require('../utils/values');
 
@@ -42,10 +42,7 @@ const dataIncasso = (valore) => {
         throw badRequest('Indicare la data in cui il pagamento è arrivato.');
     }
 
-    const domani = new Date();
-    domani.setHours(24, 0, 0, 0);
-
-    if (data >= domani) {
+    if (nelFuturo(data)) {
         throw badRequest('La data di pagamento non può essere nel futuro.');
     }
 

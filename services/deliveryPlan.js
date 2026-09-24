@@ -18,9 +18,9 @@ const {
     richiedeFatturaElettronica,
 } = require('../config/delivery');
 const { customerLabel } = require('../utils/customer');
-const { emessaDalGestionale, invoiceCode } = require('../config/invoicing');
+const { emessaDalGestionale, invoiceCode, isConfirmedInvoice } = require('../config/invoicing');
 const { dataReale, formatItalianDate } = require('../utils/dates');
-const { setOrUnset } = require('../utils/mongo');
+const { setOrUnset, soloValorizzati } = require('../utils/mongo');
 
 // Controllo volutamente permissivo: serve a intercettare i campi rimasti vuoti
 // o con del testo al posto dell'indirizzo, non a validare le RFC.
@@ -121,12 +121,11 @@ const consegnaElettronica = (cliente) => {
     };
 };
 
-// Una fattura si consegna solo confermata: una bozza puo ancora cambiare. Vale
-// quando entra in coda e di nuovo quando esce, perche nel frattempo la si puo
-// riportare a bozza (services/documentiConsegna.js, e l'elaborazione della coda).
+// Una fattura si consegna solo confermata (`isConfirmedInvoice`): una bozza puo
+// ancora cambiare. Vale quando entra in coda e di nuovo quando esce, perche nel
+// frattempo la si puo riportare a bozza (services/documentiConsegna.js, e
+// l'elaborazione della coda).
 const FATTURA_IN_BOZZA = 'La fattura è una bozza: va confermata prima di consegnarla.';
-
-const fatturaConfermata = (fattura) => fattura?.stato === 'confermata' || fattura?.confermata === true;
 
 // Motivi per cui una fattura non e ancora pronta per essere consegnata.
 // Sono errori sul documento, non sul recapito: valgono per tutti i canali.
@@ -137,7 +136,7 @@ const ostacoliDocumento = ({ cliente, fattura }) => {
         ostacoli.push('La fattura non ha un cliente collegato.');
     }
 
-    if (fattura && !fatturaConfermata(fattura)) {
+    if (fattura && !isConfirmedInvoice(fattura)) {
         ostacoli.push(FATTURA_IN_BOZZA);
     }
 
@@ -182,9 +181,11 @@ const pianoConsegne = ({ cliente, fattura }) => {
 // La coda
 // ---------------------------------------------------------------------------
 
-// I campi di una consegna che vengono dal piano: canale, recapito ed etichette.
-// Tenere qui l'etichetta e il nome del cliente evita di ripopolare due relazioni
-// ogni volta che si guarda la coda.
+// I campi di una consegna che vengono dal piano: canale, recapito, il problema
+// che il piano vede oggi, ed etichette. Tenere qui l'etichetta e il nome del
+// cliente evita di ripopolare due relazioni ogni volta che si guarda la coda.
+// Un campo vuoto vale "da togliere": un problema risolto in anagrafica non deve
+// restare scritto sulla riga.
 const campiDalPiano = (piano, consegna) => ({
     fattura: piano.fattura,
     cliente: piano.cliente,
@@ -194,36 +195,60 @@ const campiDalPiano = (piano, consegna) => ({
     documento: piano.documento,
     intestatario: piano.intestatario,
     automatica: consegna.automatico,
+    problema: consegna.problema || null,
 });
 
-// Una consegna che parte da capo, nuova o riaperta: in coda, con il problema
-// che il piano vede oggi e la nota del suo canale, senza gli errori dei tentativi
-// di prima. Un campo vuoto vale "da togliere", cosi di un annullamento non resta
-// scritto il motivo.
+// Una consegna che parte da capo, nuova o riaperta: in coda, con la nota del suo
+// canale e senza gli errori dei tentativi di prima, ne il motivo di un
+// annullamento.
 const daCapo = (piano, consegna) => ({
     ...campiDalPiano(piano, consegna),
     stato: 'in_coda',
-    problema: consegna.problema || null,
     ultimo_errore: null,
     note: consegna.nota || null,
     chiusa_dal_piano: null,
 });
 
-// Una consegna gia in coda prende il recapito di oggi e il problema che il piano
-// vede oggi: uno risolto in anagrafica si toglie dalla riga. Non perde invece
-// cio che le e successo: l'errore dell'ultimo tentativo resta, con il suo stato,
+// Una consegna gia in coda prende i campi del piano di oggi senza perdere cio
+// che le e successo: l'errore dell'ultimo tentativo resta, con il suo stato,
 // finche un tentativo non riesce o una persona non la rimette in coda, e resta
 // l'esito di una prova se il canale non ha una nota sua. Fa eccezione la bozza:
 // e una condizione, non un guasto, e se il piano prevede la consegna la fattura
 // e confermata e la condizione non c'e piu.
-const aggiornata = (piano, consegna, esistente) => ({
-    ...campiDalPiano(piano, consegna),
-    problema: consegna.problema || null,
-    ...(consegna.nota ? { note: consegna.nota } : {}),
-    ...(esistente.ultimo_errore === FATTURA_IN_BOZZA ? { ultimo_errore: null, stato: 'in_coda' } : {}),
-});
+const aggiornata = (piano, consegna, esistente) => {
+    const campi = campiDalPiano(piano, consegna);
 
-const soloValorizzati = (campi) => Object.fromEntries(Object.entries(campi).filter(([, valore]) => valore !== null));
+    if (consegna.nota) {
+        campi.note = consegna.nota;
+    }
+
+    if (esistente.ultimo_errore === FATTURA_IN_BOZZA) {
+        Object.assign(campi, { ultimo_errore: null, stato: 'in_coda' });
+    }
+
+    return campi;
+};
+
+// Se un aggiornamento cambia davvero la consegna. Senza questo controllo ogni
+// Prepara riscriveva tutte le consegne aperte - 1.341 per una fatturazione - e
+// diceva di averle aggiornate anche quando non era cambiato niente.
+const stessoValore = (a, b) => String(a ?? '') === String(b ?? '');
+
+const cambiaQualcosa = (esistente, { $set = {}, $unset = {} }) => (
+    Object.entries($set).some(([campo, valore]) => !stessoValore(esistente[campo], valore))
+    || Object.keys($unset).some((campo) => esistente[campo] !== undefined && esistente[campo] !== null)
+);
+
+// La chiusura di una consegna, da Prepara o da una persona. Il problema e
+// l'ultimo errore descrivevano una consegna da fare: sulla riga chiusa si legge
+// il motivo. Solo Prepara la segna come chiusa dal piano: e cio che puo riaprire.
+const chiusura = (note, dalPiano = false) => setOrUnset({
+    stato: 'annullata',
+    note,
+    chiusa_dal_piano: dalPiano || null,
+    problema: null,
+    ultimo_errore: null,
+});
 
 // Perche una consegna aperta esce dalla coda, detto sulla riga.
 const motivoDellaChiusura = ({ piano, consegna, dalloStorico }) => {
@@ -265,11 +290,7 @@ const motivoDellaChiusura = ({ piano, consegna, dalloStorico }) => {
 //    via, le copie cartacee che il vecchio programma non segnava. Le sue
 //    consegne aperte si chiudono, tranne quelle chieste apposta dalla scheda.
 const aggiornamentoCoda = ({ fatture, esistenti, suRichiesta = false }) => {
-    const perFattura = new Map();
-    esistenti.forEach((consegna) => {
-        const chiave = String(consegna.fattura);
-        perFattura.set(chiave, [...(perFattura.get(chiave) || []), consegna]);
-    });
+    const perFattura = Map.groupBy(esistenti, (consegna) => String(consegna.fattura));
 
     const esito = { operazioni: [], problemi: [], create: 0, aggiornate: 0, riaperte: 0, annullate: 0, saltate: 0 };
     // Ogni scrittura vale solo se la consegna e ancora nello stato letto: una
@@ -300,8 +321,11 @@ const aggiornamentoCoda = ({ fatture, esistenti, suRichiesta = false }) => {
                 esito.operazioni.push({ insertOne: { document: soloValorizzati({ ...daCapo(piano, consegna), ...richiesta }) } });
                 esito.create += 1;
             } else if (STATI_APERTI.includes(esistente.stato)) {
-                scrivi(esistente, STATI_APERTI, setOrUnset({ ...aggiornata(piano, consegna, esistente), ...richiesta }));
-                esito.aggiornate += 1;
+                const aggiornamento = setOrUnset({ ...aggiornata(piano, consegna, esistente), ...richiesta });
+                if (cambiaQualcosa(esistente, aggiornamento)) {
+                    scrivi(esistente, STATI_APERTI, aggiornamento);
+                    esito.aggiornate += 1;
+                }
             } else if (esistente.stato === 'annullata' && (suRichiesta || esistente.chiusa_dal_piano)) {
                 scrivi(esistente, ['annullata'], setOrUnset({ ...daCapo(piano, consegna), ...richiesta }));
                 esito.riaperte += 1;
@@ -315,16 +339,7 @@ const aggiornamentoCoda = ({ fatture, esistenti, suRichiesta = false }) => {
             .filter((consegna) => !previste.some((voce) => voce.tipo === consegna.tipo))
             .filter((consegna) => !(dalloStorico && consegna.su_richiesta))
             .forEach((consegna) => {
-                // Il problema e l'ultimo errore descrivevano una consegna da fare:
-                // sulla riga chiusa deve leggersi il motivo della chiusura.
-                scrivi(consegna, STATI_APERTI, {
-                    $set: {
-                        stato: 'annullata',
-                        note: motivoDellaChiusura({ piano, consegna, dalloStorico }),
-                        chiusa_dal_piano: true,
-                    },
-                    $unset: { problema: '', ultimo_errore: '' },
-                });
+                scrivi(consegna, STATI_APERTI, chiusura(motivoDellaChiusura({ piano, consegna, dalloStorico }), true));
                 esito.annullate += 1;
             });
     });
@@ -335,7 +350,7 @@ const aggiornamentoCoda = ({ fatture, esistenti, suRichiesta = false }) => {
 module.exports = {
     FATTURA_IN_BOZZA,
     aggiornamentoCoda,
-    fatturaConfermata,
+    chiusura,
     indirizzoPostale,
     pianoConsegne,
 };

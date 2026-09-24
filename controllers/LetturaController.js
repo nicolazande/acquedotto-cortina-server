@@ -14,6 +14,8 @@ const {
     updateRecord,
 } = require('./utils/controllerActions');
 const { parseOptionalBoolean } = require('./utils/requestOptions');
+const { nelFuturo, toDate } = require('../utils/dates');
+const { badRequest } = require('../utils/errors');
 const { escapeRegex } = require('../utils/values');
 const { calculateReadingById } = require('../services/calcoloLettura');
 const { letturaViews } = require('../config/listViews');
@@ -52,6 +54,20 @@ const letturePerNomeCliente = async (testo) => {
     return contatori.length > 0 ? { contatore: { $in: contatori.map((c) => c._id) } } : null;
 };
 
+// Una lettura porta la data in cui e stata fatta. Una data nel futuro e un
+// errore di battitura - un anno scritto 20266 - e scritta a mano dal letturista
+// capita: salvata, diventerebbe la lettura piu recente del contatore, e la
+// fatturazione la userebbe come lettura attuale.
+const controllaData = (body) => {
+    const data = toDate(body?.data_lettura);
+
+    if (data && nelFuturo(data)) {
+        throw badRequest('La data della lettura non può essere nel futuro.');
+    }
+
+    return body;
+};
+
 const getCalcolo = async (req, res) => {
     try {
         const calculation = await calculateReadingById(req.params.id, {
@@ -66,7 +82,7 @@ const getCalcolo = async (req, res) => {
 };
 
 module.exports = {
-    createLettura: createRecord(Lettura, { name: 'Lettura' }),
+    createLettura: createRecord(Lettura, { name: 'Lettura', mapBody: controllaData }),
     getLetture: (req, res) => sendPaginated(Lettura, req, res, {
         views: letturaViews,
         defaultSort: 'data_lettura',
@@ -76,7 +92,7 @@ module.exports = {
     }),
     getLettura: getRecord(Lettura, { name: 'Lettura', populate: populatedContatore }),
     getCalcolo,
-    updateLettura: updateRecord(Lettura, { name: 'Lettura' }),
+    updateLettura: updateRecord(Lettura, { name: 'Lettura', mapBody: controllaData }),
     deleteLettura: deleteRecord(Lettura, { name: 'Lettura' }),
     associateContatore: associateRecords({
         field: 'contatore',

@@ -61,7 +61,7 @@ const consegnaSchema = new Schema(
         // dal Prepara generale. Conta per le fatture del vecchio programma: la
         // coda generale non le prepara, e non deve togliere quelle che una
         // persona ha chiesto apposta.
-        su_richiesta: { type: Boolean, default: false },
+        su_richiesta: { type: Boolean },
         // Annullata da Prepara perche il piano non la prevedeva piu - fattura
         // riportata a bozza, cliente senza recapito, gia consegnata - e non da una
         // persona. Se il piano torna a prevederla, Prepara la rimette in coda;

@@ -1,12 +1,8 @@
 const Fattura = require('../models/Fattura');
 const Servizio = require('../models/Servizio');
+const { isConfirmedInvoice } = require('../config/invoicing');
 const { conflict, notFound } = require('../utils/errors');
 const { parseBoolean } = require('../utils/values');
-
-const isConfirmedInvoice = (fattura) => (
-    fattura?.confermata === true
-    || String(fattura?.stato || '').toLowerCase() === 'confermata'
-);
 
 // Una fattura confermata resta protetta, ma il blocco puo essere superato con
 // una conferma esplicita di chi opera. Non e un permesso silenzioso: chi passa
