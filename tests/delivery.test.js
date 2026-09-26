@@ -3,13 +3,22 @@ const assert = require('node:assert/strict');
 
 const {
     CODICE_DESTINATARIO_ASSENTE,
+    EVASE_IN_BLOCCO,
+    IN_UFFICIO,
     MODALITA_CONSEGNA,
+    STATI_APERTI,
     canaleFatturaElettronica,
     codiceDestinatarioValido,
     modalitaConsegna,
     normalizzaModalita,
 } = require('../config/delivery');
-const { FATTURA_IN_BOZZA, aggiornamentoCoda, indirizzoPostale, pianoConsegne } = require('../services/deliveryPlan');
+const {
+    FATTURA_IN_BOZZA,
+    aggiornamentoCoda,
+    chiudibiliInBlocco,
+    indirizzoPostale,
+    pianoConsegne,
+} = require('../services/deliveryPlan');
 
 const cliente = (campi = {}) => ({
     _id: 'cliente-1',
@@ -264,6 +273,67 @@ test('in coda una fattura per l estero dice subito perche non uscira', () => {
     assert.match(consegnaDi(piano, 'elettronica').problema, /cliente estero \(D\)/);
 });
 
+// --- il lavoro d'ufficio ---------------------------------------------------
+
+test("il lavoro d'ufficio guarda solo le consegne ancora da fare", () => {
+    Object.values(IN_UFFICIO).forEach((filtro) => assert.deepEqual(filtro.stato, { $in: STATI_APERTI }));
+});
+
+test('una copia gia stampata resta da stampare finche nessuno la segna evasa', () => {
+    // La stampa non sposta niente: se la stampante si inceppa, o il PDF si
+    // chiude per sbaglio, premendo di nuovo escono le stesse.
+    assert.equal('stampata_il' in IN_UFFICIO.daStampare, false);
+});
+
+test('in blocco si segna evaso solo cio che e gia uscito dal gestionale, e che puo esserlo', () => {
+    // "Tutte quelle da stampare" chiuderebbe buste mai stampate; e una riga con
+    // un problema o un errore - un indirizzo che manca - non e partita.
+    assert.deepEqual(EVASE_IN_BLOCCO, { stampate: 'stampata_il', scaricate: 'scaricata_il' });
+    assert.deepEqual(IN_UFFICIO.stampate, {
+        ...IN_UFFICIO.daStampare,
+        stampata_il: { $exists: true },
+        problema: null,
+        ultimo_errore: null,
+    });
+    assert.deepEqual(IN_UFFICIO.scaricate, {
+        ...IN_UFFICIO.daTrasmettere,
+        scaricata_il: { $exists: true },
+        problema: null,
+        ultimo_errore: null,
+    });
+});
+
+test('da trasmettere a mano sono le fatture elettroniche che non partono da sole', () => {
+    assert.deepEqual(IN_UFFICIO.daTrasmettere, {
+        stato: { $in: STATI_APERTI },
+        tipo: 'elettronica',
+        automatica: { $ne: true },
+    });
+});
+
+test('segnate evase in blocco, si chiudono solo quelle con la fattura confermata e uguale a quando e uscita', () => {
+    const stampataIl = new Date('2026-11-05T09:00:00Z');
+    const uscita = (id, fattura) => ({ _id: id, fattura, stampata_il: stampataIl });
+    const fatture = new Map([
+        ['f-uguale', { stato: 'confermata', updatedAt: new Date('2026-11-04T18:00:00Z') }],
+        ['f-importata', { stato: 'confermata' }],
+        ['f-corretta', { stato: 'confermata', updatedAt: new Date('2026-11-05T10:30:00Z') }],
+        ['f-bozza', { stato: 'bozza', confermata: false, updatedAt: new Date('2026-11-05T10:00:00Z') }],
+    ]);
+
+    const esito = chiudibiliInBlocco({
+        consegne: [uscita('c1', 'f-uguale'), uscita('c2', 'f-importata'), uscita('c3', 'f-corretta'), uscita('c4', 'f-bozza')],
+        fatture,
+        segno: 'stampata_il',
+    });
+
+    assert.deepEqual(esito.chiudibili.map((consegna) => consegna._id), ['c1', 'c2']);
+    // Corretta con lo sblocco dopo la stampa: la copia uscita non e piu la sua.
+    assert.deepEqual(esito.cambiate.map((consegna) => consegna._id), ['c3']);
+    // Una bozza non si consegna, anche se nessuno ha ancora ristampato.
+    assert.deepEqual(esito.inBozza.map((consegna) => consegna._id), ['c4']);
+});
+
 // --- la coda: cosa fa "Prepara" -------------------------------------------
 
 // Una fattura con il suo cliente, come arriva dal database con populate.
@@ -495,6 +565,71 @@ test('ogni scrittura vale solo se la consegna e ancora nello stato letto', () =>
 
     assert.deepEqual(operazioneDi(esito, 'consegna-1').filter.stato, { $in: ['in_coda', 'errore'] });
     assert.deepEqual(operazioneDi(esito, 'consegna-2').filter.stato, { $in: ['annullata'] });
+});
+
+// Una copia per posta gia in coda, identica a cio che il piano prevede oggi, e
+// gia stampata.
+const stampata = () => {
+    const piano = pianoConsegne({ cliente: cliente(), fattura: fattura() });
+    return inCoda({
+        cliente: 'cliente-1',
+        destinatario: indirizzoPostale(cliente()),
+        documento: piano.documento,
+        intestatario: piano.intestatario,
+        automatica: false,
+        stampata_il: new Date('2026-11-05T09:00:00Z'),
+    });
+};
+
+test('Prepara lascia il segno della stampa a una copia che non cambia', () => {
+    const esito = aggiornamentoCoda({ fatture: [daGuardare()], esistenti: [stampata()] });
+
+    assert.equal(esito.operazioni.length, 0);
+});
+
+test('un recapito cambiato dopo la stampa toglie il segno: la copia va ristampata', () => {
+    // La busta stampata porta l'indirizzo vecchio: segnarla evasa con le altre
+    // manderebbe la fattura dove il cliente non sta piu.
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare({}, { indirizzo_residenza: 'Via Nuova' })],
+        esistenti: [stampata()],
+    });
+
+    const aggiornamento = aggiornamentoDi(esito, 'consegna-1');
+    assert.match(aggiornamento.$set.destinatario, /^Via Nuova 3/);
+    assert.equal(aggiornamento.$unset.stampata_il, '');
+});
+
+test("un intestatario cambiato dopo la stampa toglie il segno: il nome sulla copia e quello vecchio", () => {
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare({}, { cognome: 'Rossi Bianchi' })],
+        esistenti: [stampata()],
+    });
+
+    const aggiornamento = aggiornamentoDi(esito, 'consegna-1');
+    assert.equal(aggiornamento.$set.intestatario, 'Rossi Bianchi Ada');
+    assert.equal(aggiornamento.$unset.stampata_il, '');
+});
+
+test('una consegna riaperta da Prepara va stampata o scaricata di nuovo', () => {
+    // Era stata chiusa - la fattura riportata a bozza - e il documento di prima
+    // non vale piu.
+    const esito = aggiornamentoCoda({
+        fatture: [daGuardare()],
+        esistenti: [{ ...stampata(), stato: 'annullata', chiusa_dal_piano: true, scaricata_il: new Date() }],
+    });
+
+    const aggiornamento = aggiornamentoDi(esito, 'consegna-1');
+    assert.equal(esito.riaperte, 1);
+    assert.equal(aggiornamento.$unset.stampata_il, '');
+    assert.equal(aggiornamento.$unset.scaricata_il, '');
+});
+
+test('una consegna nuova nasce senza segni di stampa o di scarico', () => {
+    const [nuova] = inserite(aggiornamentoCoda({ fatture: [daGuardare()], esistenti: [] }));
+
+    assert.equal('stampata_il' in nuova, false);
+    assert.equal('scaricata_il' in nuova, false);
 });
 
 test('la coda generale non riapre una consegna annullata', () => {

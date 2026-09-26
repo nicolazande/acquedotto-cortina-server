@@ -41,10 +41,10 @@ const corsOptions = {
     // Di un'altra origine il browser lascia leggere solo poche intestazioni, e
     // queste non sono fra quelle: senza dichiararle, il nome che il server da a
     // una fattura o a un elenco non arriva a chi lo scarica, e il file finisce
-    // sul disco col nome che si inventa il browser. `X-Consegne-Rimaste` dice
-    // quante fatture restano fuori dalla stampa, e la pagina delle consegne la
-    // legge per sapere se ripetere.
-    exposedHeaders: ['Content-Disposition', 'X-Consegne-Rimaste', 'X-Consegne-Saltate'],
+    // sul disco col nome che si inventa il browser. Le `X-Consegne-*` dicono quante
+    // fatture restano fuori da una stampa o da un archivio, e perche: la pagina
+    // delle consegne le legge per dirlo a chi ha premuto.
+    exposedHeaders: ['Content-Disposition', 'X-Consegne-Rimaste', 'X-Consegne-Saltate', 'X-Consegne-Bloccate'],
     credentials: !allowAnyOrigin,
 };
 

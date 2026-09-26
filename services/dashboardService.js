@@ -9,6 +9,7 @@ const { delayAggregation } = require('./deadlineService');
 const { saldataExpression } = require('../models/Scadenza');
 const { fromCents } = require('../utils/money');
 const { tariffeInScadenza } = require('./tariffService');
+const { IN_UFFICIO } = require('../config/delivery');
 
 // Le letture non ancora fatturate: il flag puo mancare del tutto sui record importati.
 const LETTURE_DA_FATTURARE = { $or: [{ fatturata: false }, { fatturata: { $exists: false } }] };
@@ -83,6 +84,21 @@ const importi = (riga) => ({
     totale: fromCents(riga.centesimi),
 });
 
+// Le fatture ancora da recapitare: quelle che partono da sole, quelle che
+// aspettano una persona - da stampare, da trasmettere - e quelle ferme su un
+// errore. Il lavoro d'ufficio si conta con gli stessi filtri con cui lo si fa:
+// prima le fatture elettroniche finivano fra quelle da stampare.
+const contaConsegne = async () => {
+    const [automatiche, daStampare, daTrasmettere, errori] = await Promise.all([
+        Consegna.countDocuments({ stato: 'in_coda', automatica: true }),
+        Consegna.countDocuments(IN_UFFICIO.daStampare),
+        Consegna.countDocuments(IN_UFFICIO.daTrasmettere),
+        Consegna.countDocuments({ stato: 'errore' }),
+    ]);
+
+    return { automatiche, daStampare, daTrasmettere, errori };
+};
+
 const getDashboard = async () => {
     const [
         daFatturare,
@@ -147,12 +163,7 @@ const getDashboard = async () => {
                 },
             },
         ]),
-        // Le fatture ancora da recapitare, divise fra quelle che partono da sole
-        // e quelle che aspettano una persona (stampa, sportello).
-        Consegna.aggregate([
-            { $match: { stato: { $in: ['in_coda', 'errore'] } } },
-            { $group: { _id: { stato: '$stato', automatica: '$automatica' }, quante: { $sum: 1 } } },
-        ]),
+        contaConsegne(),
         // Le tariffe scadono, e con loro si ferma la fatturazione: e la cosa
         // che conviene vedere con mesi di anticipo, non il giorno stesso.
         tariffeInScadenza(),
@@ -163,10 +174,6 @@ const getDashboard = async () => {
             .select('action summary actorUsername createdAt entityType entityId')
             .lean(),
     ]);
-
-    const consegneCon = (filtro) => consegne
-        .filter(filtro)
-        .reduce((totale, riga) => totale + riga.quante, 0);
 
     const rigaAperte = primaRiga(aperte);
     const rigaScadute = primaRiga(scadute);
@@ -194,11 +201,7 @@ const getDashboard = async () => {
                 listino, categoria, contatori, scadeIl, scaduto,
             })),
         },
-        consegne: {
-            automatiche: consegneCon((riga) => riga._id.stato === 'in_coda' && riga._id.automatica === true),
-            daStampare: consegneCon((riga) => riga._id.stato === 'in_coda' && riga._id.automatica !== true),
-            errori: consegneCon((riga) => riga._id.stato === 'errore'),
-        },
+        consegne,
         attivita,
     };
 };

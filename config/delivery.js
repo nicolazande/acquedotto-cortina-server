@@ -200,6 +200,32 @@ const CAMPO_DATA_CONSEGNA = {
 // mai riscritta da una nuova pianificazione: sarebbe riscrivere la storia.
 const STATI_APERTI = ['in_coda', 'errore'];
 
+// I canali che passano da una persona: la busta da imbucare, la copia da tenere
+// allo sportello. Sono quelli che escono dalla stampa.
+const CANALI_DA_STAMPARE = ['postale', 'sportello'];
+
+// Il lavoro d'ufficio sulle consegne ancora aperte. Stampare e scaricare l'XML
+// non chiudono niente - si stampa, si controlla, e solo dopo una persona le
+// dichiara evase - ma lasciano un segno sulla consegna: cosi quelle gia stampate
+// o scaricate si segnano evase tutte insieme, invece che una per una. Una con un
+// problema o un errore scritto sulla riga non conta come uscita: un indirizzo che
+// manca, una fattura tornata bozza dicono che il documento non e partito.
+const DA_STAMPARE = { stato: { $in: STATI_APERTI }, canale: { $in: CANALI_DA_STAMPARE } };
+const DA_TRASMETTERE = { stato: { $in: STATI_APERTI }, tipo: 'elettronica', automatica: { $ne: true } };
+const SENZA_OSTACOLI = { problema: null, ultimo_errore: null };
+
+const IN_UFFICIO = {
+    daStampare: DA_STAMPARE,
+    stampate: { ...DA_STAMPARE, stampata_il: { $exists: true }, ...SENZA_OSTACOLI },
+    daTrasmettere: DA_TRASMETTERE,
+    scaricate: { ...DA_TRASMETTERE, scaricata_il: { $exists: true }, ...SENZA_OSTACOLI },
+};
+
+// Quelle che una persona puo segnare evase in blocco, con il campo che dice
+// quando sono uscite: solo cio che e gia uscito dal gestionale, stampato o
+// scaricato. "Tutte quelle da stampare" chiuderebbe buste mai stampate.
+const EVASE_IN_BLOCCO = { stampate: 'stampata_il', scaricate: 'scaricata_il' };
+
 // Chi trasmette allo SdI.
 //
 // `intermediario` significa che il gestionale prepara il file e lo mette in
@@ -233,6 +259,8 @@ module.exports = {
     CAMPO_DATA_CONSEGNA,
     CANALE_TRASMISSIONE_SDI,
     CODICE_DESTINATARIO_ASSENTE,
+    EVASE_IN_BLOCCO,
+    IN_UFFICIO,
     MODALITA_CONSEGNA,
     MODALITA_PREDEFINITA,
     STATI_APERTI,

@@ -95,16 +95,24 @@ POST   /api/consegne/pianifica                              pianifica
 POST   /api/consegne/elabora                                elabora
 POST   /api/consegne/stampa                                 stampa
 POST   /api/consegne/xml                                    scaricaXml
+POST   /api/consegne/evase                                  segnaEvase
 POST   /api/consegne/prova-trasporto                        provaTrasporto
+GET    /api/consegne/:id/xml                                scaricaXmlSingolo
 POST   /api/consegne/:id/evasa                              segnaConsegnata
 POST   /api/consegne/:id/coda                               rimettiInCoda
 POST   /api/consegne/:id/annulla                            annulla
 ```
 
-`stampa` restituisce un solo PDF con tutte le fatture da consegnare a mano, una per
-pagina, e `X-Consegne-Rimaste` dice quante restano oltre il lotto. `xml` restituisce un
-archivio zip con un file per fattura elettronica da trasmettere. Nessuna delle due segna
-le consegne come evase: si possono ripetere.
+`stampa` restituisce un solo PDF con le fatture da consegnare a mano, una per pagina, a
+blocchi di duecento: finche non vengono segnate evase ripete lo stesso blocco;
+`X-Consegne-Rimaste` dice quante aspettano dopo, `X-Consegne-Bloccate` quante restano
+fuori per un problema scritto sulla riga. `xml` restituisce un archivio zip con un
+file per fattura elettronica da trasmettere, fino a mille; `X-Consegne-Saltate` dice quante
+sono rimaste fuori perche non si possono emettere, `X-Consegne-Rimaste` quante non ci
+stavano. Nessuna delle due chiude le consegne: lasciano il segno `stampata_il` o
+`scaricata_il`, e `evase` con `{ quali: 'stampate' | 'scaricate' }` le segna evase tutte
+insieme. Risponde `{ quali, evase, daRifare }`: `daRifare` sono quelle rimaste aperte
+perche la fattura e tornata bozza o e cambiata dopo la stampa o lo scarico.
 
 ### /api/contatori
 ```text
@@ -302,13 +310,16 @@ in [Come esce una fattura](consegne.md).
 
 `elabora` percorre la coda e recapita le consegne **automatiche** (email e PEC);
 i canali manuali restano in elenco finche qualcuno non li chiude con
-`POST /api/consegne/:id/evasa`. Una fattura che nel frattempo e tornata bozza non
-esce: la consegna va in errore con il motivo.
+`POST /api/consegne/:id/evasa`, o tutti insieme quelli gia stampati o scaricati con
+`POST /api/consegne/evase`. Una evasa per sbaglio torna da fare con
+`POST /api/consegne/:id/coda`; una partita dal gestionale no. Una fattura che nel
+frattempo e tornata bozza non esce: la consegna va in errore con il motivo.
 
 Senza un server di posta configurato l'elaborazione non fallisce: e una
 **prova**. Non spedisce nulla, non data la fattura, e lascia la consegna in coda
 con l'esito scritto sulla riga (`simulate` nei conteggi).
-`GET /api/consegne/riepilogo` riporta lo stato del trasporto in `trasporto`.
+`GET /api/consegne/riepilogo` riporta lo stato del trasporto in `trasporto`, e il lavoro
+d'ufficio in `daStampare`, `stampate`, `daTrasmettere` e `scaricate`.
 
 Viste disponibili con `?vista=`: `in-coda`, `da-stampare`, `automatiche`,
 `errori`, `inviate`, `elettroniche`.

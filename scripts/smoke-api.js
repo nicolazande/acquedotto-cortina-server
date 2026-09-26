@@ -686,9 +686,13 @@ const testInvoiceDelivery = async () => {
         // Serve una consegna cartacea in coda, e va creata qui: su un database
         // vuoto non ce n'e nessuna, e la prova passava solo perche l'archivio
         // reale ne aveva gia centinaia.
+        // Con l'indirizzo: una copia senza non si puo imbucare, e la sua riga non
+        // conta fra quelle da segnare evase.
         const clienteCarta = await createTrackedRecord(createdRecords, 'clienti', {
             nome: 'Smoke', cognome: 'Posta', ragione_sociale: 'Smoke Posta',
             stampa_cortesia: 'postale',
+            indirizzo_residenza: 'Via Smoke', numero_residenza: '2', cap_residenza: '32043',
+            localita_residenza: "Cortina d'Ampezzo",
         });
         const fatturaCarta = await createRecord('fatture', {
             cliente: clienteCarta._id, data_fattura: OGGI, tipo_documento: 'Fattura',
@@ -710,20 +714,42 @@ const testInvoiceDelivery = async () => {
         const daStampare = await request('/consegne/riepilogo');
         assert(Number(daStampare.body.daStampare || 0) > 0, 'the paper delivery should be waiting to be printed');
 
-        const stampa = await request('/consegne/stampa', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ limite: 5 }),
-        });
-        assert(stampa.contentType.includes('application/pdf'), 'the bulk print should return a PDF');
-        assert(Buffer.from(stampa.body).subarray(0, 4).toString() === '%PDF', 'the bulk print body is not a PDF');
+        // La stampa lascia il segno sulle consegne che stampa, e segnarle evase in
+        // blocco le chiude tutte: si prova solo se in coda c'e soltanto la copia di
+        // questa prova, per non toccare quelle di qualcuno.
+        const cartaceaDi = async () => (await request(`/fatture/${fatturaCarta._id}/consegne`)).body.registrate
+            .find((voce) => voce.tipo === 'cortesia');
+        if (Number(daStampare.body.daStampare) === 1) {
+            const stampa = await request('/consegne/stampa', json('POST', { limite: 5 }));
+            assert(stampa.contentType.includes('application/pdf'), 'the bulk print should return a PDF');
+            assert(Buffer.from(stampa.body).subarray(0, 4).toString() === '%PDF', 'the bulk print body is not a PDF');
 
-        // Stampare non segna niente come evaso: il PDF si puo rifare.
-        const dopoStampa = await request('/consegne/riepilogo');
-        assert(
-            Number(dopoStampa.body.daStampare || 0) === Number(daStampare.body.daStampare || 0),
-            'printing must not mark deliveries as done'
-        );
+            // Stampare non segna niente come evaso: il PDF si puo rifare. Lascia
+            // solo il segno su quella stampata.
+            const dopoStampa = await request('/consegne/riepilogo');
+            assert(Number(dopoStampa.body.daStampare) === 1, 'printing must not mark deliveries as done');
+            assert(Number(dopoStampa.body.stampate) === 1, `only the smoke copy should carry the print mark, got ${dopoStampa.body.stampate}`);
+            assert((await cartaceaDi()).stampata_il, 'the printed copy should carry the print mark');
+
+            const evase = await request('/consegne/evase', json('POST', { quali: 'stampate' }));
+            assert(evase.body.evase === 1, `only the printed copy should be closed, got ${evase.body.evase}`);
+            const chiusa = await cartaceaDi();
+            assert(chiusa.stato === 'inviata' && chiusa.evasa_a_mano === true, 'the printed copy should be marked done by hand');
+            assert(
+                (await request(`/fatture/${fatturaCarta._id}`)).body.data_invio_fattura === chiusa.data_invio,
+                'closing the copy should date the invoice'
+            );
+
+            // Evasa per sbaglio, torna da fare: da stampare di nuovo, e la fattura
+            // perde la data che questa consegna le aveva dato.
+            await request(`/consegne/${chiusa._id}/coda`, json('POST'));
+            const riaperta = await cartaceaDi();
+            assert(riaperta.stato === 'in_coda', 'a copy marked done by mistake should go back to be done');
+            assert(!riaperta.stampata_il && !riaperta.data_invio && !riaperta.evasa_a_mano, 'the copy should be printed again');
+            assert(!(await request(`/fatture/${fatturaCarta._id}`)).body.data_invio_fattura, 'the invoice date should go too');
+        } else {
+            console.log(`  (stampa ed evase in blocco non provate: ${daStampare.body.daStampare - 1} altre copie da stampare in coda)`);
+        }
 
         // Confermata, quindi va sbloccata per cancellarla: la pulizia generica
         // non lo fa, ed e giusto cosi - lo sblocco resta un gesto deliberato.
@@ -1224,15 +1250,19 @@ const testArchivioConClienteEstero = async () => {
         // Lo scarico dell'archivio prende tutte le fatture elettroniche in coda,
         // e a ognuna da un progressivo nuovo: si prova solo se in coda ci sono
         // soltanto le due di questa prova, per non toccare quelle di qualcuno.
-        const inCoda = Number((await request('/consegne/riepilogo')).body.perTipo?.elettronica || 0);
+        const inCoda = Number((await request('/consegne/riepilogo')).body.daTrasmettere || 0);
         if (inCoda === 2) {
             // Un cliente estero in coda non deve fermare l'archivio degli altri.
             const archivio = await request('/consegne/xml', json('POST'));
             const saltate = Number(archivio.response.headers.get('x-consegne-saltate'));
             assert(saltate === 1, `the archive should leave out only the foreign invoice, got ${saltate}`);
 
-            // E il documento rifiutato non consuma un progressivo di invio.
-            assert(!(await elettronicaDi(fatture[1])).progressivo, 'a refused invoice must not burn a transmission number');
+            // E il documento rifiutato non consuma un progressivo di invio, e non
+            // risulta scaricato: non si segna evaso con gli altri.
+            const rifiutato = await elettronicaDi(fatture[1]);
+            assert(!rifiutato.progressivo, 'a refused invoice must not burn a transmission number');
+            assert(!rifiutato.scaricata_il, 'a refused invoice must not count as downloaded');
+            assert((await elettronicaDi(fatture[0])).scaricata_il, 'the downloaded invoice should carry the mark');
         } else {
             console.log(`  (archivio non provato: ${inCoda - 2} altre fatture elettroniche in coda)`);
         }
@@ -1364,8 +1394,8 @@ const testBurnedNumberNotReused = async () => {
 
 // Tornare indietro da una fattura elettronica, come lo si spiega a chi la usa:
 // l'XML riscaricato prende un nome nuovo; una consegna annullata torna in coda,
-// una evasa no; la fattura si riapre solo confermando; cancellata dopo essere
-// uscita, il suo numero non torna libero.
+// e anche una evasa per sbaglio; la fattura si riapre solo confermando;
+// cancellata dopo essere uscita, il suo numero non torna libero.
 const testDeliveryRollback = async () => {
     if (skipMutation) {
         console.log('skipped');
@@ -1438,7 +1468,7 @@ const testDeliveryRollback = async () => {
         createdRecords.push({ resource: 'fatture', id: fattura._id });
         await request(`/fatture/${fattura._id}`, json('PUT', { confermata: true }));
 
-        const primaInCoda = Number((await request('/consegne/riepilogo')).body.perTipo?.elettronica || 0);
+        const primaInCoda = Number((await request('/consegne/riepilogo')).body.daTrasmettere || 0);
         await request('/consegne/pianifica', json('POST', { fatture: [fattura._id] }));
         const consegna = async () => (await request(`/fatture/${fattura._id}/consegne`)).body.registrate
             .find((voce) => voce.tipo === 'elettronica');
@@ -1476,10 +1506,29 @@ const testDeliveryRollback = async () => {
         assert((await consegna()).stato === 'in_coda', 'a cancelled delivery should go back to the queue');
 
         await request(`/consegne/${elettronica._id}/evasa`, json('POST', { note: 'smoke' }));
-        assert((await consegna()).stato === 'inviata', 'the delivery should be marked as done');
+        const evasa = await consegna();
+        assert(evasa.stato === 'inviata' && evasa.evasa_a_mano === true, 'the delivery should be marked as done by hand');
         assert(
-            await rifiutata(request(`/consegne/${elettronica._id}/coda`, json('POST')), 400),
-            'a delivery already done must not go back to the queue'
+            (await request(`/fatture/${fattura._id}`)).body.data_fattura_elettronica === evasa.data_invio,
+            'marking the delivery done should date the invoice'
+        );
+        assert(
+            await rifiutata(request(`/consegne/${elettronica._id}/annulla`, json('POST')), 400),
+            'a delivery already done must not be cancelled'
+        );
+
+        // Evasa per sbaglio: torna fra quelle da fare, e la fattura perde la data.
+        await request(`/consegne/${elettronica._id}/coda`, json('POST'));
+        const daRifare = await consegna();
+        assert(daRifare.stato === 'in_coda', 'a delivery marked done by mistake should go back to the queue');
+        assert(!daRifare.data_invio && !daRifare.evasa_a_mano && !daRifare.scaricata_il, 'the delivery should be done again');
+        assert(!(await request(`/fatture/${fattura._id}`)).body.data_fattura_elettronica, 'the invoice date should go too');
+
+        // In blocco si chiude solo cio che e gia uscito: la richiesta di chiudere
+        // tutte quelle da stampare si rifiuta prima di toccare qualcosa.
+        assert(
+            await rifiutata(request('/consegne/evase', json('POST', { quali: 'daStampare' })), 400),
+            'only printed or downloaded deliveries can be closed in bulk'
         );
 
         assert(

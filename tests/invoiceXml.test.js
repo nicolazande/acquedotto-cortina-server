@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { buildInvoiceXml, progressivoInvio } = require('../services/invoiceXml');
+const { buildInvoiceXml, nomeFileXml, progressivoInvio } = require('../services/invoiceXml');
 const { siglaProvincia } = require('../utils/province');
 const { naturaPerIva, tipoDocumentoXml } = require('../config/invoicing');
 
@@ -43,6 +43,14 @@ test('il nome del file segue la convenzione IT<partitaIVA>_<progressivo>', () =>
     const { filename } = genera();
 
     assert.match(filename, /^IT\d{11}_\d+\.xml$/);
+});
+
+test('il file trasmesso prende il nome dal progressivo riservato, non dalla fattura', () => {
+    // Il contenuto non cambia: il documento si costruisce una volta sola e si
+    // nomina dopo aver preso il progressivo.
+    assert.match(nomeFileXml(fattura, '0000A'), /^IT\d{11}_0000A\.xml$/);
+    assert.notEqual(nomeFileXml(fattura, '0000A'), nomeFileXml(fattura, '0000B'));
+    assert.equal(nomeFileXml(fattura), genera().filename);
 });
 
 test('la provincia viene convertita in sigla', () => {

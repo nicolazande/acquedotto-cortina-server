@@ -11,6 +11,7 @@ const {
     riepilogo,
     rimettiInCoda,
     segnaConsegnata,
+    segnaEvase,
 } = require('../services/deliveryService');
 const { stampaDaConsegnare, xmlDaTrasmettere, xmlDellaConsegna } = require('../services/documentiConsegna');
 const { consegnaViews } = require('../config/listViews');
@@ -97,22 +98,44 @@ const azione = (esegui, action, descrizione) => async (req, res) => {
     }
 };
 
-// Un unico PDF con le fatture da imbustare. Non cambia lo stato delle
-// consegne: si stampa, si controlla, e solo dopo si dichiarano evase.
+// Tutte insieme le consegne gia stampate, o gia scaricate: cosa si e chiuso, e
+// quante, resta scritto come per quelle evase una per una.
+const CHE_COSA = { stampate: 'già stampate', scaricate: 'con l’XML già scaricato' };
+
+const segnaEvaseInBlocco = async (req, res) => {
+    try {
+        const esito = await segnaEvase({ quali: req.body.quali });
+        await registra(
+            req,
+            null,
+            'consegna.evase',
+            `Segnate evase ${esito.evase} consegne ${CHE_COSA[esito.quali]}, ${esito.daRifare} da rifare`,
+            esito
+        );
+        res.status(200).json(esito);
+    } catch (error) {
+        sendServiceError(res, error, 'Error closing consegne', error.status || 400);
+    }
+};
+
+// Un unico PDF con le fatture da imbustare. Non chiude nessuna consegna: si
+// stampa, si controlla, e solo dopo si dichiarano evase.
 const stampa = async (req, res) => {
     try {
-        const { buffer, filename, stampate, rimaste } = await stampaDaConsegnare({ limite: req.body.limite });
+        const { buffer, filename, stampate, rimaste, bloccate } = await stampaDaConsegnare({ limite: req.body.limite });
 
         await registra(req, null, 'consegna.stampata', `Stampate ${stampate} fatture da consegnare`, {
-            stampate, rimaste,
+            stampate, rimaste, bloccate,
         });
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
         res.setHeader('Content-Length', buffer.length);
-        // L'intestazione dice quante ne restano fuori: il PDF da solo non
-        // potrebbe raccontarlo, e chi stampa deve saperlo.
+        // Le intestazioni dicono quante aspettano il loro turno e quante restano
+        // fuori per un problema: il PDF da solo non potrebbe raccontarlo, e chi
+        // stampa deve saperlo.
         res.setHeader('X-Consegne-Rimaste', String(rimaste));
+        res.setHeader('X-Consegne-Bloccate', String(bloccate));
         res.status(200).send(buffer);
     } catch (error) {
         sendServiceError(res, error, 'Error printing deliveries', error.status || 400);
@@ -122,17 +145,20 @@ const stampa = async (req, res) => {
 // I file XML delle fatture elettroniche ancora da trasmettere, in un archivio.
 const scaricaXml = async (req, res) => {
     try {
-        const { buffer, filename, quante, saltate } = await xmlDaTrasmettere({ limite: req.body.limite });
+        const { buffer, filename, quante, saltate, rimaste } = await xmlDaTrasmettere({ limite: req.body.limite });
 
         await registra(req, null, 'consegna.xml_scaricati', `Scaricati ${quante} file XML da trasmettere`, {
             quante,
             saltate: saltate.length,
+            rimaste,
         });
 
         res.setHeader('Content-Type', 'application/zip');
         // Quante sono rimaste fuori dall'archivio: senza dirlo, si crederebbe di
-        // avere tutte le fatture in coda. Il motivo e scritto sulla loro riga.
+        // avere tutte le fatture in coda. Il motivo e scritto sulla loro riga; e
+        // quelle oltre il tetto arrivano con il prossimo archivio.
         res.setHeader('X-Consegne-Saltate', String(saltate.length));
+        res.setHeader('X-Consegne-Rimaste', String(rimaste));
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.setHeader('Content-Length', buffer.length);
         res.status(200).send(buffer);
@@ -179,4 +205,5 @@ module.exports = {
     scaricaXmlSingolo,
     stampa,
     segnaConsegnata: azione(segnaConsegnata, 'consegna.evasa', 'Evasa consegna'),
+    segnaEvase: segnaEvaseInBlocco,
 };

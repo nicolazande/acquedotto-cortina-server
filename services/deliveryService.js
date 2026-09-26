@@ -12,7 +12,9 @@
 //                   consegna in coda.
 //
 // I canali non automatici (posta, sportello) restano in coda: sono l'elenco di
-// cosa stampare, e si chiudono quando una persona dichiara di averlo fatto.
+// cosa stampare, e si chiudono quando una persona dichiara di averlo fatto, una
+// per una o tutte quelle gia stampate insieme. Evasa per sbaglio, una consegna
+// torna da fare; una partita dal gestionale no, perche una mail non si ritira.
 
 const Cliente = require('../models/Cliente');
 const Consegna = require('../models/Consegna');
@@ -20,13 +22,15 @@ const Fattura = require('../models/Fattura');
 const {
     CAMPO_DATA_CONSEGNA,
     CANALE_TRASMISSIONE_SDI,
+    EVASE_IN_BLOCCO,
+    IN_UFFICIO,
     STATI_APERTI,
     testoEmailCortesia,
 } = require('../config/delivery');
 const { AZIENDA } = require('../config/azienda');
 const { FILTRO_EMESSE_DAL_GESTIONALE, isConfirmedInvoice } = require('../config/invoicing');
 const { allegatoPdf, allegatoXml, fatturaDellaConsegna } = require('./documentiConsegna');
-const { FATTURA_IN_BOZZA, aggiornamentoCoda, chiusura, pianoConsegne } = require('./deliveryPlan');
+const { FATTURA_IN_BOZZA, aggiornamentoCoda, chiudibiliInBlocco, chiusura, pianoConsegne } = require('./deliveryPlan');
 const { inviaEmail, statoTrasporto } = require('./mailer');
 const { badRequest, notFound, unprocessable } = require('../utils/errors');
 const { formatItalianDate } = require('../utils/dates');
@@ -38,6 +42,13 @@ const { parsePositiveInteger } = require('../utils/values');
 const MAX_FATTURE_PER_RICHIESTA = 500;
 // L'elaborazione costruisce un PDF per consegna: si procede a scaglioni.
 const MAX_CONSEGNE_PER_ELABORAZIONE = 200;
+
+// Le date che la coda scrive sulla fattura - quando e uscita, quando ne ha deciso
+// i canali - non sono modifiche del documento, e non toccano `updatedAt`: quello
+// dice quando la fattura e cambiata l'ultima volta, ed e cio che la chiusura in
+// blocco confronta con la stampa (`chiudibiliInBlocco`). Altrimenti chiudere la
+// fattura elettronica farebbe sembrare cambiata la copia gia stampata.
+const SENZA_TOCCARE_IL_DOCUMENTO = { timestamps: false };
 
 // Chi firma il messaggio di cortesia: lo stesso profilo delle fatture.
 const mittente = () => ({
@@ -106,7 +117,11 @@ const pianificaConsegne = async ({ fatture } = {}) => {
     // Il segno sulle fatture appena decise: da qui in avanti la coda tiene in
     // pari le loro consegne senza aggiungerne di nuove.
     if (decise.length) {
-        await Fattura.updateMany({ _id: { $in: decise } }, { $set: { consegne_decise_il: new Date() } });
+        await Fattura.updateMany(
+            { _id: { $in: decise } },
+            { $set: { consegne_decise_il: new Date() } },
+            SENZA_TOCCARE_IL_DOCUMENTO
+        );
     }
 
     return { esaminate: documenti.length, ...esito };
@@ -186,14 +201,24 @@ const trasportoPer = (consegna) => TRASPORTI[`${consegna.tipo}:${consegna.canale
 // Elaborazione della coda
 // ---------------------------------------------------------------------------
 
-// Una consegna arrivata al cliente: recapitata dal gestionale, o evasa a mano da
-// una persona. L'esito di una prova precedente, un errore gia superato, un
-// problema del piano, il motivo di un annullamento: niente di questo descrive
-// piu una consegna arrivata. La data che il gestionale precedente teneva sulla
-// fattura continua a essere popolata (`CAMPO_DATA_CONSEGNA`): chi guarda la
+// Consegne arrivate al cliente: recapitate dal gestionale, o evase da una
+// persona, una per volta o tutte quelle gia stampate o scaricate insieme. L'esito di una
+// prova precedente, un errore gia superato, un problema del piano, il motivo di
+// un annullamento: niente di questo descrive piu una consegna arrivata.
+//
+// Ciascuna si chiude solo se e ancora nello stato che chi la chiude si aspetta
+// (`ancora`): cio che nel frattempo qualcun altro ha cambiato non si tocca. La
+// data che il gestionale precedente teneva sulla fattura continua a essere
+// popolata (`CAMPO_DATA_CONSEGNA`), per le consegne chiuse adesso: chi guarda la
 // fattura vede subito quando e uscita, senza aprire l'elenco delle consegne.
-const chiudiComeInviata = async ({ consegna, quando, campi = {} }) => {
-    await Consegna.updateOne({ _id: consegna._id }, {
+const chiudiComeInviate = async ({ consegne, ancora, quando, campi = {} }) => {
+    if (!consegne.length) {
+        return 0;
+    }
+
+    const ids = consegne.map((consegna) => consegna._id);
+
+    await Consegna.updateMany({ _id: { $in: ids }, ...ancora }, {
         ...setOrUnset({
             stato: 'inviata',
             data_invio: quando,
@@ -207,19 +232,33 @@ const chiudiComeInviata = async ({ consegna, quando, campi = {} }) => {
         $inc: { tentativi: 1 },
     });
 
-    await Fattura.updateOne(
-        { _id: consegna.fattura },
-        { $set: { [CAMPO_DATA_CONSEGNA[consegna.tipo]]: quando } }
-    );
+    // Quelle chiuse adesso le riconosce la data appena scritta.
+    const chiuse = await Consegna.find({ _id: { $in: ids }, stato: 'inviata', data_invio: quando }, { fattura: 1, tipo: 1 }).lean();
+
+    await Promise.all(Object.entries(Object.groupBy(chiuse, (consegna) => consegna.tipo)).map(([tipo, sue]) => (
+        Fattura.updateMany(
+            { _id: { $in: sue.map((consegna) => consegna.fattura) } },
+            { $set: { [CAMPO_DATA_CONSEGNA[tipo]]: quando } },
+            SENZA_TOCCARE_IL_DOCUMENTO
+        )
+    )));
+
+    return chiuse.length;
 };
 
-const registraEsito = ({ consegna, esito, quando }) => chiudiComeInviata({
-    consegna,
+// Una mail partita e un fatto: si registra anche se nel frattempo qualcuno ha
+// annullato la consegna, o l'ha segnata evasa a mano - resterebbe da rimettere
+// da fare, e ripartirebbe una seconda volta. Solo una gia registrata come
+// partita non si chiude due volte.
+const registraEsito = ({ consegna, esito, quando }) => chiudiComeInviate({
+    consegne: [consegna],
+    ancora: { $or: [{ stato: { $ne: 'inviata' } }, { evasa_a_mano: true }] },
     quando,
     campi: {
         destinatario: esito.destinatario || consegna.destinatario,
         riferimento: esito.riferimento,
         allegati: esito.allegati || [],
+        evasa_a_mano: null,
     },
 });
 
@@ -340,35 +379,115 @@ const segnaConsegnata = async (id, { note } = {}) => {
         throw badRequest('La consegna risulta già evasa.');
     }
 
-    await chiudiComeInviata({ consegna, quando: new Date(), campi: { note: note || null } });
+    await chiudiComeInviate({
+        consegne: [consegna],
+        ancora: { stato: consegna.stato },
+        quando: new Date(),
+        campi: { note: note || null, evasa_a_mano: true },
+    });
 
     return Consegna.findById(consegna._id).lean();
+};
+
+// Tutte insieme quelle gia uscite dal gestionale: le copie stampate e imbustate,
+// o le fatture elettroniche scaricate e caricate nel box. Una per una, a
+// novembre, sarebbero ottocento clic.
+//
+// Quelle la cui fattura e cambiata dopo, o e tornata bozza, non si chiudono:
+// perdono il segno, perche il documento uscito non vale piu, e la stampa o
+// l'archivio successivo le rifanno. La bozza lo dice anche sulla riga.
+const segnaEvase = async ({ quali } = {}) => {
+    if (!Object.hasOwn(EVASE_IN_BLOCCO, quali)) {
+        throw badRequest('Si segnano evase in blocco solo le consegne già stampate o già scaricate.');
+    }
+
+    const segno = EVASE_IN_BLOCCO[quali];
+    const filtro = IN_UFFICIO[quali];
+    const uscite = await Consegna.find(filtro, { fattura: 1, [segno]: 1 }).lean();
+    const fatture = await Fattura.find(
+        { _id: { $in: uscite.map((consegna) => consegna.fattura) } },
+        { stato: 1, confermata: 1, updatedAt: 1 }
+    ).lean();
+    const { chiudibili, inBozza, cambiate } = chiudibiliInBlocco({
+        consegne: uscite,
+        fatture: new Map(fatture.map((fattura) => [String(fattura._id), fattura])),
+        segno,
+    });
+
+    const daRifare = [
+        { consegne: inBozza, update: { $set: { ultimo_errore: FATTURA_IN_BOZZA }, $unset: { [segno]: '' } } },
+        { consegne: cambiate, update: { $unset: { [segno]: '' } } },
+    ].filter((gruppo) => gruppo.consegne.length);
+
+    if (daRifare.length) {
+        await Consegna.bulkWrite(daRifare.map(({ consegne, update }) => ({
+            updateMany: { filter: { _id: { $in: consegne.map((consegna) => consegna._id) }, ...filtro }, update },
+        })));
+    }
+
+    const evase = await chiudiComeInviate({
+        consegne: chiudibili,
+        ancora: filtro,
+        quando: new Date(),
+        campi: { evasa_a_mano: true },
+    });
+
+    return { quali, evase, daRifare: inBozza.length + cambiate.length };
 };
 
 // L'annullamento di una persona e una decisione: Prepara non la rimette in coda
-// da solo, a differenza di cio che aveva chiuso lui.
+// da solo, a differenza di cio che aveva chiuso lui. Una consegna gia evasa non
+// si annulla: e arrivata, oppure - se e stato uno sbaglio - torna da fare.
 const annullaConsegna = async (id, { note } = {}) => {
     const consegna = await caricaConsegna(id);
-    await Consegna.updateOne({ _id: consegna._id }, chiusura(note || 'Annullata manualmente.'));
+
+    if (consegna.stato === 'inviata') {
+        throw badRequest('Una consegna già evasa non si annulla.');
+    }
+
+    await Consegna.updateOne({ _id: consegna._id, stato: consegna.stato }, chiusura(note || 'Annullata manualmente.'));
 
     return Consegna.findById(consegna._id).lean();
 };
 
-// Rimette in coda una consegna fallita, azzerandone l'errore. Chi la rimette
-// ha corretto qualcosa: torna fra le prime da tentare. Ed e una richiesta
+// Rimette una consegna fra quelle da fare: una fallita, azzerandone l'errore,
+// o una evasa per sbaglio. Chi la rimette ha corretto qualcosa: torna fra le
+// prime da tentare, da stampare o scaricare di nuovo. Ed e una richiesta
 // esplicita, come Prepara dalla scheda: di una fattura del vecchio programma la
 // coda generale terra in pari anche questa riga, invece di ignorarla.
+//
+// Torna indietro solo cio che una persona ha segnato evaso. Una consegna
+// partita dal gestionale - la mail al cliente - e arrivata, e nessun pulsante
+// la ritira.
 const rimettiInCoda = async (id) => {
     const consegna = await caricaConsegna(id);
 
-    if (consegna.stato === 'inviata') {
-        throw badRequest('Una consegna già evasa non si rimette in coda.');
+    if (consegna.stato === 'inviata' && !consegna.evasa_a_mano) {
+        throw badRequest('Questa consegna è partita dal gestionale: è arrivata al cliente, e non torna fra quelle da fare.');
     }
 
-    await Consegna.updateOne({ _id: consegna._id }, {
+    const { modifiedCount } = await Consegna.updateOne({ _id: consegna._id, stato: consegna.stato }, {
         $set: { stato: 'in_coda', su_richiesta: true },
-        $unset: { ultimo_errore: '', ultimo_tentativo: '', chiusa_dal_piano: '' },
+        $unset: {
+            ultimo_errore: '',
+            ultimo_tentativo: '',
+            chiusa_dal_piano: '',
+            data_invio: '',
+            evasa_a_mano: '',
+            stampata_il: '',
+            scaricata_il: '',
+        },
     });
+
+    // La data sulla fattura se l'aveva scritta questa consegna, e solo allora.
+    if (modifiedCount && consegna.stato === 'inviata') {
+        const campo = CAMPO_DATA_CONSEGNA[consegna.tipo];
+        await Fattura.updateOne(
+            { _id: consegna.fattura, [campo]: consegna.data_invio },
+            { $unset: { [campo]: '' } },
+            SENZA_TOCCARE_IL_DOCUMENTO
+        );
+    }
 
     return Consegna.findById(consegna._id).lean();
 };
@@ -382,11 +501,19 @@ const contaPer = (righe, campo) => righe.reduce((totali, riga) => ({
     [riga._id[campo]]: (totali[riga._id[campo]] || 0) + riga.quante,
 }), {});
 
+// Il lavoro d'ufficio, contato con gli stessi filtri con cui lo si fa.
+const contaInUfficio = async () => {
+    const voci = Object.entries(IN_UFFICIO);
+    const quante = await Promise.all(voci.map(([, filtro]) => Consegna.countDocuments(filtro)));
+    return Object.fromEntries(voci.map(([voce], indice) => [voce, quante[indice]]));
+};
+
 const riepilogo = async () => {
-    const [righe, clientiPerModalita, elettroniche] = await Promise.all([
+    const [righe, inUfficio, clientiPerModalita, elettroniche] = await Promise.all([
         Consegna.aggregate([
             { $group: { _id: { stato: '$stato', tipo: '$tipo', canale: '$canale' }, quante: { $sum: 1 } } },
         ]),
+        contaInUfficio(),
         Cliente.aggregate([
             { $group: { _id: { $ifNull: ['$stampa_cortesia', 'non impostata'] }, quante: { $sum: 1 } } },
             { $sort: { quante: -1 } },
@@ -400,9 +527,8 @@ const riepilogo = async () => {
         perStato: contaPer(righe, 'stato'),
         perTipo: contaPer(inCoda, 'tipo'),
         perCanale: contaPer(inCoda, 'canale'),
-        daStampare: inCoda
-            .filter((riga) => ['postale', 'sportello'].includes(riga._id.canale))
-            .reduce((totale, riga) => totale + riga.quante, 0),
+        // Da stampare, gia stampate, da trasmettere, gia scaricate.
+        ...inUfficio,
         clienti: {
             perModalita: clientiPerModalita.map((riga) => ({ modalita: riga._id, quanti: riga.quante })),
             conFatturaElettronica: elettroniche,
@@ -420,4 +546,5 @@ module.exports = {
     riepilogo,
     rimettiInCoda,
     segnaConsegnata,
+    segnaEvase,
 };

@@ -61,7 +61,7 @@ Una consegna e un record della collezione `consegne`: una fattura, un tipo
 (`cortesia` o `elettronica`), un canale, un recapito e uno stato.
 
 ```
-in_coda ──> inviata
+in_coda ──> inviata ──> (rimetti da fare, solo se evasa a mano) ──> in_coda
    │  └───> errore ──> (riprova) ──> in_coda
    └──────> annullata ──> (Prepara) ──> in_coda
 ```
@@ -80,18 +80,42 @@ Su una consegna si leggono due cose diverse, tenute in due campi:
 
 Tenerli in un campo solo faceva si che *Prepara* cancellasse l'errore di un file
 XML, o che la stampa scrivesse sopra un indirizzo mancante. La colonna *Esito*
-mostra prima l'errore, poi il problema, poi la nota; su una riga annullata, il
-motivo della chiusura.
+mostra prima l'errore, poi il problema, poi se la consegna e gia stata stampata
+o scaricata, poi la nota; su una riga annullata, il motivo della chiusura.
 
 Tre segni servono alla coda per ricordarsi come ci e arrivata una consegna:
 
 - `su_richiesta` - messa in coda dalla scheda della fattura, o rimessa in coda
-  con *Riprova*: una richiesta esplicita, che il *Prepara* generale rispetta;
+  con *Riprova* o *Rimetti da fare*: una richiesta esplicita, che il *Prepara*
+  generale rispetta;
 - `chiusa_dal_piano` - annullata da *Prepara* perche il piano non la prevedeva
   piu, e non da una persona: se il piano torna a prevederla, *Prepara* la riapre;
 - `ultimo_tentativo` - l'ultimo tentativo che non l'ha consegnata, una prova o un
   errore: l'elaborazione parte da quelle mai tentate, poi da quelle tentate da
   piu tempo, cosi non riprova sempre le stesse.
+
+E tre servono al lavoro d'ufficio:
+
+- `stampata_il`, `scaricata_il` - quando la consegna e uscita l'ultima volta dalla
+  stampa, o ne e stato scaricato l'XML. Non la chiudono: dicono che si puo segnare
+  evasa insieme alle altre gia uscite. Li perde una consegna che torna da fare, e
+  una a cui *Prepara* cambia il recapito: il documento uscito porta quello vecchio;
+- `evasa_a_mano` - chiusa da una persona e non recapitata dal gestionale: solo
+  questa, se e stato uno sbaglio, torna fra quelle da fare. Una mail partita non si
+  ritira.
+
+Una riga con un problema o un errore scritto sopra non conta come uscita. Una
+copia senza indirizzo non si stampa nemmeno: si sistema la scheda del cliente, si
+preme *Prepara* e torna fra quelle da stampare. Una fattura tornata bozza va
+confermata di nuovo.
+
+I filtri del lavoro d'ufficio - da stampare, gia stampate, da trasmettere, gia
+scaricate - sono scritti una volta sola (`IN_UFFICIO` in `config/delivery.js`):
+li usano la stampa, l'archivio XML, i conteggi della pagina e della panoramica e
+la vista *Da stampare*, cosi i numeri che si leggono sono quelli su cui si lavora.
+La stampa prende, fra quelle da stampare, le copie senza un problema: le altre
+restano nel conteggio, perche sono ancora da fare, e la stampa dice quante sono.
+Prima la panoramica contava le fatture elettroniche fra quelle da stampare.
 
 > Le due date che il gestionale precedente teneva sulla fattura
 > (`data_invio_fattura` e `data_fattura_elettronica`) continuano a essere
@@ -139,27 +163,75 @@ ha significato e continuerebbe a comparire fra le fatture da recapitare.
    automatiche, allegando il PDF della fattura. Prende prima quelle mai tentate,
    poi quelle tentate da piu tempo.
 3. **Evadi** (`POST /api/consegne/:id/evasa`) chiude a mano una consegna che una
-   persona ha portato a termine: la busta imbucata, la fattura ritirata.
+   persona ha portato a termine: la busta imbucata, la fattura ritirata. Tutte
+   insieme, quelle gia uscite: `POST /api/consegne/evase` con `quali: 'stampate'`
+   o `'scaricate'` chiude le copie gia stampate o le fatture elettroniche gia
+   scaricate - a novembre, una per una, sarebbero ottocento clic. In blocco si
+   chiude solo cio che e gia uscito dal gestionale: "tutte quelle da stampare"
+   chiuderebbe buste mai stampate, e si rifiuta. E non si chiude una consegna
+   la cui fattura e tornata bozza, o e cambiata dopo la stampa o lo scarico -
+   corretta con lo sblocco: il documento uscito non e piu il suo. Perde il segno,
+   la stampa o l'archivio successivo la rifanno, e la risposta dice quante
+   (`daRifare`; regola in `chiudibiliInBlocco`, `services/deliveryPlan.js`).
 
-Due operazioni servono a portare fuori cio che non parte da solo:
+   La fattura cambiata la dice il suo `updatedAt`, piu recente del segno; il
+   segno porta l'ora di prima di leggere i dati, cosi anche una correzione
+   salvata mentre si costruiva il file risulta successiva. Le date che la coda
+   scrive sulla fattura - quando e uscita, quando ne ha deciso i canali - non
+   toccano `updatedAt`: altrimenti chiudere la fattura elettronica farebbe
+   sembrare cambiata la copia gia stampata. Del cliente, *Prepara* toglie il
+   segno quando cambiano i campi che la consegna porta con se: il recapito
+   (l'indirizzo della busta, il codice SdI o la PEC) e il nome dell'intestatario.
+   Il resto - la destinazione stampata sulla busta, la provincia, l'indirizzo
+   dentro l'XML, il codice fiscale, una scadenza - non si vede: dopo averlo
+   cambiato, la copia gia uscita va rifatta a mano. Tenere la data di modifica
+   anche su clienti e scadenze lo coglierebbe, ma chiederebbe di ristampare a
+   ogni pagamento registrato.
 
-4. **Stampa** (`POST /api/consegne/stampa`) restituisce un solo PDF con dentro
-   tutte le fatture da consegnare a mano, una per pagina. Lavora a lotti di
-   duecento e dice quante ne restano; non segna nulla come evaso, quindi si puo
-   ripetere. Le fatture e le loro righe si leggono in blocco: chiederle una per
-   volta erano quattrocento andate e ritorni al database per un lotto di
-   duecento (misurato su sessanta fatture: 423 interrogazioni contro 10).
+   Evasa per sbaglio, una consegna torna da fare con `POST /api/consegne/:id/coda`
+   (*Rimetti da fare*), e la fattura perde la data che le aveva dato; una partita
+   dal gestionale no, e una evasa non si annulla.
+
+Tre operazioni servono a portare fuori cio che non parte da solo. Nessuna chiude
+una consegna: si stampa o si scarica, si controlla, e solo dopo la si segna evasa.
+
+4. **Stampa** (`POST /api/consegne/stampa`) restituisce un solo PDF con le
+   fatture da consegnare a mano, una per pagina, a blocchi di duecento nell'ordine
+   delle buste. La stampa non sposta niente: finche non vengono segnate evase, la
+   successiva ripete lo stesso blocco, cosi una stampa andata storta - la
+   stampante inceppata, il PDF chiuso per sbaglio - si rifa premendo di nuovo.
+   Nel blocco entrano prima quelle gia stampate e non ancora evase, poi le
+   altre: anche se nel frattempo *Prepara* ha aggiunto fatture che vengono prima
+   in ordine alfabetico, ripremendo escono tutte quelle che *Evase le stampate*
+   chiuderebbe. Segnate evase le stampate, la stampa passa alle prossime. Una
+   copia con un problema sulla riga - di solito manca l'indirizzo - non si
+   stampa: tornerebbe in ogni blocco senza poter partire. Torna quando il
+   problema e sistemato e *Prepara* lo toglie. La risposta dice quante aspettano
+   dopo il blocco (`X-Consegne-Rimaste`) e quante restano fuori per un problema
+   (`X-Consegne-Bloccate`). Le fatture e le loro righe si leggono in blocco: un
+   blocco di duecento sono una decina di letture e circa un decimo di secondo
+   (una fattura per volta erano oltre quattrocento andate e ritorni).
 5. **XML** (`POST /api/consegne/xml`) restituisce un archivio zip con un file per
-   fattura elettronica da trasmettere, per chi la inoltra. Anche qui documenti e
-   righe si leggono in blocco (58 file: 419 interrogazioni contro 124, quelle che
-   restano sono il progressivo e la riga di ogni consegna).
+   ogni fattura elettronica da trasmettere, fino a mille: una fatturazione intera
+   in un colpo. Una rifiutata - un cliente estero, un totale che non torna - resta
+   fuori con il motivo sulla riga e non ferma le altre. I file si costruiscono una
+   volta sola, i progressivi si prendono tutti insieme e solo per quelli riusciti,
+   e le consegne si aggiornano con una scrittura sola: 677 file sono una decina di
+   letture, una riserva di progressivi e una scrittura, in circa un quarto di
+   secondo. Riscaricato, ogni file prende un nome nuovo. Un file fatto toglie
+   dalla riga anche il problema che *Prepara* aveva visto: il tracciato rifa lo
+   stesso controllo sul destinatario.
 6. **XML della singola consegna** (`GET /api/consegne/:id/xml`), il pulsante
    *XML* sulla riga: lo stesso file dell'archivio, uno solo. Chi trasmette una
    fattura per volta scaricava lo zip di tutte per poi estrarne una, aprirla con
    un programma di compressione e rinominarla. Il file esce gia col nome della
    trasmissione.
 
-Entrambi i pulsanti lavorano sulle **fatture elettroniche in coda**: quando non
+Stampa e scarico lasciano sulla consegna il loro segno (`stampata_il`,
+`scaricata_il`); la trasmissione automatica allo SdI no, perche di lei parla
+l'esito dell'invio.
+
+I due pulsanti XML lavorano sulle **fatture elettroniche in coda**: quando non
 ce ne sono, quello generale resta spento e sulle righe non compare nulla. La
 pagina dice perche - nessun cliente impostato per la fattura elettronica, oppure
 coda momentaneamente vuota - invece di lasciar cercare un pulsante che non puo
@@ -206,9 +278,9 @@ motivo invece di produrre un file da privato italiano. Vanno emesse a parte.
 Una fattura si consegna solo confermata. Il piano lo controlla quando la mette in
 coda, e il controllo si ripete a ogni uscita, perche nel frattempo la fattura si
 puo riportare a bozza: l'invio la mette in errore, l'XML si rifiuta, la stampa la
-salta e lo scrive sulla riga (`fatturaConfermata` e `FATTURA_IN_BOZZA` in
-`services/deliveryPlan.js`). Il *Prepara* successivo chiude le sue consegne; se la
-fattura viene confermata di nuovo, le riapre.
+salta e lo scrive sulla riga (`isConfirmedInvoice` in `config/invoicing.js`,
+`FATTURA_IN_BOZZA` in `services/deliveryPlan.js`). Il *Prepara* successivo chiude
+le sue consegne; se la fattura viene confermata di nuovo, le riapre.
 
 ## Niente parte per sbaglio
 

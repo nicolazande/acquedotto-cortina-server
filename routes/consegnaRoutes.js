@@ -8,6 +8,7 @@ router.post('/pianifica', ConsegnaController.pianifica);
 router.post('/elabora', ConsegnaController.elabora);
 router.post('/stampa', ConsegnaController.stampa);
 router.post('/xml', ConsegnaController.scaricaXml);
+router.post('/evase', ConsegnaController.segnaEvase);
 router.post('/prova-trasporto', ConsegnaController.provaTrasporto);
 router.get('/:id/xml', ConsegnaController.scaricaXmlSingolo);
 router.post('/:id/evasa', ConsegnaController.segnaConsegnata);

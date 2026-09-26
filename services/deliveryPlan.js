@@ -200,14 +200,20 @@ const campiDalPiano = (piano, consegna) => ({
 
 // Una consegna che parte da capo, nuova o riaperta: in coda, con la nota del suo
 // canale e senza gli errori dei tentativi di prima, ne il motivo di un
-// annullamento.
+// annullamento, ne il segno di una stampa o di uno scarico fatti prima di
+// chiuderla: il documento va rifatto.
 const daCapo = (piano, consegna) => ({
     ...campiDalPiano(piano, consegna),
     stato: 'in_coda',
     ultimo_errore: null,
     note: consegna.nota || null,
     chiusa_dal_piano: null,
+    stampata_il: null,
+    scaricata_il: null,
 });
+
+// Per la coda un campo assente e un campo vuoto sono la stessa cosa.
+const stessoValore = (a, b) => String(a ?? '') === String(b ?? '');
 
 // Una consegna gia in coda prende i campi del piano di oggi senza perdere cio
 // che le e successo: l'errore dell'ultimo tentativo resta, con il suo stato,
@@ -222,6 +228,14 @@ const aggiornata = (piano, consegna, esistente) => {
         campi.note = consegna.nota;
     }
 
+    // Un recapito o un intestatario cambiati dopo la stampa o lo scarico: il
+    // documento uscito porta quelli vecchi, e non si segna evaso insieme agli
+    // altri. Va rifatto.
+    if (!stessoValore(esistente.destinatario, consegna.destinatario)
+        || !stessoValore(esistente.intestatario, piano.intestatario)) {
+        Object.assign(campi, { stampata_il: null, scaricata_il: null });
+    }
+
     if (esistente.ultimo_errore === FATTURA_IN_BOZZA) {
         Object.assign(campi, { ultimo_errore: null, stato: 'in_coda' });
     }
@@ -232,8 +246,6 @@ const aggiornata = (piano, consegna, esistente) => {
 // Se un aggiornamento cambia davvero la consegna. Senza questo controllo ogni
 // Prepara riscriveva tutte le consegne aperte - 1.341 per una fatturazione - e
 // diceva di averle aggiornate anche quando non era cambiato niente.
-const stessoValore = (a, b) => String(a ?? '') === String(b ?? '');
-
 const cambiaQualcosa = (esistente, { $set = {}, $unset = {} }) => (
     Object.entries($set).some(([campo, valore]) => !stessoValore(esistente[campo], valore))
     || Object.keys($unset).some((campo) => esistente[campo] !== undefined && esistente[campo] !== null)
@@ -396,9 +408,35 @@ const aggiornamentoCoda = ({ fatture, esistenti, suRichiesta = false }) => {
     return esito;
 };
 
+// Quali consegne gia uscite si chiudono davvero quando una persona le segna
+// evase in blocco. Una fattura tornata bozza non si consegna; una cambiata dopo
+// la stampa o lo scarico - corretta con lo sblocco, o riportata a bozza e
+// confermata di nuovo - ha fatto uscire un documento che non e piu il suo, e va
+// stampata o scaricata di nuovo invece di chiudersi con le altre. `segno` e il
+// campo con la data dell'uscita, `fatture` le fatture per id; una fattura senza
+// `updatedAt` non e mai stata modificata dal gestionale.
+const chiudibiliInBlocco = ({ consegne, fatture, segno }) => {
+    const esito = { chiudibili: [], inBozza: [], cambiate: [] };
+
+    consegne.forEach((consegna) => {
+        const fattura = fatture.get(String(consegna.fattura));
+
+        if (!isConfirmedInvoice(fattura)) {
+            esito.inBozza.push(consegna);
+        } else if (fattura.updatedAt > consegna[segno]) {
+            esito.cambiate.push(consegna);
+        } else {
+            esito.chiudibili.push(consegna);
+        }
+    });
+
+    return esito;
+};
+
 module.exports = {
     FATTURA_IN_BOZZA,
     aggiornamentoCoda,
+    chiudibiliInBlocco,
     chiusura,
     indirizzoPostale,
     pianoConsegne,

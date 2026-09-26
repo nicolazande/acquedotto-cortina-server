@@ -17,6 +17,8 @@
 //     di un solo cliente
 //   - consegne: rimette in coda quelle chiuse da una prova di invio e toglie il
 //     campo `simulata`, che non si scrive piu
+//   - consegne: segna come evase a mano quelle chiuse da una persona prima che
+//     il segno esistesse, cosi "Rimetti da fare" le puo riaprire
 const { runScript } = require('./utils/runScript');
 const Cliente = require('../models/Cliente');
 const Consegna = require('../models/Consegna');
@@ -434,6 +436,28 @@ const riapriConsegneProvate = async () => {
     console.log(`  rimesse in coda: ${provate.length}, campo tolto: ${ripulite.modifiedCount}`);
 };
 
+// Le consegne evase a mano prima che il gestionale lo ricordasse. "Rimetti da
+// fare" riapre solo quelle chiuse da una persona, e fino al 26/09/2026 una
+// consegna evasa non ne portava il segno: premere Evasa per sbaglio non si
+// poteva disfare. Si riconoscono perche non hanno il riferimento del trasporto:
+// il gestionale lo scrive su ogni mail partita (il message-id), una persona mai.
+const segnaEvaseAMano = async () => {
+    const senzaSegno = { stato: 'inviata', evasa_a_mano: { $exists: false }, riferimento: { $exists: false } };
+    const daSegnare = await Consegna.collection.countDocuments(senzaSegno);
+    const partite = await Consegna.collection.countDocuments({ stato: 'inviata', riferimento: { $exists: true } });
+
+    console.log('Consegne evase a mano senza il segno:');
+    console.log(`  da segnare: ${daSegnare}`);
+    console.log(`  partite dal gestionale, che restano come sono: ${partite}`);
+
+    if (!applica || daSegnare === 0) {
+        return;
+    }
+
+    const segnate = await Consegna.collection.updateMany(senzaSegno, { $set: { evasa_a_mano: true } });
+    console.log(`  segnate: ${segnate.modifiedCount}`);
+};
+
 const main = async () => {
     console.log(applica ? '== APPLICO LE CORREZIONI ==\n' : '== SOLA LETTURA (usa --fix per applicare) ==\n');
 
@@ -458,6 +482,8 @@ const main = async () => {
     await collegaFattureSenzaCliente();
     console.log('');
     await riapriConsegneProvate();
+    console.log('');
+    await segnaEvaseAMano();
 };
 
 runScript(main);

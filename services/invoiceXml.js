@@ -50,11 +50,13 @@ const progressivoInvio = (fattura) => (
 );
 
 // Il nome del file trasmesso deve essere unico per sempre presso lo SdI. Il
-// progressivo lo assegna chi trasmette (services/counters.js) e viene passato
-// qui; quello ricavato da anno e numero resta solo per l'anteprima e per lo
-// scarico manuale, dove non si sta trasmettendo nulla - e non basterebbe
-// comunque, perche nell'archivio storico si ripete 499 volte.
-const nomeFile = (fattura, progressivo) => (
+// progressivo lo assegna chi trasmette (services/counters.js); quello ricavato
+// da anno e numero resta solo per lo scarico dalla scheda della fattura, dove
+// non si sta trasmettendo nulla - e non basterebbe comunque, perche
+// nell'archivio storico si ripete 499 volte. Il nome e fuori dal tracciato: chi
+// trasmette costruisce il file una volta sola e lo nomina dopo aver preso il
+// progressivo, cosi un documento rifiutato non ne consuma uno.
+const nomeFileXml = (fattura, progressivo) => (
     `IT${AZIENDA.partitaIva}_${progressivo || progressivoInvio(fattura)}.xml`
 );
 
@@ -188,7 +190,7 @@ const datiPagamento = ({ cliente, scadenza, totaleEuro }) => {
     </DatiPagamento>`;
 };
 
-const buildInvoiceXml = ({ cliente, fattura, progressivo, scadenza, servizi }) => {
+const buildInvoiceXml = ({ cliente, fattura, scadenza, servizi }) => {
     if (!servizi?.length) {
         throw unprocessable('La fattura non ha righe: impossibile emettere la fattura elettronica.');
     }
@@ -323,10 +325,11 @@ ${datiPagamento({ cliente, scadenza, totaleEuro: fromCents(totaleCalcolato) })}
 `;
 
     // Righe vuote lasciate dai campi facoltativi assenti.
-    return { filename: nomeFile(fattura, progressivo), xml: xml.replace(/^\s*\n/gm, '') };
+    return { filename: nomeFileXml(fattura), xml: xml.replace(/^\s*\n/gm, '') };
 };
 
 module.exports = {
     buildInvoiceXml,
+    nomeFileXml,
     progressivoInvio,
 };

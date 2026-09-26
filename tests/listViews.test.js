@@ -9,7 +9,7 @@ const {
     letturaViews,
     scadenzaViews,
 } = require('../config/listViews');
-const { combineFilters, getViewFilter } = require('../controllers/utils/paginatedQuery');
+const { combineFilters, getSort, getViewFilter } = require('../controllers/utils/paginatedQuery');
 
 test('le viste sono funzioni che producono un filtro', () => {
     const tutte = {
@@ -119,13 +119,23 @@ test('clienti: le modalita diverse da quella predefinita non catturano i campi v
     assert.equal(new RegExp(filtro.stampa_cortesia.$regex, 'i').test(''), false);
 });
 
-test('consegne: da stampare e il lavoro che resta a una persona', () => {
+test('consegne: da stampare e il lavoro che resta a una persona, finche non e evaso', () => {
+    // Le stesse che escono dalla stampa: anche quelle gia stampate, che restano
+    // da fare finche qualcuno non le segna evase.
     assert.deepEqual(consegnaViews['da-stampare'](), {
-        stato: 'in_coda',
+        stato: { $in: ['in_coda', 'errore'] },
         canale: { $in: ['postale', 'sportello'] },
     });
 });
 
 test('consegne: le automatiche sono solo quelle ancora in coda', () => {
     assert.deepEqual(consegnaViews.automatiche(), { stato: 'in_coda', automatica: true });
+});
+
+test('a parita di valore le righe hanno sempre lo stesso ordine, pagina dopo pagina', () => {
+    // Un Prepara crea centinaia di consegne nello stesso istante: ordinate solo
+    // per data, sfogliando se ne vedevano alcune due volte e altre mai.
+    assert.deepEqual(Object.entries(getSort('createdAt', -1)), [['createdAt', -1], ['_id', -1]]);
+    assert.deepEqual(Object.entries(getSort('data_fattura', 1)), [['data_fattura', 1], ['_id', 1]]);
+    assert.deepEqual(getSort('_id', 1), { _id: 1 });
 });

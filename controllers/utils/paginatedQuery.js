@@ -104,6 +104,15 @@ const getSortField = (requestedField, defaultField) => {
     return defaultField;
 };
 
+// L'ordine delle righe. A parita di valore decide `_id`: senza, Mongo restituisce
+// le righe pari in un ordine qualunque, diverso da una pagina all'altra, e
+// sfogliando se ne vedevano alcune due volte e altre mai. Succede a ogni elenco
+// con valori ripetuti: un Prepara crea centinaia di consegne nello stesso
+// istante, una fatturazione centinaia di fatture con la stessa data.
+const getSort = (sortField, sortOrder) => (
+    sortField === '_id' ? { _id: sortOrder } : { [sortField]: sortOrder, _id: sortOrder }
+);
+
 // Alcune liste ordinano su valori derivati (per esempio il ritardo di una scadenza,
 // che dipende da oggi e non dal dato salvato). In quel caso la query passa da una
 // aggregazione che calcola i campi prima di ordinare, cosi l'ordinamento coincide
@@ -151,7 +160,7 @@ const sendPaginated = async (Model, req, res, options = {}) => {
             await buildSearchQuery(Model, search, ricercaCollegata),
             getViewFilter(views, req.query.vista)
         );
-        const sort = { [sortField]: sortOrder };
+        const sort = getSort(sortField, sortOrder);
 
         const totalItems = await Model.countDocuments(query);
         const records = await (addFields
@@ -183,6 +192,7 @@ const sendPaginated = async (Model, req, res, options = {}) => {
 module.exports = {
     MAX_PAGE_SIZE,
     combineFilters,
+    getSort,
     getViewFilter,
     sendPaginated,
 };

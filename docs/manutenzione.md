@@ -308,6 +308,30 @@ e un *Prepara* dalla pagina Consegne. A Zuel, simulato in sola lettura il
 consegnata il ...", 11 "Fattura del vecchio programma" - e mette in coda le 2
 della fattura di prova 2026/A/1.
 
+### Evasa non si poteva disfare, fino al 26/09/2026
+
+Una consegna segnata *Evasa* per sbaglio non tornava fra quelle da fare. Ora
+torna (*Rimetti da fare*), ma solo se l'ha chiusa una persona: il segno e
+`evasa_a_mano`, e le consegne evase prima non lo portano. Si riconoscono perche
+non hanno il riferimento del trasporto, che il gestionale scrive su ogni mail
+partita.
+
+Dopo aver pubblicato la correzione:
+
+```bash
+npm run maintenance:allinea-dati -- --remoto         # mostra cosa cambierebbe
+npm run maintenance:allinea-dati -- --fix --remoto   # segna come evase a mano quelle chiuse da una persona
+```
+
+A Zuel, in sola lettura il 26/09/2026: 2 consegne da segnare, nessuna partita dal
+gestionale.
+
+Scoperto per strada: gli elenchi ordinati su un campo con valori ripetuti -
+la data di creazione delle consegne, che un *Prepara* scrive uguale su centinaia
+di righe - sfogliati a pagine mostravano alcune righe due volte e altre mai (su
+514 consegne da stampare, 9 e 9). A parita di valore ora decide `_id`
+(`getSort` in `controllers/utils/paginatedQuery.js`).
+
 ### Il ritardo delle scadenze e un valore derivato
 
 Il ritardo **non e un campo salvato**: cresce di un giorno al giorno per le scadenze

@@ -54,13 +54,24 @@ const consegnaSchema = new Schema(
         // altrimenti ripeterebbe sempre le stesse - le prove, o gli errori in cima
         // alla coda - e il resto non verrebbe mai raggiunto.
         ultimo_tentativo: { type: Date },
+        // Quando e uscita dalla stampa l'ultima volta, e quando ne e stato
+        // scaricato il file XML. Non la chiudono: dicono che e gia uscita dal
+        // gestionale, e che quindi si puo segnare evasa insieme alle altre. Una
+        // consegna che torna da fare li perde: va stampata o scaricata di nuovo.
+        stampata_il: { type: Date },
+        scaricata_il: { type: Date },
+        // Evasa da una persona e non recapitata dal gestionale: solo in questo
+        // caso, se e stato uno sbaglio, torna fra quelle da fare. Una mail partita
+        // non si ritira.
+        evasa_a_mano: { type: Boolean },
         // Identificativo restituito dal trasporto: message-id della mail o
         // protocollo dello SdI. Serve per ritrovare la consegna fuori di qui.
         riferimento: { type: String },
         // Messa in coda dalla scheda della fattura, o rimessa in coda con
-        // "Riprova": una richiesta esplicita su quel documento. Conta per le
-        // fatture del vecchio programma, che la coda generale non prepara: di
-        // loro tiene in pari solo le righe chieste cosi, invece di chiuderle.
+        // "Riprova" o "Rimetti da fare": una richiesta esplicita su quel
+        // documento. Conta per le fatture del vecchio programma, che la coda
+        // generale non prepara: di loro tiene in pari solo le righe chieste
+        // cosi, invece di chiuderle.
         su_richiesta: { type: Boolean },
         // Annullata da Prepara perche il piano non la prevedeva piu - fattura
         // riportata a bozza, cliente senza recapito, gia consegnata - e non da una

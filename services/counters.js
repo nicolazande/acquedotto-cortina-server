@@ -1,6 +1,6 @@
 // I contatori progressivi persistenti.
 //
-// Ce ne sono due, e servono a cose diverse che e bene non confondere:
+// Ce ne sono tre, e servono a cose diverse che e bene non confondere:
 //
 //   fatture:<serie>  il numero della fattura, che riparte ogni anno ed e cio
 //                    che il cliente vede sul documento;
@@ -26,10 +26,10 @@ const SENZA_ANNO = 0;
 // cambiarne una perche i due non si parlino piu.
 const scopeDellaSerie = (serie) => `fatture:${serie}`;
 
-const prossimoNumero = async ({ scope, year = SENZA_ANNO, session }) => {
+const prossimoNumero = async ({ scope, year = SENZA_ANNO, session, quanti = 1 }) => {
     const counter = await InvoiceCounter.findOneAndUpdate(
         { scope, year },
-        { $inc: { value: 1 } },
+        { $inc: { value: quanti } },
         {
             new: true,
             session,
@@ -44,9 +44,17 @@ const prossimoNumero = async ({ scope, year = SENZA_ANNO, session }) => {
 // Il progressivo di invio, in base 36 maiuscola: il tracciato lo vuole
 // alfanumerico e lungo al massimo dieci caratteri, e cosi un contatore decimale
 // arriverebbe al limite molto prima.
-const riservaProgressivoInvio = async (session) => {
-    const numero = await prossimoNumero({ scope: 'trasmissioni', session });
-    return numero.toString(36).toUpperCase().padStart(5, '0');
+const progressivoDiInvio = (numero) => numero.toString(36).toUpperCase().padStart(5, '0');
+
+// Quanti progressivi servono, in una scrittura sola: un archivio di ottocento
+// file non fa ottocento andate e ritorni al database, ne prende un intervallo.
+const riservaProgressiviInvio = async (quanti) => {
+    if (!quanti) {
+        return [];
+    }
+
+    const ultimo = await prossimoNumero({ scope: 'trasmissioni', quanti });
+    return Array.from({ length: quanti }, (_, indice) => progressivoDiInvio(ultimo - quanti + 1 + indice));
 };
 
 // Il codice che identifica un invio all'Anagrafe Tributaria: sei cifre di
@@ -77,6 +85,7 @@ module.exports = {
     componiCodiceInvio,
     scopeDellaSerie,
     prossimoNumero,
+    progressivoDiInvio,
     riservaCodiceInvioAnagrafe,
-    riservaProgressivoInvio,
+    riservaProgressiviInvio,
 };

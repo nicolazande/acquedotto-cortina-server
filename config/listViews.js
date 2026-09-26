@@ -4,7 +4,7 @@
 // interrogazioni arbitrarie, e perche restino verificabili con i test.
 
 const { NON_SALDATA, SALDATA } = require('../models/Scadenza');
-const { ALIAS_MODALITA, MODALITA_CONSEGNA, MODALITA_PREDEFINITA } = require('./delivery');
+const { ALIAS_MODALITA, IN_UFFICIO, MODALITA_CONSEGNA, MODALITA_PREDEFINITA } = require('./delivery');
 const { escapeRegex } = require('../utils/values');
 
 // Il flag puo mancare del tutto sui record importati dal gestionale precedente.
@@ -65,7 +65,7 @@ const clienteViews = {
 const consegnaViews = {
     'in-coda': () => ({ stato: 'in_coda' }),
     // Il lavoro d'ufficio: le fatture da stampare e imbustare o tenere pronte.
-    'da-stampare': () => ({ stato: 'in_coda', canale: { $in: ['postale', 'sportello'] } }),
+    'da-stampare': () => IN_UFFICIO.daStampare,
     automatiche: () => ({ stato: 'in_coda', automatica: true }),
     errori: () => ({ stato: 'errore' }),
     inviate: () => ({ stato: 'inviata' }),

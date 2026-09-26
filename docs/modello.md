@@ -95,6 +95,9 @@ classDiagram
         String ultimo_errore
         Date data_invio
         Date ultimo_tentativo
+        Date stampata_il
+        Date scaricata_il
+        Boolean evasa_a_mano
         String riferimento
         Boolean su_richiesta
         Boolean chiusa_dal_piano

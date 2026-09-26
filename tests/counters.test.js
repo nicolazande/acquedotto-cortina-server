@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { componiCodiceInvio, riservaProgressivoInvio } = require('../services/counters');
+const { componiCodiceInvio, progressivoDiInvio, riservaProgressiviInvio } = require('../services/counters');
 const anagrafe = require('../config/anagrafeTributaria');
 
 // Il progressivo di invio non e ricavabile dal numero della fattura. Il nome del
@@ -14,14 +14,17 @@ test('il progressivo di invio sta in dieci caratteri alfanumerici', () => {
     // tardi che in decimale.
     const grandi = [0, 1, 41069, 60466175, 2176782335];
     grandi.forEach((numero) => {
-        const progressivo = numero.toString(36).toUpperCase().padStart(5, '0');
+        const progressivo = progressivoDiInvio(numero);
         assert.ok(progressivo.length <= 10, `${numero} produce "${progressivo}", troppo lungo`);
         assert.match(progressivo, /^[0-9A-Z]+$/);
     });
+    assert.equal(progressivoDiInvio(1), '00001');
+    assert.equal(progressivoDiInvio(36), '00010');
 });
 
-test('riservaProgressivoInvio esiste ed e la sola via per ottenerne uno', () => {
-    assert.equal(typeof riservaProgressivoInvio, 'function');
+test('riservaProgressiviInvio e la sola via per ottenerne, e per zero non scrive niente', async () => {
+    assert.equal(typeof riservaProgressiviInvio, 'function');
+    assert.deepEqual(await riservaProgressiviInvio(0), []);
 });
 
 // Il codice che identifica un file mandato all'Anagrafe Tributaria. Cambia a ogni
