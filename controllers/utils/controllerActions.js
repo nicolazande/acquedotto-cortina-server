@@ -54,10 +54,15 @@ const sendServiceError = (res, error, fallbackMessage, fallbackStatus = 500) => 
 
 const applyPopulate = (query, populate) => (populate ? query.populate(populate) : query);
 
+// `mapBody(body, req)` prepara il corpo prima di scriverlo, e puo rifiutarlo con
+// un errore. Riceve anche la richiesta e puo essere asincrono: certe regole
+// dipendono da com'e il record adesso (una lettura usata da una fattura non
+// cambia misura). Una funzione che ha gia un secondo parametro suo va avvolta,
+// altrimenti riceverebbe la richiesta al suo posto.
 const createRecord = (Model, { audit, name, mapBody = (body) => body, transform = (record) => record }) => (
     async (req, res) => {
         try {
-            const record = await Model.create(mapBody(req.body));
+            const record = await Model.create(await mapBody(req.body, req));
             await auditRecord({
                 action: 'creato', audit, record, req, summary: `Creato ${lowerFirst(name)} ${describe(audit, record)}`,
             });
@@ -87,7 +92,7 @@ const updateRecord = (Model, { audit, name, mapBody = (body) => body, transform 
         try {
             // Il valore precedente serve per registrare cosa e cambiato davvero.
             const before = audit ? await Model.findById(req.params.id).lean() : null;
-            const record = await Model.findByIdAndUpdate(req.params.id, mapBody(req.body), {
+            const record = await Model.findByIdAndUpdate(req.params.id, await mapBody(req.body, req), {
                 new: true,
                 runValidators: true,
             });

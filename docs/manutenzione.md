@@ -451,6 +451,14 @@ Non e il consumo del periodo ma la lettura progressiva. Vedi
 
 Una lettura con `fatturata: true` non entra piu nelle anteprime di fatturazione.
 Il blocco viene rimosso automaticamente quando si cancella la fattura collegata.
+
+Una lettura che una fattura usa non si modifica nella misura - valore, data,
+contatore, unita - ne nello stato di fatturazione: la modifica viene rifiutata
+(409). Fino al 26/09/2026 bastava togliere la spunta "Fatturata" per rimetterla
+fra quelle da fatturare, e il cliente avrebbe pagato due volte lo stesso
+consumo. Le note si correggono sempre; una lettura che nessuna fattura usa -
+quella d'installazione di un contatore, segnata fatturata perche non si
+fatturi - resta libera (`perLaModifica` in `controllers/LetturaController.js`).
 Per trovare eventuali letture bloccate senza una fattura che le giustifichi:
 
 ```javascript

@@ -473,6 +473,17 @@ const testBillingGeneration = async () => {
         assert(pdf.contentType.includes('application/pdf'), 'invoice PDF endpoint did not return application/pdf');
         assert(Buffer.from(pdf.body).subarray(0, 4).toString() === '%PDF', 'invoice PDF body is not a PDF');
 
+        // Una lettura usata da una fattura non torna da fatturare e non cambia
+        // misura: il cliente pagherebbe due volte, o la lettura dopo partirebbe
+        // da un valore diverso da quello fatturato. Le note si correggono.
+        const modificaLettura = (campi) => request(`/letture/${lettura._id}`, json('PUT', campi))
+            .then(() => 'salvata', (error) => (/failed with 409/.test(error.message) ? 'rifiutata' : error.message));
+        assert(await modificaLettura({ fatturata: false }) === 'rifiutata', 'a billed reading must not become billable again');
+        assert(await modificaLettura({ consumo: 999 }) === 'rifiutata', 'the value of a billed reading must not change');
+        assert(await modificaLettura({ note: 'smoke' }) === 'salvata', 'the notes of a billed reading can be corrected');
+        const ancoraFatturata = await request(`/letture/${lettura._id}`);
+        assert(ancoraFatturata.body.fatturata === true && ancoraFatturata.body.consumo === lettura.consumo, 'the billed reading must be unchanged');
+
         let duplicateBlocked = false;
         try {
             await request('/fatture/genera-da-letture', {

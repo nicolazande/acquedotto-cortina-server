@@ -74,12 +74,17 @@ const annullaIncassi = async (req, res) => {
     }
 };
 
+// Prima di salvare, solo il corpo: il secondo argomento che ricevono le
+// funzioni `mapBody` e la richiesta, e qui finirebbe al posto della data su cui
+// si calcola il ritardo.
+const perIlSalvataggio = (body) => withComputedDelay(body);
+
 module.exports = {
     registraIncassi,
     annullaIncassi,
     createScadenza: createRecord(Scadenza, {
         name: 'Scadenza',
-        mapBody: withComputedDelay,
+        mapBody: perIlSalvataggio,
         transform: withComputedDelay,
     }),
     getScadenze: (req, res) => sendPaginated(Scadenza, req, res, {
@@ -93,7 +98,7 @@ module.exports = {
     getScadenza: getRecord(Scadenza, { name: 'Scadenza', transform: withComputedDelay }),
     updateScadenza: updateRecord(Scadenza, {
         name: 'Scadenza',
-        mapBody: withComputedDelay,
+        mapBody: perIlSalvataggio,
         transform: withComputedDelay,
     }),
     deleteScadenza: deleteRecord(Scadenza, { name: 'Scadenza' }),

@@ -15,9 +15,10 @@ const {
 } = require('./utils/controllerActions');
 const { parseOptionalBoolean } = require('./utils/requestOptions');
 const { nelFuturo, toDate } = require('../utils/dates');
-const { badRequest } = require('../utils/errors');
-const { escapeRegex } = require('../utils/values');
+const { badRequest, conflict } = require('../utils/errors');
+const { escapeRegex, parseBoolean } = require('../utils/values');
 const { calculateReadingById } = require('../services/calcoloLettura');
+const { misuraCambiata } = require('../services/misuraLettura');
 const { letturaViews } = require('../config/listViews');
 
 const populatedContatore = {
@@ -68,6 +69,30 @@ const controllaData = (body) => {
     return body;
 };
 
+// Una lettura che una fattura usa resta com'e: la fattura ne ha preso la misura,
+// e la lettura dopo parte da li. Toglierle lo stato "fatturata" la rimetterebbe
+// fra quelle da fatturare, e il cliente pagherebbe due volte. Se ne correggono
+// le note; per il resto va prima cancellata la fattura, che la libera. Una
+// lettura che nessuna fattura usa - quella d'installazione di un contatore, che
+// si segna fatturata perche non si fatturi - resta libera.
+const perLaModifica = async (body, req) => {
+    const corpo = controllaData(body);
+
+    if (!(await Servizio.exists({ lettura: req.params.id }))) {
+        return corpo;
+    }
+
+    const esistente = await Lettura.findById(req.params.id).lean();
+    const tornaDaFatturare = Object.hasOwn(corpo, 'fatturata') && !parseBoolean(corpo.fatturata);
+
+    if (tornaDaFatturare || misuraCambiata(esistente, corpo).length) {
+        throw conflict('Lettura usata da una fattura: valore, data, contatore e stato di fatturazione non si '
+            + 'cambiano più. Per correggerli va prima cancellata la fattura che la usa.');
+    }
+
+    return corpo;
+};
+
 const getCalcolo = async (req, res) => {
     try {
         const calculation = await calculateReadingById(req.params.id, {
@@ -92,7 +117,7 @@ module.exports = {
     }),
     getLettura: getRecord(Lettura, { name: 'Lettura', populate: populatedContatore }),
     getCalcolo,
-    updateLettura: updateRecord(Lettura, { name: 'Lettura', mapBody: controllaData }),
+    updateLettura: updateRecord(Lettura, { name: 'Lettura', mapBody: perLaModifica }),
     deleteLettura: deleteRecord(Lettura, { name: 'Lettura' }),
     associateContatore: associateRecords({
         field: 'contatore',
