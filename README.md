@@ -143,13 +143,13 @@ Dettaglio in [docs/architettura.md](docs/architettura.md).
 
 ```bash
 JWT_EXPIRES_IN=8h
-MAX_ADMIN_USERS=2
 ```
 
 `JWT_EXPIRES_IN` regola la durata del token (non esiste rinnovo automatico:
-alla scadenza serve un nuovo login). `MAX_ADMIN_USERS` limita la registrazione
-libera di amministratori; gli account del portale clienti non rientrano nel
-conteggio e si creano dalla scheda cliente.
+alla scadenza serve un nuovo login). Gli account del gestionale non si
+registrano da soli: si creano da riga di comando, con
+`npm run maintenance:password -- <utente> <password> <ruolo>`. Gli account del
+portale clienti si creano dalla scheda cliente.
 
 Tutti gli esiti di autenticazione fallita rispondono `401` con un campo `reason`
 (`missing_token`, `token_expired`, `invalid_token`, `user_not_found`), cosi il

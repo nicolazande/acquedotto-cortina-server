@@ -63,7 +63,6 @@ POST   /api/attachments/:resource/:recordId                 create
 ### /api/auth
 ```text
 GET    /api/auth/health                                     healthCheck
-POST   /api/auth/register                                   register
 POST   /api/auth/login                                      login
 GET    /api/auth/profile                                    AuthMiddleware, getProfile
 PUT    /api/auth/profile                                    AuthMiddleware, updateProfile
@@ -275,9 +274,10 @@ GET    /api/servizi/:id/articolo                            getArticoloAssociato
 ## Note per risorsa
 
 ### `/api/auth`
-`health`, `login` e `register` sono pubblici. `register` e limitato a
-`MAX_ADMIN_USERS` (default 2) account amministratore; gli account del portale
-clienti non consumano questo limite e si creano da `/api/clienti/:id/portal-user`.
+`health` e `login` sono pubblici. Non c'e registrazione: gli account del
+gestionale si creano da riga di comando (`npm run maintenance:password`), quelli
+del portale clienti da `/api/clienti/:id/portal-user`. Il login accetta nome e
+password solo come testo.
 
 ### `/api/fatture`
 - `POST /genera-da-letture` — corpo: `letture` (array di id), `data_fattura`,

@@ -41,7 +41,7 @@ const getMappa = async (req, res) => {
 
         res.status(200).json({ data: edifici, senzaPosizione: totale - edifici.length });
     } catch (error) {
-        sendServiceError(res, error, 'Error fetching mappa edifici');
+        sendServiceError(res, error, 'Mappa degli edifici non disponibile.');
     }
 };
 
@@ -50,7 +50,7 @@ module.exports = {
     getMappa,
     getEdifici: (req, res) => sendPaginated(Edificio, req, res, {
         defaultSort: 'descrizione',
-        errorMessage: 'Error fetching edifici',
+        errorMessage: 'Elenco degli edifici non disponibile.',
     }),
     getEdificio: getRecord(Edificio, { name: 'Edificio' }),
     updateEdificio: updateRecord(Edificio, { name: 'Edificio' }),
@@ -71,6 +71,6 @@ module.exports = {
         field: 'edificio',
         idParam: 'edificioId',
         populate: 'cliente',
-        errorMessage: 'Error fetching contatori associati',
+        errorMessage: 'Contatori dell’edificio non disponibili.',
     }),
 };

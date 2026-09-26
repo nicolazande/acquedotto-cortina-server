@@ -72,4 +72,8 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
 // Creazione del modello utente
 const User = mongoose.model('User', userSchema);
 
+// Quanto deve essere lunga, almeno, la password di un account: la stessa regola
+// per il profilo, per gli accessi al portale e per lo script che le reimposta.
+User.LUNGHEZZA_MINIMA_PASSWORD = 8;
+
 module.exports = User;

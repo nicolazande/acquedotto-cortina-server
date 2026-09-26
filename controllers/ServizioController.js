@@ -35,7 +35,7 @@ const createServizio = async (req, res) => {
         await writeServiceAudit(req, servizio, 'fattura.servizio_creato', 'Creata riga servizio');
         res.status(201).json(servizio);
     } catch (error) {
-        sendServiceError(res, error, 'Error creating servizio', error.status || 400);
+        sendServiceError(res, error, 'Riga di fattura non creata.', error.status || 400);
     }
 };
 
@@ -56,7 +56,7 @@ const updateServizio = async (req, res) => {
         await writeServiceUpdateAudit(req, before, after);
         res.status(200).json(after);
     } catch (error) {
-        sendServiceError(res, error, 'Error updating servizio', error.status || 400);
+        sendServiceError(res, error, 'Modifica della riga di fattura non riuscita.', error.status || 400);
     }
 };
 
@@ -68,7 +68,7 @@ const deleteServizio = async (req, res) => {
         await writeServiceAudit(req, servizio, 'fattura.servizio_cancellato', 'Cancellata riga servizio');
         res.status(204).send();
     } catch (error) {
-        sendServiceError(res, error, 'Error deleting servizio', error.status || 400);
+        sendServiceError(res, error, 'Cancellazione della riga di fattura non riuscita.', error.status || 400);
     }
 };
 
@@ -131,7 +131,7 @@ module.exports = {
     createServizio,
     getServizi: (req, res) => sendPaginated(Servizio, req, res, {
         defaultSort: 'descrizione',
-        errorMessage: 'Error fetching servizi',
+        errorMessage: 'Elenco delle righe di fattura non disponibile.',
         populate,
     }),
     getServizio: getRecord(Servizio, { name: 'Servizio', populate }),

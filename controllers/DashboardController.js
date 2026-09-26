@@ -6,7 +6,7 @@ const getPanoramica = async (req, res) => {
         const panoramica = await getDashboard();
         res.status(200).json(panoramica);
     } catch (error) {
-        sendServiceError(res, error, 'Error fetching panoramica');
+        sendServiceError(res, error, 'Panoramica non disponibile.');
     }
 };
 

@@ -3,32 +3,33 @@ const Contatore = require('../models/Contatore');
 const Fattura = require('../models/Fattura');
 const Lettura = require('../models/Lettura');
 const { generateInvoicePdf } = require('../services/invoicePdf');
+const { FILTRO_CONFERMATE } = require('../config/invoicing');
 const { customerLabel } = require('../utils/customer');
+const { createError, notFound } = require('../utils/errors');
+const { fromCents, sumCents } = require('../utils/money');
+const { sendServiceError } = require('./utils/controllerActions');
 
 const getCustomerId = (req) => req.user?.cliente?._id || req.user?.cliente;
 
 const requireCustomerId = (req) => {
     const clienteId = getCustomerId(req);
     if (!clienteId) {
-        const error = new Error('Account cliente non collegato ad alcuna anagrafica');
-        error.status = 403;
-        throw error;
+        throw createError('Account cliente non collegato ad alcuna anagrafica.', 403);
     }
     return clienteId;
 };
 
-const openInvoiceTotal = (fattura) => (fattura.scadenza?.saldo ? 0 : Number(fattura.totale_fattura || 0));
+// Il cliente vede solo le fatture confermate: una bozza puo ancora cambiare, o
+// sparire, e non deve poterla scaricare ne trovarla nel conto da pagare.
+const sueFatture = (clienteId) => ({ cliente: clienteId, ...FILTRO_CONFERMATE });
 
 const getPortalData = async (req, res) => {
     try {
         const clienteId = requireCustomerId(req);
         const cliente = await Cliente.findById(clienteId)
             .select('ragione_sociale cognome nome codice_cliente_erp indirizzo_residenza numero_residenza localita_residenza email telefono cellulare pagamento')
+            .orFail(() => notFound('Cliente non trovato.'))
             .lean();
-
-        if (!cliente) {
-            return res.status(404).json({ error: 'Cliente non trovato' });
-        }
 
         const contatori = await Contatore.find({ cliente: clienteId })
             .select('tipo_contatore codice nome_edificio tipo_attivita seriale seriale_interno inattivo consumo inizio scadenza')
@@ -36,7 +37,7 @@ const getPortalData = async (req, res) => {
             .lean();
         const contatoreIds = contatori.map((contatore) => contatore._id);
         const [fatture, letture] = await Promise.all([
-            Fattura.find({ cliente: clienteId })
+            Fattura.find(sueFatture(clienteId))
                 .select('tipo_documento anno numero data_fattura codice imponibile iva totale_fattura stato confermata scadenza')
                 .populate('scadenza', 'scadenza saldo pagamento ritardo totale')
                 .sort({ data_fattura: -1, _id: -1 })
@@ -64,23 +65,21 @@ const getPortalData = async (req, res) => {
                 fatture: fatture.length,
                 fattureAperte: openInvoices.length,
                 letture: letture.length,
-                daPagare: openInvoices.reduce((total, fattura) => total + openInvoiceTotal(fattura), 0),
+                daPagare: fromCents(sumCents(openInvoices, (fattura) => fattura.totale_fattura)),
             },
         });
     } catch (error) {
-        console.error('[CustomerPortal] Error loading portal data:', error.message);
-        res.status(error.status || 500).json({ error: error.message || 'Errore durante il recupero area clienti' });
+        sendServiceError(res, error, 'Area clienti non disponibile.');
     }
 };
 
 const downloadInvoicePdf = async (req, res) => {
     try {
         const clienteId = requireCustomerId(req);
-        const fattura = await Fattura.findOne({ _id: req.params.id, cliente: clienteId }).select('_id').lean();
-
-        if (!fattura) {
-            return res.status(404).json({ error: 'Fattura non trovata' });
-        }
+        await Fattura.findOne({ _id: req.params.id, ...sueFatture(clienteId) })
+            .select('_id')
+            .orFail(() => notFound('Fattura non trovata.'))
+            .lean();
 
         const { buffer, filename } = await generateInvoicePdf(req.params.id);
         res.setHeader('Content-Type', 'application/pdf');
@@ -88,8 +87,7 @@ const downloadInvoicePdf = async (req, res) => {
         res.setHeader('Content-Length', buffer.length);
         return res.status(200).send(buffer);
     } catch (error) {
-        console.error('[CustomerPortal] Error generating invoice PDF:', error.message);
-        return res.status(error.status || 500).json({ error: error.message || 'Errore durante la generazione PDF' });
+        return sendServiceError(res, error, 'PDF della fattura non disponibile.');
     }
 };
 

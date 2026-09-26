@@ -22,7 +22,7 @@ module.exports = {
     createArticolo: createRecord(Articolo, { audit, name: 'Articolo' }),
     getArticoli: (req, res) => sendPaginated(Articolo, req, res, {
         defaultSort: 'descrizione',
-        errorMessage: 'Error fetching articoli',
+        errorMessage: 'Elenco degli articoli non disponibile.',
         // L'aliquota e scritta dentro l'etichetta ("IVA 10%", "Esente art.15"):
         // e la forma giusta per la fattura elettronica, che vuole la dicitura,
         // ma per fare un conto serve il numero. Si ricava qui con la stessa
@@ -47,6 +47,6 @@ module.exports = {
     getServiziAssociati: getManyByField({
         Model: Servizio,
         field: 'articolo',
-        errorMessage: 'Error fetching servizi associati',
+        errorMessage: 'Righe di fattura dell’articolo non disponibili.',
     }),
 };

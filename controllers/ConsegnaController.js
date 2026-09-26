@@ -31,7 +31,7 @@ const registra = (req, consegna, action, summary, metadata) => writeAuditLog({
 const getConsegne = (req, res) => sendPaginated(Consegna, req, res, {
     views: consegnaViews,
     defaultSort: 'createdAt',
-    errorMessage: 'Error fetching consegne',
+    errorMessage: 'Elenco delle consegne non disponibile.',
     populate: 'cliente',
 });
 
@@ -39,7 +39,7 @@ const getRiepilogo = async (req, res) => {
     try {
         res.status(200).json(await riepilogo());
     } catch (error) {
-        sendServiceError(res, error, 'Error fetching consegne summary');
+        sendServiceError(res, error, 'Riepilogo delle consegne non disponibile.');
     }
 };
 
@@ -47,7 +47,7 @@ const getAnteprima = async (req, res) => {
     try {
         res.status(200).json(await anteprimaFattura(req.params.id));
     } catch (error) {
-        sendServiceError(res, error, 'Error building consegna preview');
+        sendServiceError(res, error, 'Anteprima delle consegne non disponibile.');
     }
 };
 
@@ -64,7 +64,7 @@ const pianifica = async (req, res) => {
         );
         res.status(200).json(esito);
     } catch (error) {
-        sendServiceError(res, error, 'Error planning consegne', 400);
+        sendServiceError(res, error, 'Preparazione della coda non riuscita.', 400);
     }
 };
 
@@ -84,7 +84,7 @@ const elabora = async (req, res) => {
         );
         res.status(200).json(esito);
     } catch (error) {
-        sendServiceError(res, error, 'Error processing consegne', 400);
+        sendServiceError(res, error, 'Invio delle consegne non riuscito.', 400);
     }
 };
 
@@ -94,7 +94,7 @@ const azione = (esegui, action, descrizione) => async (req, res) => {
         await registra(req, consegna, action, `${descrizione} ${consegna.documento || ''}`.trim());
         res.status(200).json(consegna);
     } catch (error) {
-        sendServiceError(res, error, 'Error updating consegna', error.status || 400);
+        sendServiceError(res, error, 'Modifica della consegna non riuscita.', error.status || 400);
     }
 };
 
@@ -114,7 +114,7 @@ const segnaEvaseInBlocco = async (req, res) => {
         );
         res.status(200).json(esito);
     } catch (error) {
-        sendServiceError(res, error, 'Error closing consegne', error.status || 400);
+        sendServiceError(res, error, 'Consegne non segnate evase.', error.status || 400);
     }
 };
 
@@ -138,7 +138,7 @@ const stampa = async (req, res) => {
         res.setHeader('X-Consegne-Bloccate', String(bloccate));
         res.status(200).send(buffer);
     } catch (error) {
-        sendServiceError(res, error, 'Error printing deliveries', error.status || 400);
+        sendServiceError(res, error, 'Stampa non riuscita.', error.status || 400);
     }
 };
 
@@ -163,7 +163,7 @@ const scaricaXml = async (req, res) => {
         res.setHeader('Content-Length', buffer.length);
         res.status(200).send(buffer);
     } catch (error) {
-        sendServiceError(res, error, 'Error exporting electronic invoices', error.status || 400);
+        sendServiceError(res, error, 'Archivio degli XML non generato.', error.status || 400);
     }
 };
 
@@ -180,7 +180,7 @@ const scaricaXmlSingolo = async (req, res) => {
         res.setHeader('Content-Length', contenuto.length);
         res.status(200).send(contenuto);
     } catch (error) {
-        sendServiceError(res, error, 'Error exporting the electronic invoice', error.status || 400);
+        sendServiceError(res, error, 'File XML non generato.', error.status || 400);
     }
 };
 
@@ -188,7 +188,7 @@ const provaTrasporto = async (req, res) => {
     try {
         res.status(200).json(await verificaTrasporto());
     } catch (error) {
-        sendServiceError(res, error, 'Error verifying mail transport');
+        sendServiceError(res, error, 'Verifica della posta non riuscita.');
     }
 };
 

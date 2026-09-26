@@ -24,11 +24,14 @@ const emessaDalGestionale = (fattura) => Boolean(fattura?.serie);
 const FILTRO_EMESSE_DAL_GESTIONALE = { serie: { $type: 'string', $ne: '' } };
 
 // Una fattura confermata: la spunta o lo stato, che il modello tiene allineati.
-// Decide sia il blocco delle modifiche sia se la fattura si puo consegnare.
+// Decide sia il blocco delle modifiche sia se la fattura si puo consegnare, o
+// mostrare al cliente nel suo portale. Il filtro e la stessa regola scritta per
+// il database.
 const isConfirmedInvoice = (fattura) => (
     fattura?.confermata === true
     || String(fattura?.stato || '').toLowerCase() === 'confermata'
 );
+const FILTRO_CONFERMATE = { $or: [{ confermata: true }, { stato: /^confermata$/i }] };
 
 // Tipo di documento nel tracciato. Il campo `tipo_documento` e testo libero
 // nell'anagrafica importata, ma assume solo due valori: "Fattura" su 3.467
@@ -118,6 +121,7 @@ const giorniDelTermine = (tipoPagamento) => {
 };
 
 module.exports = {
+    FILTRO_CONFERMATE,
     FILTRO_EMESSE_DAL_GESTIONALE,
     emessaDalGestionale,
     giorniDelTermine,

@@ -50,7 +50,7 @@ const registraIncassi = async (req, res) => {
 
         res.status(200).json(esito);
     } catch (error) {
-        sendServiceError(res, error, 'Error registering payments', error.status || 400);
+        sendServiceError(res, error, 'Incassi non registrati.', error.status || 400);
     }
 };
 
@@ -70,7 +70,7 @@ const annullaIncassi = async (req, res) => {
 
         res.status(200).json(esito);
     } catch (error) {
-        sendServiceError(res, error, 'Error cancelling payments', error.status || 400);
+        sendServiceError(res, error, 'Annullamento degli incassi non riuscito.', error.status || 400);
     }
 };
 
@@ -92,7 +92,7 @@ module.exports = {
         views: scadenzaViews,
         defaultLimit: 100,
         defaultSort: 'scadenza',
-        errorMessage: 'Error fetching scadenze',
+        errorMessage: 'Elenco delle scadenze non disponibile.',
         transform: withComputedDelay,
     }),
     getScadenza: getRecord(Scadenza, { name: 'Scadenza', transform: withComputedDelay }),
@@ -119,8 +119,7 @@ module.exports = {
             const fattura = await Fattura.findOne({ scadenza: req.params.id });
             res.status(200).json(fattura);
         } catch (error) {
-            console.error(error);
-            res.status(500).json({ error: 'Error fetching fattura associata' });
+            sendServiceError(res, error, 'Fattura della scadenza non disponibile.');
         }
     },
 };

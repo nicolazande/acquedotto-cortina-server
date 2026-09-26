@@ -3,6 +3,9 @@ const { getResourceModel } = require('../config/resources');
 const NoteAttachment = require('../models/NoteAttachment');
 const { getUserRole, puoUsareRisorsa } = require('../config/permessi');
 const { dimentica, leggi, riponi } = require('../services/archivioFile');
+const { badRequest, createError, notFound } = require('../utils/errors');
+const { parsePositiveInteger } = require('../utils/values');
+const { sendServiceError } = require('./utils/controllerActions');
 
 // Un allegato vale quanto il documento a cui e attaccato: le note su un
 // contatore le puo leggere chi puo leggere quel contatore, quelle su una fattura
@@ -15,22 +18,8 @@ const puoAccedere = (req, risorsa, opzioni) => puoUsareRisorsa(getUserRole(req.u
 
 const permessiInsufficienti = (res) => res.status(403).json({ error: 'Permessi insufficienti' });
 
-const allowedAttachmentTypes = new Set([
-    'application/msword',
-    'application/pdf',
-    'application/vnd.ms-excel',
-    'application/vnd.oasis.opendocument.spreadsheet',
-    'application/vnd.oasis.opendocument.text',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'image/gif',
-    'image/jpeg',
-    'image/png',
-    'image/webp',
-    'text/csv',
-    'text/plain',
-]);
-
+// I tipi di file che si possono allegare, con l'estensione che prende il nome
+// del file salvato: un elenco solo, da cui vengono anche i tipi ammessi.
 const extensionByType = {
     'application/msword': 'doc',
     'application/pdf': 'pdf',
@@ -47,15 +36,11 @@ const extensionByType = {
     'text/plain': 'txt',
 };
 
-const contentTypeByExtension = Object.entries(extensionByType).reduce((types, [contentType, extension]) => ({
-    ...types,
-    [extension]: contentType,
-}), {});
+const allowedAttachmentTypes = new Set(Object.keys(extensionByType));
 
-const parsePositiveInteger = (value, fallback) => {
-    const parsed = Number.parseInt(value, 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-};
+const contentTypeByExtension = Object.fromEntries(
+    Object.entries(extensionByType).map(([contentType, extension]) => [extension, contentType])
+);
 
 const getMaxBytes = () => parsePositiveInteger(process.env.ATTACHMENT_MAX_BYTES, 6 * 1024 * 1024);
 
@@ -86,7 +71,7 @@ const getContentTypeFromFilename = (filename = '') => {
 
 const decodeAttachmentPayload = ({ data, contentType, filename }) => {
     if (!data || typeof data !== 'string') {
-        throw new Error('Attachment data is required');
+        throw badRequest('Manca il contenuto dell’allegato.');
     }
 
     const dataUrlMatch = data.match(/^data:([^;]+);base64,(.+)$/);
@@ -97,12 +82,12 @@ const decodeAttachmentPayload = ({ data, contentType, filename }) => {
     const base64Data = dataUrlMatch ? dataUrlMatch[2] : data;
 
     if (!allowedAttachmentTypes.has(detectedContentType)) {
-        throw new Error('Unsupported attachment type');
+        throw badRequest(`Tipo di file non ammesso: si allegano ${[...new Set(Object.values(extensionByType))].join(', ')}.`);
     }
 
     const buffer = Buffer.from(base64Data, 'base64');
     if (!buffer.length) {
-        throw new Error('Attachment data is empty');
+        throw badRequest('L’allegato è vuoto.');
     }
 
     return { buffer, contentType: detectedContentType };
@@ -117,6 +102,8 @@ const safeFilename = (filename, contentType) => {
     return cleaned || `allegato.${fallbackExtension}`;
 };
 
+const allegatoNonTrovato = () => notFound('Allegato non trovato.');
+
 class NoteAttachmentController {
     static async list(req, res) {
         try {
@@ -130,7 +117,7 @@ class NoteAttachmentController {
             const recordFilter = getRecordFilter(recordId);
 
             if (!Model || !recordFilter) {
-                return res.status(400).json({ error: 'Invalid attachment target' });
+                return res.status(400).json({ error: 'Scheda a cui allegare non valida.' });
             }
 
             const attachments = await NoteAttachment
@@ -140,8 +127,7 @@ class NoteAttachmentController {
 
             return res.status(200).json(attachments.map(serializeAttachment));
         } catch (error) {
-            console.error(error);
-            return res.status(500).json({ error: 'Error fetching note attachments' });
+            return sendServiceError(res, error, 'Allegati non disponibili.');
         }
     }
 
@@ -156,18 +142,18 @@ class NoteAttachmentController {
             const recordFilter = getRecordFilter(recordId);
 
             if (!Model || !recordFilter) {
-                return res.status(400).json({ error: 'Invalid attachment target' });
+                return res.status(400).json({ error: 'Scheda a cui allegare non valida.' });
             }
 
-            const exists = await Model.exists(recordFilter);
-            if (!exists) {
-                return res.status(404).json({ error: 'Record not found' });
+            if (!(await Model.exists(recordFilter))) {
+                throw notFound('Scheda non trovata.');
             }
 
             const { buffer, contentType } = decodeAttachmentPayload(req.body);
             const maxBytes = getMaxBytes();
             if (buffer.length > maxBytes) {
-                return res.status(413).json({ error: `Attachment exceeds ${maxBytes} bytes` });
+                const mega = String(Number((maxBytes / (1024 * 1024)).toFixed(1))).replace('.', ',');
+                throw createError(`L’allegato è troppo grande: il massimo è ${mega} MB.`, 413);
             }
 
             const filename = safeFilename(req.body.filename, contentType);
@@ -186,17 +172,13 @@ class NoteAttachmentController {
 
             return res.status(201).json(serializeAttachment(attachment));
         } catch (error) {
-            console.error(error);
-            return res.status(400).json({ error: 'Error creating note attachment' });
+            return sendServiceError(res, error, 'Allegato non salvato.', 400);
         }
     }
 
     static async file(req, res) {
         try {
-            const attachment = await NoteAttachment.findById(req.params.id);
-            if (!attachment) {
-                return res.status(404).json({ error: 'Attachment not found' });
-            }
+            const attachment = await NoteAttachment.findById(req.params.id).orFail(allegatoNonTrovato);
 
             if (!puoAccedere(req, attachment.resource)) {
                 return permessiInsufficienti(res);
@@ -214,8 +196,7 @@ class NoteAttachmentController {
             res.set('X-Content-Type-Options', 'nosniff');
             return res.send(byte);
         } catch (error) {
-            console.error(error);
-            return res.status(500).json({ error: 'Error fetching attachment file' });
+            return sendServiceError(res, error, 'File dell’allegato non disponibile.');
         }
     }
 
@@ -223,10 +204,7 @@ class NoteAttachmentController {
         try {
             // Si guarda prima di cancellare: sapere a cosa e attaccato serve a
             // decidere se chi chiede puo farlo.
-            const attachment = await NoteAttachment.findById(req.params.id);
-            if (!attachment) {
-                return res.status(404).json({ error: 'Attachment not found' });
-            }
+            const attachment = await NoteAttachment.findById(req.params.id).orFail(allegatoNonTrovato);
 
             if (!puoAccedere(req, attachment.resource, { scrittura: true })) {
                 return permessiInsufficienti(res);
@@ -239,8 +217,7 @@ class NoteAttachmentController {
             await dimentica(attachment);
             return res.status(204).send();
         } catch (error) {
-            console.error(error);
-            return res.status(500).json({ error: 'Error deleting attachment' });
+            return sendServiceError(res, error, 'Allegato non cancellato.');
         }
     }
 }

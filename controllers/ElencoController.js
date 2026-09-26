@@ -88,7 +88,7 @@ const scaricaElenco = async (req, res) => {
         res.setHeader('Content-Length', buffer.length);
         return res.status(200).send(buffer);
     } catch (error) {
-        return sendServiceError(res, error, 'Error generating elenco');
+        return sendServiceError(res, error, 'Elenco non generato.');
     }
 };
 
@@ -101,7 +101,7 @@ const riepilogoElenco = async (req, res) => {
 
         return res.status(200).json(await elenco.riepilogo(annoRichiesto(req.query.anno)));
     } catch (error) {
-        return sendServiceError(res, error, 'Error reading elenco summary');
+        return sendServiceError(res, error, 'Riepilogo dell’elenco non disponibile.');
     }
 };
 

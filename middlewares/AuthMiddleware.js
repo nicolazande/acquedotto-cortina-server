@@ -12,7 +12,7 @@ const AuthMiddleware = async (req, res, next) => {
     const authHeader = req.header('Authorization');
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return denyAccess(res, 'Access denied', 'missing_token');
+        return denyAccess(res, 'Accesso negato: serve il login.', 'missing_token');
     }
 
     const token = authHeader.slice('Bearer '.length).trim();

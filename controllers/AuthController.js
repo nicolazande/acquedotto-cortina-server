@@ -7,10 +7,9 @@ const {
     risorsePerRuolo,
     risorseScrivibiliPerRuolo,
 } = require('../config/permessi');
+const { sendServiceError } = require('./utils/controllerActions');
+const { badRequest, notFound } = require('../utils/errors');
 
-const MAX_ADMIN_USERS = Number.parseInt(process.env.MAX_ADMIN_USERS || '2', 10);
-
-// Health check route
 // Versione in esecuzione. Serve a rispondere in pochi secondi alla domanda
 // "cosa e effettivamente pubblicato": client e server stanno su due servizi
 // distinti e si aggiornano in momenti diversi. Finora non c'era modo di
@@ -36,61 +35,49 @@ const healthCheck = (req, res) => {
     });
 };
 
-// Register a new user
-const register = async (req, res) => {
-    const { username, password } = req.body;
-    try {
-        const userCount = await User.countDocuments({ role: { $ne: 'cliente' } });
+// Gli account non si registrano da soli: li crea chi ha accesso al database, con
+// `npm run maintenance:password`. Una registrazione pubblica creava un
+// amministratore finche gli account interni erano meno di due - bastava
+// cancellarne qualcuno perche chiunque potesse diventarlo.
 
-        if (userCount >= MAX_ADMIN_USERS) {
-            return res.status(403).json({ error: 'Registrazione disabilitata, limite utenti.' });
-        }
+// Nome e password arrivano come testo e basta: un oggetto nel corpo della
+// richiesta ({"$regex": "^a"}) diventerebbe un operatore di MongoDB, e
+// permetterebbe di sondare quali nomi esistono.
+const CREDENZIALI_NON_VALIDE = 'Credenziali non valide.';
 
-        const user = new User({ username, password, role: 'admin' });
-        await user.save();
-
-        res.status(201).json({ message: 'Utente registrato correttamente' });
-    } catch (error) {
-        console.error('[Register] Error during registration:', error.message);
-        res.status(400).json({ error: 'Error registering user' });
-    }
-};
-
-// Login an existing user
 const login = async (req, res) => {
-    const { username, password } = req.body;
+    const username = String(req.body?.username ?? '');
+    const password = String(req.body?.password ?? '');
     try {
         const user = await User.findOne({ username });
         if (!user) {
-            console.warn('[Login] User not found:', username);
-            return res.status(401).json({ error: 'Invalid credentials' });
+            console.warn('[Login] Utente inesistente:', username);
+            return res.status(401).json({ error: CREDENZIALI_NON_VALIDE });
         }
         if (user.active === false) {
-            return res.status(403).json({ error: 'Account disabilitato' });
+            return res.status(403).json({ error: 'Account disabilitato.' });
         }
 
-        const isPasswordValid = await user.comparePassword(password);
-
-        if (!isPasswordValid) {
-            console.warn('[Login] Invalid password for:', username);
-            return res.status(401).json({ error: 'Invalid credentials' });
+        if (!(await user.comparePassword(password))) {
+            console.warn('[Login] Password sbagliata per:', username);
+            return res.status(401).json({ error: CREDENZIALI_NON_VALIDE });
         }
 
         const token = jwt.sign({ userId: user._id, role: getUserRole(user) }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
-        res.json({ token });
+        return res.json({ token });
     } catch (error) {
-        console.error('[Login] Error logging in:', error.message);
-        res.status(400).json({ error: 'Error logging in' });
+        return sendServiceError(res, error, 'Accesso non riuscito.');
     }
 };
 
-// Get user profile
+const utenteNonTrovato = () => notFound('Utente non trovato.');
+
 const getProfile = async (req, res) => {
     try {
-        const user = await User.findById(req.user._id).select('-password').populate('cliente', 'ragione_sociale cognome nome codice_cliente_erp email');
-        if (!user) {
-            return res.status(404).json({ error: 'User not found' });
-        }
+        const user = await User.findById(req.user._id)
+            .select('-password')
+            .populate('cliente', 'ragione_sociale cognome nome codice_cliente_erp email')
+            .orFail(utenteNonTrovato);
 
         res.json({
             id: user._id,
@@ -106,21 +93,20 @@ const getProfile = async (req, res) => {
             cliente: user.cliente || null,
         });
     } catch (error) {
-        console.error('[GetProfile] Error fetching profile:', error.message);
-        res.status(400).json({ error: 'Error fetching profile' });
+        sendServiceError(res, error, 'Profilo non disponibile.');
     }
 };
 
-// Update user profile
 const updateProfile = async (req, res) => {
     const { username, password, email, numero_telefono } = req.body;
     try {
-        const user = await User.findById(req.user._id);
-        if (!user) {
-            return res.status(404).json({ error: 'User not found' });
+        const user = await User.findById(req.user._id).orFail(utenteNonTrovato);
+
+        if (password && String(password).length < User.LUNGHEZZA_MINIMA_PASSWORD) {
+            throw badRequest(`La password deve avere almeno ${User.LUNGHEZZA_MINIMA_PASSWORD} caratteri.`);
         }
 
-        // Update fields; password will be hashed by pre('save') hook
+        // La password la cifra il gancio del modello, al salvataggio.
         if (username) user.username = username;
         if (password) user.password = password;
         if (email) user.email = email;
@@ -129,14 +115,12 @@ const updateProfile = async (req, res) => {
         await user.save();
 
         res.json({
-            message: 'Profile updated successfully',
+            message: 'Profilo aggiornato.',
             updatedFields: { username, email, numero_telefono },
         });
     } catch (error) {
-        console.error('[UpdateProfile] Error updating profile:', error.message);
-        res.status(400).json({ error: 'Error updating profile' });
+        sendServiceError(res, error, 'Profilo non aggiornato.', 400);
     }
 };
 
-
-module.exports = { register, login, getProfile, updateProfile, healthCheck };
+module.exports = { login, getProfile, updateProfile, healthCheck };

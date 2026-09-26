@@ -39,6 +39,7 @@ const { deleteInvoice } = require('../services/invoiceDeletionService');
 const { generateInvoicePdf } = require('../services/invoicePdf');
 const { buildInvoiceXml } = require('../services/invoiceXml');
 const { fatturaViews } = require('../config/listViews');
+const { notFound } = require('../utils/errors');
 
 const invoiceStatus = (confermata) => (parseOptionalBoolean(confermata) ? 'confermata' : 'bozza');
 
@@ -71,14 +72,14 @@ const createFattura = async (req, res) => {
         await writeInvoiceAudit(req, result.fattura, 'fattura.creata', `Creata ${invoiceLabel(result.fattura)}`);
         res.status(201).json(result.fattura);
     } catch (error) {
-        sendServiceError(res, error, 'Error creating fattura', 400);
+        sendServiceError(res, error, 'Creazione della fattura non riuscita.', 400);
     }
 };
 
 const getFatture = (req, res) => sendPaginated(Fattura, req, res, {
     views: fatturaViews,
     defaultSort: 'data_fattura',
-    errorMessage: 'Error fetching fatture',
+    errorMessage: 'Elenco delle fatture non disponibile.',
     populate: 'cliente scadenza',
 });
 
@@ -96,7 +97,7 @@ const generateFromReadings = async (req, res) => {
         });
         res.status(201).json(result);
     } catch (error) {
-        sendServiceError(res, error, 'Error generating fattura', 400);
+        sendServiceError(res, error, 'Generazione della fattura non riuscita.', 400);
     }
 };
 
@@ -108,7 +109,7 @@ const getGenerationPreview = async (req, res) => {
         });
         res.status(200).json(result);
     } catch (error) {
-        sendServiceError(res, error, 'Error fetching billing generation preview');
+        sendServiceError(res, error, 'Anteprima della fatturazione non disponibile.');
     }
 };
 
@@ -120,7 +121,7 @@ const getControlDashboard = async (req, res) => {
         });
         res.status(200).json(result);
     } catch (error) {
-        sendServiceError(res, error, 'Error fetching fatture controls');
+        sendServiceError(res, error, 'Controlli delle fatture non disponibili.');
     }
 };
 
@@ -129,16 +130,15 @@ const verifyCalcolo = async (req, res) => {
         const result = await verifyInvoiceCalculation(req.params.id);
         res.status(200).json(result);
     } catch (error) {
-        sendServiceError(res, error, 'Error verifying fattura calculation');
+        sendServiceError(res, error, 'Verifica del calcolo non riuscita.');
     }
 };
 
+const fatturaNonTrovata = () => notFound('Fattura non trovata.');
+
 const applyFixedCharge = async (req, res) => {
     try {
-        const before = await Fattura.findById(req.params.id).lean();
-        if (!before) {
-            return res.status(404).json({ error: 'Fattura not found' });
-        }
+        const before = await Fattura.findById(req.params.id).orFail(fatturaNonTrovata).lean();
         assertInvoiceEditable(before, 'aggiungere la quota fissa', unlockOptions(req));
 
         const result = await applyFixedChargeToInvoice(req.params.id, unlockOptions(req));
@@ -150,7 +150,7 @@ const applyFixedCharge = async (req, res) => {
         });
         res.status(200).json(result);
     } catch (error) {
-        sendServiceError(res, error, 'Error applying fixed charge to fattura', 400);
+        sendServiceError(res, error, 'Quota fissa non aggiunta.', 400);
     }
 };
 
@@ -159,10 +159,7 @@ const applyFixedCharge = async (req, res) => {
 const downloadXml = async (req, res) => {
     try {
         // La scadenza entra nel tracciato: dice al cliente entro quando pagare.
-        const fattura = await Fattura.findById(req.params.id).populate('cliente scadenza').lean();
-        if (!fattura) {
-            return res.status(404).json({ error: 'Fattura not found' });
-        }
+        const fattura = await Fattura.findById(req.params.id).populate('cliente scadenza').orFail(fatturaNonTrovata).lean();
 
         const servizi = await righeDellaFattura(fattura._id);
 
@@ -177,7 +174,7 @@ const downloadXml = async (req, res) => {
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         return res.status(200).send(xml);
     } catch (error) {
-        return sendServiceError(res, error, 'Error generating fattura XML');
+        return sendServiceError(res, error, 'File XML della fattura non generato.');
     }
 };
 
@@ -189,16 +186,13 @@ const downloadPdf = async (req, res) => {
         res.setHeader('Content-Length', buffer.length);
         res.status(200).send(buffer);
     } catch (error) {
-        sendServiceError(res, error, 'Error generating fattura PDF');
+        sendServiceError(res, error, 'PDF della fattura non generato.');
     }
 };
 
 const updateFattura = async (req, res) => {
     try {
-        const before = await Fattura.findById(req.params.id).lean();
-        if (!before) {
-            return res.status(404).json({ error: 'Fattura not found' });
-        }
+        const before = await Fattura.findById(req.params.id).orFail(fatturaNonTrovata).lean();
         // Modificare un documento gia emesso e possibile solo con conferma esplicita,
         // e resta registrato come tale: e la differenza fra una correzione
         // consapevole e una modifica silenziosa allo storico.
@@ -213,7 +207,7 @@ const updateFattura = async (req, res) => {
         await writeInvoiceUpdateAudit(req, before, after, azione);
         return res.status(200).json(after);
     } catch (error) {
-        return sendServiceError(res, error, 'Error updating fattura', error.status || 400);
+        return sendServiceError(res, error, 'Modifica della fattura non riuscita.', error.status || 400);
     }
 };
 
@@ -235,7 +229,7 @@ const deleteFattura = async (req, res) => {
         });
         return res.status(204).send();
     } catch (error) {
-        return sendServiceError(res, error, 'Error deleting fattura', error.status || 400);
+        return sendServiceError(res, error, 'Cancellazione della fattura non riuscita.', error.status || 400);
     }
 };
 
@@ -244,7 +238,7 @@ const getAuditLog = async (req, res) => {
         const logs = await getAuditLogs('Fattura', req.params.id, { limit: req.query.limit });
         res.status(200).json(logs);
     } catch (error) {
-        sendServiceError(res, error, 'Error fetching fattura audit log');
+        sendServiceError(res, error, 'Storia delle modifiche non disponibile.');
     }
 };
 
@@ -312,7 +306,7 @@ module.exports = {
         Model: Servizio,
         field: 'fattura',
         populate: 'lettura articolo listino fascia',
-        errorMessage: 'Error fetching servizi associati',
+        errorMessage: 'Righe della fattura non disponibili.',
     }),
     getClienteAssociato: getPopulatedRelation({ Model: Fattura, name: 'Fattura', path: 'cliente' }),
     getScadenzaAssociata: getPopulatedRelation({

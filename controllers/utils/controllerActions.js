@@ -26,29 +26,16 @@ const describe = (audit, record) => (
     audit?.label ? audit.label(record) : String(record?._id || '')
 );
 
-// Due modi di rispondere a un errore, e la differenza conta.
-//
-// `sendError` e per i CRUD generati: il messaggio dell'errore non viene mai
-// mostrato al client a meno che l'errore non porti con se uno status, cioe a
-// meno che non sia un errore scritto da noi (utils/errors.js). Cosi un errore
-// del driver o di Mongoose non finisce nell'interfaccia con dentro nomi di
-// campi, indici o frammenti di query. Il testo di ripiego invece si legge
-// nell'interfaccia, quindi e in italiano come tutto il resto.
-//
-// `sendServiceError` e per i gestori scritti a mano attorno ai servizi, dove il
-// messaggio e in italiano ed e esattamente cio che l'utente deve leggere
-// ("Il listino X copre 120 mc su 135 mc").
-const sendError = (res, error, fallbackMessage, fallbackStatus = 500) => {
-    console.error(error);
-    res.status(error.status || fallbackStatus).json({
-        error: error.status ? error.message : fallbackMessage,
-    });
-};
-
+// Come si risponde a un errore, in un posto solo. Un errore previsto - un
+// rifiuto scritto da noi con il suo status (utils/errors.js) - arriva a chi usa
+// il gestionale con il suo messaggio, in italiano ("Il listino X copre 120 mc su
+// 135 mc"). Un guasto imprevisto no: il suo testo e tecnico - del driver, di
+// Mongoose, di un modulo - e potrebbe portare con se nomi di campi o frammenti
+// di query. Resta nel log, e all'utente arriva il messaggio di ripiego.
 const sendServiceError = (res, error, fallbackMessage, fallbackStatus = 500) => {
     console.error(error);
     res.status(error.status || fallbackStatus).json({
-        error: error.message || fallbackMessage,
+        error: error.status ? error.message : fallbackMessage,
     });
 };
 
@@ -68,7 +55,7 @@ const createRecord = (Model, { audit, name, mapBody = (body) => body, transform 
             });
             res.status(201).json(transform(record));
         } catch (error) {
-            sendError(res, error, `Creazione non riuscita (${lowerFirst(name)}).`, 400);
+            sendServiceError(res, error, `Creazione non riuscita (${lowerFirst(name)}).`, 400);
         }
     }
 );
@@ -82,7 +69,7 @@ const getRecord = (Model, { name, populate, transform = (record) => record }) =>
             }
             return res.status(200).json(transform(record));
         } catch (error) {
-            return sendError(res, error, `Lettura non riuscita (${lowerFirst(name)}).`);
+            return sendServiceError(res, error, `Lettura non riuscita (${lowerFirst(name)}).`);
         }
     }
 );
@@ -110,7 +97,7 @@ const updateRecord = (Model, { audit, name, mapBody = (body) => body, transform 
             });
             return res.status(200).json(transform(record));
         } catch (error) {
-            return sendError(res, error, `Modifica non riuscita (${lowerFirst(name)}).`, 400);
+            return sendServiceError(res, error, `Modifica non riuscita (${lowerFirst(name)}).`, 400);
         }
     }
 );
@@ -137,7 +124,7 @@ const deleteRecord = (Model, { audit, cascata = false, name }) => (
             // 204 non prevede corpo nella risposta.
             return res.status(204).send();
         } catch (error) {
-            return sendError(res, error, `Cancellazione non riuscita (${lowerFirst(name)}).`);
+            return sendServiceError(res, error, `Cancellazione non riuscita (${lowerFirst(name)}).`);
         }
     }
 );
@@ -181,7 +168,7 @@ const associateRecords = ({
                 [responseKey || lowerFirst(bodyRecord.constructor.modelName)]: bodyRecord,
             });
         } catch (error) {
-            return sendError(res, error, `Collegamento non riuscito (${lowerFirst(targetName)} a ${lowerFirst(sourceName)}).`);
+            return sendServiceError(res, error, `Collegamento non riuscito (${lowerFirst(targetName)} a ${lowerFirst(sourceName)}).`);
         }
     }
 );
@@ -196,7 +183,7 @@ const getPopulatedRelation = ({ Model, name, path, transform = (record) => recor
             const relation = record[path];
             return res.status(200).json(relation ? transform(relation) : null);
         } catch (error) {
-            return sendError(res, error, `Lettura non riuscita (${path} associato).`);
+            return sendServiceError(res, error, `Lettura non riuscita (${path} associato).`);
         }
     }
 );
@@ -207,7 +194,7 @@ const getManyByField = ({ Model, field, idParam = 'id', populate, errorMessage }
             const records = await applyPopulate(Model.find({ [field]: req.params[idParam] }), populate);
             res.status(200).json(records);
         } catch (error) {
-            sendError(res, error, errorMessage || `Lettura non riuscita (${field}).`);
+            sendServiceError(res, error, errorMessage || `Lettura non riuscita (${field}).`);
         }
     }
 );

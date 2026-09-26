@@ -33,7 +33,7 @@ const getStoria = async (req, res) => {
     try {
         res.status(200).json(await storiaContatore(req.params.id));
     } catch (error) {
-        sendServiceError(res, error, 'Error fetching storia contatore', error.status || 400);
+        sendServiceError(res, error, 'Storia del contatore non disponibile.', error.status || 400);
     }
 };
 
@@ -43,7 +43,7 @@ module.exports = {
     getContatori: (req, res) => sendPaginated(Contatore, req, res, {
         views: contatoreViews,
         defaultSort: 'nome_cliente',
-        errorMessage: 'Error fetching contatori',
+        errorMessage: 'Elenco dei contatori non disponibile.',
         populate,
     }),
     getContatore: getRecord(Contatore, { name: 'Contatore', populate }),
@@ -98,7 +98,7 @@ module.exports = {
     getLettureAssociate: getManyByField({
         Model: Lettura,
         field: 'contatore',
-        errorMessage: 'Error fetching letture associate',
+        errorMessage: 'Letture del contatore non disponibili.',
     }),
     getClienteAssociato: getPopulatedRelation({ Model: Contatore, name: 'Contatore', path: 'cliente' }),
 };

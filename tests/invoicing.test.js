@@ -1,7 +1,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { FILTRO_EMESSE_DAL_GESTIONALE, INVOICE_SERIES, emessaDalGestionale, invoiceCode } = require('../config/invoicing');
+const {
+    FILTRO_CONFERMATE,
+    FILTRO_EMESSE_DAL_GESTIONALE,
+    INVOICE_SERIES,
+    emessaDalGestionale,
+    invoiceCode,
+    isConfirmedInvoice,
+} = require('../config/invoicing');
 
 test('il codice documento unisce anno, serie e numero', () => {
     assert.equal(invoiceCode({ anno: 2026, numero: 1, serie: 'A' }), '2026/A/1');
@@ -28,4 +35,22 @@ test('la regola delle fatture del gestionale e il suo filtro dicono la stessa co
     assert.equal(emessaDalGestionale({ serie: '' }), false);
     assert.equal(emessaDalGestionale({ serie: null }), false);
     assert.equal(emessaDalGestionale({}), false);
+});
+
+test('il filtro delle fatture confermate dice quello che dice la regola', () => {
+    // La regola decide in memoria, il filtro nel database: il portale del cliente
+    // usa il filtro, e una fattura che la regola considera bozza non deve
+    // comparirgli.
+    const [perSpunta, perStato] = FILTRO_CONFERMATE.$or;
+    const soddisfa = (fattura) => fattura.confermata === perSpunta.confermata
+        || perStato.stato.test(String(fattura.stato || ''));
+
+    [
+        { confermata: true, stato: 'confermata' },
+        { stato: 'Confermata' },
+        { confermata: true },
+        { confermata: false, stato: 'bozza' },
+        { stato: 'bozza' },
+        {},
+    ].forEach((fattura) => assert.equal(soddisfa(fattura), isConfirmedInvoice(fattura), JSON.stringify(fattura)));
 });

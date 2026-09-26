@@ -21,7 +21,7 @@ module.exports = {
     createFascia: createRecord(Fascia, { audit, name: 'Fascia' }),
     getFasce: (req, res) => sendPaginated(Fascia, req, res, {
         defaultSort: 'tipo',
-        errorMessage: 'Error fetching fasce',
+        errorMessage: 'Elenco delle fasce non disponibile.',
         populate: 'listino',
     }),
     getFascia: getRecord(Fascia, { name: 'Fascia', populate: 'listino' }),

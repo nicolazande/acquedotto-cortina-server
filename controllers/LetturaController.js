@@ -102,7 +102,7 @@ const getCalcolo = async (req, res) => {
         });
         res.status(200).json(calculation);
     } catch (error) {
-        sendServiceError(res, error, 'Error calculating lettura invoice preview');
+        sendServiceError(res, error, 'Calcolo della lettura non riuscito.');
     }
 };
 
@@ -111,7 +111,7 @@ module.exports = {
     getLetture: (req, res) => sendPaginated(Lettura, req, res, {
         views: letturaViews,
         defaultSort: 'data_lettura',
-        errorMessage: 'Error fetching letture',
+        errorMessage: 'Elenco delle letture non disponibile.',
         populate: contatoreConCliente,
         ricercaCollegata: letturePerNomeCliente,
     }),
@@ -145,6 +145,6 @@ module.exports = {
     getServiziAssociati: getManyByField({
         Model: Servizio,
         field: 'lettura',
-        errorMessage: 'Error fetching servizi associati',
+        errorMessage: 'Righe di fattura della lettura non disponibili.',
     }),
 };

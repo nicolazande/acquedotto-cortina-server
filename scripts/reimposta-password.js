@@ -17,7 +17,7 @@
 const { runScript } = require('./utils/runScript');
 const User = require('../models/User');
 
-const LUNGHEZZA_MINIMA = 8;
+const LUNGHEZZA_MINIMA = User.LUNGHEZZA_MINIMA_PASSWORD;
 const RUOLI = User.schema.path('role').enumValues;
 
 const main = async () => {

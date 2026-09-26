@@ -83,16 +83,24 @@ const tariffeInScadenza = async ({ mesi = MESI_DI_PREAVVISO } = {}) => {
     const limite = new Date();
     limite.setMonth(limite.getMonth() + mesi);
 
-    const listini = await Listino.find({}).lean();
+    // Listini, contatori per listino e fasce in tre letture, non due per listino:
+    // la panoramica lo chiede a ogni apertura.
+    const [listini, perListino, tutteLeFasce] = await Promise.all([
+        Listino.find({}).lean(),
+        Contatore.aggregate([{ $group: { _id: '$listino', contatori: { $sum: 1 } } }]),
+        Fascia.find({}).select('listino tipo min max scadenza').lean(),
+    ]);
+    const contatoriDi = new Map(perListino.map((riga) => [String(riga._id), riga.contatori]));
+    const fasceDi = Map.groupBy(tutteLeFasce, (fascia) => String(fascia.listino));
     const inScadenza = [];
 
     for (const listino of listini) {
-        const contatori = await Contatore.countDocuments({ listino: listino._id });
+        const contatori = contatoriDi.get(String(listino._id)) || 0;
         if (contatori === 0) {
             continue;
         }
 
-        const fasce = await Fascia.find({ listino: listino._id }).select('tipo min max scadenza').lean();
+        const fasce = fasceDi.get(String(listino._id)) || [];
         const scadenti = fasce.filter((fascia) => fascia.scadenza && new Date(fascia.scadenza) <= limite);
 
         if (scadenti.length === 0) {

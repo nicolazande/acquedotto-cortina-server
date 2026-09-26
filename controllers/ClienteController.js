@@ -18,6 +18,7 @@ const { createInvoiceFromReadings } = require('../services/invoiceGenerator');
 const { previewClienteBilling } = require('../services/anteprimaFatturazione');
 const { writeAuditLog } = require('../services/auditLogService');
 const { clienteViews } = require('../config/listViews');
+const { badRequest, notFound } = require('../utils/errors');
 
 const serializePortalUser = (user) => ({
     id: user._id,
@@ -39,12 +40,12 @@ const normalizeEmail = (email) => {
 };
 
 const validatePortalPassword = (password) => {
-    if (!password || String(password).length < 8) {
-        const error = new Error('La password temporanea deve avere almeno 8 caratteri');
-        error.status = 400;
-        throw error;
+    if (!password || String(password).length < User.LUNGHEZZA_MINIMA_PASSWORD) {
+        throw badRequest(`La password temporanea deve avere almeno ${User.LUNGHEZZA_MINIMA_PASSWORD} caratteri.`);
     }
 };
+
+const clienteNonTrovato = () => notFound('Cliente non trovato.');
 
 // Chi legge i contatori vede di un cliente solo cio che gli serve per trovarlo.
 // Il taglio si fa qui, nelle due sole vie da cui un cliente esce intero: se
@@ -56,21 +57,17 @@ const perChiGuarda = (req) => (record) => (
 const getClienti = (req, res) => sendPaginated(Cliente, req, res, {
     views: clienteViews,
     defaultSort: 'nome',
-    errorMessage: 'Error fetching clienti',
+    errorMessage: 'Elenco dei clienti non disponibile.',
     transform: perChiGuarda(req),
 });
 
 const getCliente = async (req, res) => {
     try {
-        const cliente = await Cliente.findById(req.params.id).lean();
-
-        if (!cliente) {
-            return res.status(404).json({ error: 'Cliente not found' });
-        }
+        const cliente = await Cliente.findById(req.params.id).orFail(clienteNonTrovato).lean();
 
         return res.status(200).json(perChiGuarda(req)(cliente));
     } catch (error) {
-        return sendServiceError(res, error, 'Error fetching cliente');
+        return sendServiceError(res, error, 'Scheda del cliente non disponibile.');
     }
 };
 
@@ -81,7 +78,7 @@ const getFatturazionePreview = async (req, res) => {
         });
         res.status(200).json(result);
     } catch (error) {
-        sendServiceError(res, error, 'Error fetching cliente billing preview');
+        sendServiceError(res, error, 'Anteprima della fatturazione del cliente non disponibile.');
     }
 };
 
@@ -107,7 +104,7 @@ const generateFattura = async (req, res) => {
         });
         res.status(201).json(result);
     } catch (error) {
-        sendServiceError(res, error, 'Error generating cliente fattura', 400);
+        sendServiceError(res, error, 'Generazione della fattura non riuscita.', 400);
     }
 };
 
@@ -116,16 +113,13 @@ const getPortalUser = async (req, res) => {
         const user = await findPortalUser(req.params.id).select('-password').lean();
         return res.status(200).json(user ? serializePortalUser(user) : null);
     } catch (error) {
-        return sendServiceError(res, error, 'Error fetching cliente portal user');
+        return sendServiceError(res, error, 'Account del portale non disponibile.');
     }
 };
 
 const createPortalUser = async (req, res) => {
     try {
-        const cliente = await Cliente.findById(req.params.id).lean();
-        if (!cliente) {
-            return res.status(404).json({ error: 'Cliente not found' });
-        }
+        const cliente = await Cliente.findById(req.params.id).orFail(clienteNonTrovato).lean();
 
         const existingUser = await findPortalUser(cliente._id).select('_id username').lean();
         if (existingUser) {
@@ -151,7 +145,7 @@ const createPortalUser = async (req, res) => {
 
         return res.status(201).json(serializePortalUser(user));
     } catch (error) {
-        return sendServiceError(res, error, 'Error creating cliente portal user', 400);
+        return sendServiceError(res, error, 'Account del portale non creato.', 400);
     }
 };
 
@@ -186,7 +180,7 @@ const updatePortalUser = async (req, res) => {
         await user.save();
         return res.status(200).json(serializePortalUser(user));
     } catch (error) {
-        return sendServiceError(res, error, 'Error updating cliente portal user', 400);
+        return sendServiceError(res, error, 'Modifica dell’account del portale non riuscita.', 400);
     }
 };
 
@@ -226,11 +220,11 @@ module.exports = {
     getContatoriAssociati: getManyByField({
         Model: Contatore,
         field: 'cliente',
-        errorMessage: 'Error fetching contatori associati',
+        errorMessage: 'Contatori del cliente non disponibili.',
     }),
     getFattureAssociate: getManyByField({
         Model: Fattura,
         field: 'cliente',
-        errorMessage: 'Error fetching fatture associate',
+        errorMessage: 'Fatture del cliente non disponibili.',
     }),
 };

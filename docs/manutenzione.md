@@ -31,8 +31,11 @@ I ruoli sono tre: `admin` vede tutto, `letturista` le quattro risorse del giro
 letture (edifici, contatori, clienti in sola lettura, letture anche in scrittura),
 `cliente` solo il proprio portale.
 
-La registrazione dal gestionale crea sempre un amministratore e nessuna schermata
-permette di scegliere il ruolo: un letturista si crea da riga di comando.
+Gli account del gestionale si creano da riga di comando, con il ruolo; quelli del
+portale clienti dalla scheda del cliente. Fino al 26/09/2026 c'era anche una
+registrazione pubblica, che creava un amministratore finche gli account interni
+erano meno di due: bastava cancellarne qualcuno perche chiunque potesse
+diventarlo, ed e stata tolta.
 
 ```bash
 npm run maintenance:password -- mario passwordsegreta letturista
@@ -477,8 +480,8 @@ db.letture.find({fatturata:true}).toArray()
 | Arrotondamento IVA | L'IVA e sommata riga per riga e arrotondata alla fine, non raggruppata per aliquota come nella fatturazione elettronica. Puo differire di 1 centesimo. Scelta consapevole, vedi [fatturazione.md](fatturazione.md). |
 | Importi in centesimi | Tutta l'aritmetica monetaria e in centesimi interi con arrotondamento commerciale. Ricalcolando lo storico, 48 fatture su 3.469 risultano diverse di 1 centesimo dal gestionale precedente: rientra nella tolleranza dei controlli. |
 | Sessione | Il token dura `JWT_EXPIRES_IN` (default 8 ore) e non esiste un meccanismo di rinnovo: alla scadenza serve un nuovo login. |
-| Cancellazioni | Cancellare una fattura ripulisce righe, scadenza e blocchi delle letture. Cancellare un **cliente** o un **contatore** non ripulisce nulla: i record collegati restano con un riferimento a un documento inesistente. |
-| Registrazione | Limitata a `MAX_ADMIN_USERS` amministratori (default 2). Gli account del portale clienti si creano dalla scheda cliente. Non e imposto un requisito di robustezza sulla password degli amministratori. |
+| Cancellazioni | Cancellare una fattura ripulisce righe, scadenza e blocchi delle letture. Un **cliente**, un **contatore**, un **listino** con documenti collegati non si cancellano: la richiesta si rifiuta dicendo cosa li usa (le politiche sono in `config/relations.js`). |
+| Account | Nessuna registrazione pubblica: gli account del gestionale si creano con `npm run maintenance:password`, quelli del portale dalla scheda cliente. Ogni password, anche cambiata dal profilo, ha almeno 8 caratteri (`User.LUNGHEZZA_MINIMA_PASSWORD`). |
 | Elenchi | Una richiesta restituisce al massimo `MAX_PAGE_SIZE` record (default 500). Serve a evitare che una singola chiamata scarichi l'intero archivio. |
 | Accessi | Dopo `LOGIN_MAX_ATTEMPTS` tentativi falliti (default 10) lo stesso indirizzo e nome utente riceve `429` per `LOGIN_WINDOW_MS`. Il conteggio sta in memoria: con piu istanze andrebbe spostato su un archivio condiviso. |
 | Tracciamento | Sono registrate le modifiche a fatture, righe servizio, listini, fasce e articoli. Restano fuori clienti, contatori, edifici e letture. |
@@ -605,7 +608,6 @@ Variabili facoltative introdotte di recente:
 | Variabile | Default | Effetto |
 |-----------|---------|---------|
 | `JWT_EXPIRES_IN` | `8h` | durata della sessione |
-| `MAX_ADMIN_USERS` | `2` | quanti amministratori possono registrarsi liberamente |
 
 Al primo avvio dopo l'aggiornamento Mongoose crea gli indici mancanti sulle
 collection: su questi volumi e questione di millisecondi, ma succede all'avvio.

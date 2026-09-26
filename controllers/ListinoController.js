@@ -31,7 +31,7 @@ const getRinnovo = async (req, res) => {
             variazione: req.query.variazione,
         }));
     } catch (error) {
-        sendServiceError(res, error, 'Error building tariff renewal preview');
+        sendServiceError(res, error, 'Anteprima del rinnovo delle tariffe non disponibile.');
     }
 };
 
@@ -56,7 +56,7 @@ const applicaRinnovo = async (req, res) => {
 
         res.status(201).json(esito);
     } catch (error) {
-        sendServiceError(res, error, 'Error renewing tariffs', error.status || 400);
+        sendServiceError(res, error, 'Rinnovo delle tariffe non riuscito.', error.status || 400);
     }
 };
 
@@ -66,7 +66,7 @@ module.exports = {
     createListino: createRecord(Listino, { audit, name: 'Listino' }),
     getListini: (req, res) => sendPaginated(Listino, req, res, {
         defaultSort: 'categoria',
-        errorMessage: 'Error fetching listini',
+        errorMessage: 'Elenco dei listini non disponibile.',
     }),
     getListino: getRecord(Listino, { name: 'Listino' }),
     updateListino: updateRecord(Listino, { audit, name: 'Listino' }),
@@ -87,7 +87,7 @@ module.exports = {
     getFasceAssociate: getManyByField({
         Model: Fascia,
         field: 'listino',
-        errorMessage: 'Error fetching fasce associate',
+        errorMessage: 'Fasce del listino non disponibili.',
     }),
     associateContatore: associateRecords({
         field: 'listino',
@@ -103,6 +103,6 @@ module.exports = {
     getContatoriAssociati: getManyByField({
         Model: Contatore,
         field: 'listino',
-        errorMessage: 'Error fetching contatori associati',
+        errorMessage: 'Contatori del listino non disponibili.',
     }),
 };

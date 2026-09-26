@@ -1,5 +1,6 @@
 const { escapeRegex, parsePositiveInteger: toPositiveInteger } = require('../../utils/values');
 const { badRequest } = require('../../utils/errors');
+const { sendServiceError } = require('./controllerActions');
 
 // Tetto al numero di record per richiesta. Senza, una sola chiamata con
 // limit=100000 restituiva 10.177 righe servizio e 13 MB di risposta: abbastanza
@@ -141,7 +142,7 @@ const sendPaginated = async (Model, req, res, options = {}) => {
         addFields,
         defaultLimit = 50,
         defaultSort = '_id',
-        errorMessage = 'Error fetching records',
+        errorMessage = 'Elenco non disponibile.',
         maxLimit = MAX_PAGE_SIZE,
         populate,
         ricercaCollegata,
@@ -180,12 +181,7 @@ const sendPaginated = async (Model, req, res, options = {}) => {
             currentPage: page,
         });
     } catch (error) {
-        if (error.status) {
-            return res.status(error.status).json({ error: error.message });
-        }
-
-        console.error(errorMessage, error);
-        return res.status(500).json({ error: errorMessage, details: error.message });
+        return sendServiceError(res, error, errorMessage);
     }
 };
 
