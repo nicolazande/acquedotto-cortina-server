@@ -3,7 +3,8 @@
 //
 // E un rapporto, non un test: stampa cio che trova e non fa fallire nulla.
 const { runScript } = require('./utils/runScript');
-const Articolo = require('../models/Articolo');
+const { acceso, numero, percentuale: percent } = require('./utils/argomenti');
+require('../models/Articolo');
 const Fascia = require('../models/Fascia');
 const Lettura = require('../models/Lettura');
 const Servizio = require('../models/Servizio');
@@ -11,43 +12,22 @@ require('../models/Contatore');
 require('../models/Listino');
 
 const {
-    CODICI_ARTICOLO_DEL_CALCOLO,
     calculateReadingInvoice,
     isFixedBand,
     numberOrZero,
     roundMoney,
 } = require('../services/billingCalculator');
+const { getArticlesByCode } = require('../services/calcoloLettura');
+const { stessoImporto: closeMoney } = require('../utils/money');
 
-const parseArgs = () => {
-    const limitIndex = process.argv.indexOf('--limit');
-    return {
-        limit: limitIndex === -1 ? null : Number(process.argv[limitIndex + 1]),
-        verbose: process.argv.includes('--verbose')
-            || ['1', 'true', 'yes'].includes(String(process.env.BILLING_VERIFY_VERBOSE).toLowerCase()),
-    };
-};
-
-const percent = (value, total) => {
-    if (!total) {
-        return '0.0%';
-    }
-
-    return `${((value / total) * 100).toFixed(1)}%`;
-};
-
-const closeMoney = (a, b) => Math.abs(roundMoney(a) - roundMoney(b)) <= 0.01;
+const parseArgs = () => ({
+    limit: numero('limit'),
+    verbose: acceso('verbose', 'BILLING_VERIFY_VERBOSE'),
+});
 
 const getHistoricalValue = (row, field) => {
     const value = row?.[field];
     return value === undefined || value === null || value === '' ? null : numberOrZero(value);
-};
-
-const getArticlesByCode = async () => {
-    const articles = await Articolo.find({
-        codice: { $in: CODICI_ARTICOLO_DEL_CALCOLO },
-    }).lean();
-
-    return Object.fromEntries(articles.map((article) => [article.codice, article]));
 };
 
 const getListinoId = (lettura) => String(lettura?.contatore?.listino?._id || '');

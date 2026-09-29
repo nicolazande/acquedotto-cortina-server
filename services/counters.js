@@ -84,7 +84,6 @@ const riservaCodiceInvioAnagrafe = async ({ quando = new Date(), session } = {})
 module.exports = {
     componiCodiceInvio,
     scopeDellaSerie,
-    prossimoNumero,
     progressivoDiInvio,
     riservaCodiceInvioAnagrafe,
     riservaProgressiviInvio,

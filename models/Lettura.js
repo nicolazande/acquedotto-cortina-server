@@ -23,4 +23,10 @@ letturaSchema.index({ contatore: 1, data_lettura: -1 });
 letturaSchema.index({ fatturata: 1, data_lettura: 1 });
 letturaSchema.index({ data_lettura: -1 });
 
+// Le letture ancora da fatturare. Il flag puo mancare del tutto sulle letture
+// importate dal gestionale precedente, e vale come "no". Una regola sola per la
+// generazione, l'anteprima, la panoramica e l'elenco.
+const DA_FATTURARE = { $or: [{ fatturata: false }, { fatturata: { $exists: false } }] };
+
 module.exports = mongoose.model('Lettura', letturaSchema);
+module.exports.DA_FATTURARE = DA_FATTURARE;

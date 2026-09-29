@@ -12,7 +12,7 @@ const {
     rifiutaFatturaConfermata,
     sendServiceError,
 } = require('./utils/controllerActions');
-const { invoiceGenerationOptions, parseOptionalBoolean } = require('./utils/requestOptions');
+const { billingOptions, invoiceGenerationOptions, parseOptionalBoolean } = require('./utils/requestOptions');
 const { confermaFattura, confermaFatture } = require('../services/confermaFatture');
 const {
     createManualInvoice,
@@ -148,11 +148,7 @@ const generateFromReadings = async (req, res) => {
 
 const getGenerationPreview = async (req, res) => {
     try {
-        const result = await previewBillingBatch({
-            includeDelay: parseOptionalBoolean(req.query.includeDelay),
-            includeFixedCharge: parseOptionalBoolean(req.query.includeFixedCharge),
-            limit: req.query.limit,
-        });
+        const result = await previewBillingBatch({ ...billingOptions(req.query), limit: req.query.limit });
         res.status(200).json(result);
     } catch (error) {
         sendServiceError(res, error, 'Anteprima della fatturazione non disponibile.');

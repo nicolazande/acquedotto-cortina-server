@@ -2,6 +2,7 @@
 //
 // E un rapporto, non un test: stampa cio che trova e non fa fallire nulla.
 const { runScript } = require('./utils/runScript');
+const { acceso, numero } = require('./utils/argomenti');
 const { descriviFattura } = require('./utils/descriviFattura');
 const Fattura = require('../models/Fattura');
 require('../models/Articolo');
@@ -14,22 +15,18 @@ require('../models/Scadenza');
 require('../models/Servizio');
 
 const { buildAnnualFixedLookupCache } = require('../services/annualFixedChargeService');
-const { roundMoney } = require('../services/billingCalculator');
+const { stessoImporto } = require('../utils/money');
 const { verifyInvoiceCalculation } = require('../services/verificaFattura');
 
 const TOLERANCE = 0.01;
 
-const parseArgs = () => {
-    const yearIndex = process.argv.indexOf('--year');
+const parseArgs = () => ({
+    strict: acceso('strict'),
+    verbose: acceso('verbose'),
+    year: numero('year'),
+});
 
-    return {
-        strict: process.argv.includes('--strict'),
-        verbose: process.argv.includes('--verbose'),
-        year: yearIndex === -1 ? null : Number(process.argv[yearIndex + 1]),
-    };
-};
-
-const isNonZero = (value) => Math.abs(roundMoney(value)) > TOLERANCE;
+const isNonZero = (value) => !stessoImporto(value, 0, TOLERANCE);
 
 const createStats = () => ({
     checked: 0,

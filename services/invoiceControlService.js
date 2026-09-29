@@ -13,8 +13,7 @@ const { verifyInvoiceCalculation } = require('./verificaFattura');
 const { FILTRO_CONFERMATE, isConfirmedInvoice, numeroDocumento } = require('../config/invoicing');
 const { customerLabel } = require('../utils/customer');
 
-const { MONEY_TOLERANCE } = require('../utils/money');
-const isNonZero = (value) => Math.abs(Number(value) || 0) > MONEY_TOLERANCE;
+const { stessoImporto } = require('../utils/money');
 
 // Le fatture si controllano qualcuna alla volta. Una per volta, con il server e
 // il database in due posti diversi, settecento bozze richiedevano minuti: il
@@ -76,7 +75,9 @@ const createIssue = (fattura, type, severity, message, extra = {}) => ({
     serie: fattura.serie,
     documento: numeroDocumento(fattura),
     data_fattura: fattura.data_fattura,
-    cliente: fattura.cliente,
+    // Il nome basta: l'anagrafica intera, ripetuta su centinaia di righe, era
+    // quasi tutta la risposta.
+    cliente: fattura.cliente?._id || fattura.cliente,
     clienteLabel: getCustomerLabel(fattura),
     imponibile: fattura.imponibile,
     totale_fattura: fattura.totale_fattura,
@@ -85,7 +86,7 @@ const createIssue = (fattura, type, severity, message, extra = {}) => ({
     ...extra,
 });
 
-const inspectInvoice = async (fattura, annualFixedLookupCache) => {
+const inspectInvoice = async (fattura, memoria) => {
     const issues = [];
     const counters = createSummary(null);
 
@@ -103,7 +104,7 @@ const inspectInvoice = async (fattura, annualFixedLookupCache) => {
     }
 
     try {
-        const verification = await verifyInvoiceCalculation(fattura._id, { annualFixedLookupCache, fattura });
+        const verification = await verifyInvoiceCalculation(fattura._id, { ...memoria, fattura });
         const calculation = verification.summary;
 
         // Che il totale corrisponda alle righe vale per qualunque fattura: e
@@ -132,7 +133,7 @@ const inspectInvoice = async (fattura, annualFixedLookupCache) => {
         // Solo le righe delle letture: la mora o una riga aggiunta a mano non
         // vengono dal listino, e contarle dava uno scostamento su ogni fattura
         // con la mora.
-        if (calculation.letture > 0 && isNonZero(calculation.deltaLetture)) {
+        if (calculation.letture > 0 && !stessoImporto(calculation.deltaLetture, 0)) {
             counters.scostamentoListino = 1;
             issues.push(createIssue(fattura, 'listino', 'info', 'Righe salvate diverse dalla stima listino', {
                 delta: calculation.deltaLetture,
@@ -160,8 +161,13 @@ const getInvoiceControlDashboard = async (options = {}) => {
         .sort({ data_fattura: 1, createdAt: 1, _id: 1 })
         .populate('cliente scadenza')
         .lean();
-    const annualFixedLookupCache = await buildAnnualFixedLookupCache();
-    const risultati = await perOgnuna(fatture, (fattura) => inspectInvoice(fattura, annualFixedLookupCache));
+    // Le memorie del giro: quote fisse gia fatturate e fasce dei listini, lette
+    // una volta per tutte le fatture invece che per ognuna.
+    const memoria = {
+        annualFixedLookupCache: await buildAnnualFixedLookupCache(),
+        fascePerListino: new Map(),
+    };
+    const risultati = await perOgnuna(fatture, (fattura) => inspectInvoice(fattura, memoria));
     const summary = createSummary(year);
     summary.controllate = fatture.length;
     risultati.forEach((result) => addCounters(summary, result.counters));

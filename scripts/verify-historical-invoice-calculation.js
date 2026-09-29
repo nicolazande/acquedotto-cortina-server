@@ -3,6 +3,7 @@
 //
 // E un rapporto, non un test: stampa cio che trova e non fa fallire nulla.
 const { runScript } = require('./utils/runScript');
+const { acceso, numero, percentuale: percent } = require('./utils/argomenti');
 const { descriviFattura } = require('./utils/descriviFattura');
 const Fattura = require('../models/Fattura');
 require('../models/Articolo');
@@ -17,22 +18,12 @@ const { buildAnnualFixedLookupCache } = require('../services/annualFixedChargeSe
 const { verifyInvoiceCalculation } = require('../services/verificaFattura');
 const { roundMoney } = require('../services/billingCalculator');
 
-const parseArgs = () => {
-    const limitIndex = process.argv.indexOf('--limit');
-    const yearIndex = process.argv.indexOf('--year');
-
-    return {
-        limit: limitIndex === -1 ? null : Number(process.argv[limitIndex + 1]),
-        strict: process.argv.includes('--strict')
-            || ['1', 'true', 'yes'].includes(String(process.env.HISTORICAL_BILLING_STRICT).toLowerCase()),
-        verbose: process.argv.includes('--verbose'),
-        year: yearIndex === -1 ? null : Number(process.argv[yearIndex + 1]),
-    };
-};
-
-const percent = (value, total) => (
-    total ? `${((value / total) * 100).toFixed(1)}%` : '0.0%'
-);
+const parseArgs = () => ({
+    limit: numero('limit'),
+    strict: acceso('strict', 'HISTORICAL_BILLING_STRICT'),
+    verbose: acceso('verbose'),
+    year: numero('year'),
+});
 
 const createBucket = () => ({
     checked: 0,

@@ -12,16 +12,13 @@ const {
     createAnnualFixedContext,
     getDate,
 } = require('./annualFixedChargeService');
-const {
-    recordId,
-    roundMoney,
-} = require('./billingCalculator');
+const { recordId } = require('./billingCalculator');
 const {
     calculateReadingById,
 } = require('./calcoloLettura');
 const { normalizeText, sumMoneyBy } = require('../utils/values');
 const { uniqueById } = require('../utils/mongo');
-const { MONEY_TOLERANCE } = require('../utils/money');
+const { stessoImporto } = require('../utils/money');
 
 const cleanServiceLine = (line, fatturaId, riga) => ({
     riga,
@@ -48,7 +45,6 @@ const cleanServiceLine = (line, fatturaId, riga) => ({
 
 const getArticleCode = (line) => line.articolo_dettaglio?.codice || line.articolo?.codice || '';
 
-const sameMoney = (left, right) => Math.abs(roundMoney(left) - roundMoney(right)) <= MONEY_TOLERANCE;
 
 const sameLineText = (left, right) => normalizeText(left || '') === normalizeText(right || '');
 
@@ -56,9 +52,9 @@ const isSameBillingLine = (service, line) => (
     sameLineText(getArticleCode(service), getArticleCode(line))
     && sameLineText(service.tipo_tariffa, line.tipo_tariffa)
     && sameLineText(service.tipo_quota, line.tipo_quota)
-    && sameMoney(service.metri_cubi, line.metri_cubi)
-    && sameMoney(service.prezzo, line.prezzo)
-    && sameMoney(service.valore_unitario, line.valore_unitario)
+    && stessoImporto(service.metri_cubi, line.metri_cubi)
+    && stessoImporto(service.prezzo, line.prezzo)
+    && stessoImporto(service.valore_unitario, line.valore_unitario)
 );
 
 const toLineIssue = (line, lettura) => ({
@@ -137,6 +133,7 @@ const getCalculatedTotal = (calculations) => sumMoneyBy(
 
 const calculateInvoiceReadingsFromServices = async ({
     annualFixedLookupCache,
+    fascePerListino,
     fattura,
     includeFixedCharge = true,
     servizi,
@@ -157,6 +154,7 @@ const calculateInvoiceReadingsFromServices = async ({
         calculations.push(await calculateReadingById(letturaId, {
             allowCondominiumSplit: true,
             excludeInvoiceId: fattura._id,
+            fascePerListino,
             includeFixedCharge,
             session,
             ...billingContext,

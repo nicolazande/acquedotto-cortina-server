@@ -13,7 +13,7 @@ const {
     sendServiceError,
     updateRecord,
 } = require('./utils/controllerActions');
-const { invoiceGenerationOptions, parseOptionalBoolean } = require('./utils/requestOptions');
+const { billingOptions, invoiceGenerationOptions, parseOptionalBoolean } = require('./utils/requestOptions');
 const { createInvoiceFromReadings } = require('../services/invoiceGenerator');
 const { previewClienteBilling } = require('../services/anteprimaFatturazione');
 const { writeAuditLog } = require('../services/auditLogService');
@@ -73,10 +73,7 @@ const getCliente = async (req, res) => {
 
 const getFatturazionePreview = async (req, res) => {
     try {
-        const result = await previewClienteBilling(req.params.id, {
-            includeDelay: parseOptionalBoolean(req.query.includeDelay),
-            includeFixedCharge: parseOptionalBoolean(req.query.includeFixedCharge),
-        });
+        const result = await previewClienteBilling(req.params.id, billingOptions(req.query));
         res.status(200).json(result);
     } catch (error) {
         sendServiceError(res, error, 'Anteprima della fatturazione del cliente non disponibile.');

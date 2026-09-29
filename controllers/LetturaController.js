@@ -95,7 +95,9 @@ const perLaModifica = async (body, req) => {
 
 const getCalcolo = async (req, res) => {
     try {
+        // La scheda della lettura dice anche in quali fatture e gia finita.
         const calculation = await calculateReadingById(req.params.id, {
+            conFattureCollegate: true,
             includeFixedCharge: parseOptionalBoolean(req.query.includeFixedCharge),
             previousValue: req.query.previousValue,
             currentValue: req.query.currentValue,

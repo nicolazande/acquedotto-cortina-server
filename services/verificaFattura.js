@@ -32,7 +32,7 @@ const {
 const { assertInvoiceEditable } = require('./invoiceLockService');
 const { runWithOptionalTransaction } = require('./transaction');
 const { righeConOrigine } = require('./righeFattura');
-const { MONEY_TOLERANCE } = require('../utils/money');
+const { stessoImporto } = require('../utils/money');
 const { createError, notFound } = require('../utils/errors');
 const { sumMoneyBy } = require('../utils/values');
 const { withSession } = require('../utils/mongo');
@@ -134,7 +134,8 @@ const applyFixedChargeToInvoice = (fatturaId, unlock) => runWithOptionalTransact
 ));
 
 // `options.fattura` e la fattura gia letta, con cliente e scadenza: i controlli
-// ne verificano centinaia e le hanno gia in mano.
+// ne verificano centinaia e le hanno gia in mano. `annualFixedLookupCache` e
+// `fascePerListino` sono le memorie del giro (services/calcoloLettura.js).
 const verifyInvoiceCalculation = async (fatturaId, options = {}) => {
     const fattura = options.fattura || await Fattura.findById(fatturaId).populate('cliente scadenza').lean();
     if (!fattura) {
@@ -144,6 +145,7 @@ const verifyInvoiceCalculation = async (fatturaId, options = {}) => {
     const servizi = await righeConOrigine(fatturaId);
     const { calculations, letturaIds } = await calculateInvoiceReadingsFromServices({
         annualFixedLookupCache: options.annualFixedLookupCache,
+        fascePerListino: options.fascePerListino,
         fattura,
         servizi,
     });
@@ -171,7 +173,7 @@ const verifyInvoiceCalculation = async (fatturaId, options = {}) => {
             excludeInvoiceId: fattura._id,
             fattura,
         });
-    const fixedChargeMissing = missingFixedTotal > MONEY_TOLERANCE;
+    const fixedChargeMissing = missingFixedTotal > 0 && !stessoImporto(missingFixedTotal, 0);
 
     return {
         fattura,
@@ -195,8 +197,8 @@ const verifyInvoiceCalculation = async (fatturaId, options = {}) => {
             fatturaImponibile: roundMoney(fattura.imponibile),
             deltaLetture,
             deltaFattura,
-            serviziCoerenti: Math.abs(deltaLetture) <= MONEY_TOLERANCE,
-            fatturaCoerente: Math.abs(deltaFattura) <= MONEY_TOLERANCE,
+            serviziCoerenti: stessoImporto(deltaLetture, 0),
+            fatturaCoerente: stessoImporto(deltaFattura, 0),
         },
     };
 };

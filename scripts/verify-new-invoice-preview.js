@@ -2,15 +2,13 @@
 //
 // E un rapporto, non un test: stampa cio che trova e non fa fallire nulla.
 const { runScript } = require('./utils/runScript');
+const { acceso, numero } = require('./utils/argomenti');
 const { previewBillingBatch } = require('../services/anteprimaFatturazione');
 
-const parseArgs = () => {
-    const limitIndex = process.argv.indexOf('--limit');
-    return {
-        limit: limitIndex === -1 ? 2000 : Number(process.argv[limitIndex + 1]),
-        verbose: process.argv.includes('--verbose'),
-    };
-};
+const parseArgs = () => ({
+    limit: numero('limit', 2000),
+    verbose: acceso('verbose'),
+});
 
 const main = async () => {
     const args = parseArgs();

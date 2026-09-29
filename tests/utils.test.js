@@ -14,7 +14,7 @@ const {
 } = require('../utils/values');
 const { addDays, dataCompatta, daysBetween, formatItalianDate, getDate, nelFuturo, startOfDay, toDate } = require('../utils/dates');
 const { customerLabel } = require('../utils/customer');
-const { conflict, createError, notFound, unprocessable } = require('../utils/errors');
+const { conflict, createError, forbidden, notFound, unprocessable } = require('../utils/errors');
 const { recordId, setOrUnset, soloValorizzati, uniqueById } = require('../utils/mongo');
 
 test('numberOrZero: accetta la virgola come separatore decimale', () => {
@@ -131,6 +131,8 @@ test('errori: portano con se lo status HTTP', () => {
     assert.equal(notFound('x').status, 404);
     assert.equal(conflict('x').status, 409);
     assert.equal(unprocessable('x').status, 422);
+    assert.equal(forbidden().status, 403);
+    assert.equal(forbidden().message, 'Permessi insufficienti');
     assert.ok(notFound('manca') instanceof Error);
     assert.equal(notFound('manca').message, 'manca');
 });

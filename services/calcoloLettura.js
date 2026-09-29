@@ -88,17 +88,41 @@ const getLinkedInvoicesForReading = async (letturaId, session) => {
     return uniqueById(services.map((service) => service.fattura).filter(Boolean));
 };
 
-const loadReading = (id, session) => withSession(Lettura.findById(id), session).populate({
-    path: 'contatore',
-    populate: ['listino', 'cliente'],
-}).lean();
+// Una lettura come la vuole il calcolo: con il contatore, e del contatore il
+// listino e il cliente.
+const CON_CONTATORE = { path: 'contatore', populate: ['listino', 'cliente'] };
 
-const calculateReadingById = async (letturaId, options = {}) => {
-    const { session } = options;
-    const lettura = await loadReading(letturaId, session);
-    if (!lettura) {
-        throw notFound('Lettura non trovata.');
+const loadReading = (id, session) => withSession(Lettura.findById(id), session).populate(CON_CONTATORE).lean();
+
+// Piu letture con una lettura sola del database, nell'ordine chiesto. Quelle che
+// non esistono mancano: chi chiama confronta le quantita.
+const loadReadings = async (ids, session) => {
+    const letture = await withSession(Lettura.find({ _id: { $in: ids } }), session).populate(CON_CONTATORE).lean();
+    const perId = new Map(letture.map((lettura) => [String(lettura._id), lettura]));
+    return ids.map((id) => perId.get(String(id))).filter(Boolean);
+};
+
+// Le fasce di un listino, lette una volta sola per giro: in un'anteprima o nei
+// controlli centinaia di letture condividono pochi listini. `fascePerListino` e
+// la memoria del giro; senza, si leggono ogni volta.
+const fasceDelListino = async (listinoId, { fascePerListino, session }) => {
+    const chiave = String(listinoId);
+    if (fascePerListino?.has(chiave)) {
+        return fascePerListino.get(chiave);
     }
+
+    const fasce = await withSession(Fascia.find({ listino: listinoId }), session).lean();
+    fascePerListino?.set(chiave, fasce);
+    return fasce;
+};
+
+// Il calcolo di una lettura gia caricata (CON_CONTATORE). Le letture al database
+// si fanno una dopo l'altra: dentro una transazione due operazioni insieme sulla
+// stessa sessione non sono ammesse. Le fatture gia collegate alla lettura si
+// cercano solo se chieste (`conFattureCollegate`): servono alla scheda della
+// lettura, non a chi fattura o controlla centinaia di letture.
+const calcolaLettura = async (lettura, options = {}) => {
+    const { session } = options;
 
     if (!lettura.contatore?.listino) {
         throw createError('La lettura deve avere un contatore con listino associato');
@@ -132,11 +156,9 @@ const calculateReadingById = async (letturaId, options = {}) => {
         year: invoiceYear,
     });
     const includeFixedCharge = !fixedSkippedByRequest && !fixedAlreadySelected && !fixedAlreadyBilled;
-    const [fasce, articlesByCode, linkedInvoices] = await Promise.all([
-        withSession(Fascia.find({ listino: lettura.contatore.listino._id }), session).lean(),
-        options.articlesByCode || getArticlesByCode(session),
-        getLinkedInvoicesForReading(lettura._id, session),
-    ]);
+    const fasce = await fasceDelListino(lettura.contatore.listino._id, options);
+    const articlesByCode = options.articlesByCode || await getArticlesByCode(session);
+    const linkedInvoices = options.conFattureCollegate ? await getLinkedInvoicesForReading(lettura._id, session) : [];
     const calculation = calculateReadingInvoice({
         articlesByCode,
         contatore: lettura.contatore,
@@ -175,23 +197,20 @@ const calculateReadingById = async (letturaId, options = {}) => {
     };
 };
 
-const calculateReadings = async (letturaIds, context, options = {}) => {
-    const calculations = [];
-
-    for (const id of letturaIds) {
-        calculations.push(await calculateReadingById(id, {
-            ...context,
-            ...options,
-        }));
+const calculateReadingById = async (letturaId, options = {}) => {
+    const lettura = await loadReading(letturaId, options.session);
+    if (!lettura) {
+        throw notFound('Lettura non trovata.');
     }
 
-    return calculations;
+    return calcolaLettura(lettura, options);
 };
 
 module.exports = {
+    CON_CONTATORE,
+    calcolaLettura,
     calculateReadingById,
-    calculateReadings,
     getArticlesByCode,
-    loadReading,
+    loadReadings,
     summarizeBillablePreviews,
 };

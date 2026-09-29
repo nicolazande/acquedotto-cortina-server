@@ -4,6 +4,7 @@
 // interrogazioni arbitrarie, e perche restino verificabili con i test.
 
 const { NON_SALDATA, SALDATA } = require('../models/Scadenza');
+const { DA_FATTURARE } = require('../models/Lettura');
 const { ALIAS_MODALITA, IN_UFFICIO, MODALITA_CONSEGNA, MODALITA_PREDEFINITA } = require('./delivery');
 const { escapeRegex } = require('../utils/values');
 
@@ -18,7 +19,7 @@ const scadenzaViews = {
 };
 
 const letturaViews = {
-    'da-fatturare': () => nonImpostato('fatturata'),
+    'da-fatturare': () => DA_FATTURARE,
     fatturate: () => ({ fatturata: true }),
 };
 

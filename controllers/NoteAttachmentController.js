@@ -3,7 +3,7 @@ const { getResourceModel } = require('../config/resources');
 const NoteAttachment = require('../models/NoteAttachment');
 const { getUserRole, puoUsareRisorsa } = require('../config/permessi');
 const { dimentica, leggi, riponi } = require('../services/archivioFile');
-const { badRequest, createError, notFound } = require('../utils/errors');
+const { badRequest, createError, forbidden, notFound } = require('../utils/errors');
 const { parsePositiveInteger } = require('../utils/values');
 const { sendServiceError } = require('./utils/controllerActions');
 
@@ -15,8 +15,6 @@ const { sendServiceError } = require('./utils/controllerActions');
 // la stessa che protegge le rotte, e viene da li: riscriverla qui vorrebbe dire
 // due regole che un giorno diranno cose diverse.
 const puoAccedere = (req, risorsa, opzioni) => puoUsareRisorsa(getUserRole(req.user), risorsa, opzioni);
-
-const permessiInsufficienti = (res) => res.status(403).json({ error: 'Permessi insufficienti' });
 
 // I tipi di file che si possono allegare, con l'estensione che prende il nome
 // del file salvato: un elenco solo, da cui vengono anche i tipi ammessi.
@@ -110,14 +108,14 @@ class NoteAttachmentController {
             const { resource, recordId } = req.params;
 
             if (!puoAccedere(req, resource)) {
-                return permessiInsufficienti(res);
+                throw forbidden();
             }
 
             const Model = getResourceModel(resource);
             const recordFilter = getRecordFilter(recordId);
 
             if (!Model || !recordFilter) {
-                return res.status(400).json({ error: 'Scheda a cui allegare non valida.' });
+                throw badRequest('Scheda a cui allegare non valida.');
             }
 
             const attachments = await NoteAttachment
@@ -134,7 +132,7 @@ class NoteAttachmentController {
     static async create(req, res) {
         try {
             if (!puoAccedere(req, req.params.resource, { scrittura: true })) {
-                return permessiInsufficienti(res);
+                throw forbidden();
             }
 
             const { resource, recordId } = req.params;
@@ -142,7 +140,7 @@ class NoteAttachmentController {
             const recordFilter = getRecordFilter(recordId);
 
             if (!Model || !recordFilter) {
-                return res.status(400).json({ error: 'Scheda a cui allegare non valida.' });
+                throw badRequest('Scheda a cui allegare non valida.');
             }
 
             if (!(await Model.exists(recordFilter))) {
@@ -181,7 +179,7 @@ class NoteAttachmentController {
             const attachment = await NoteAttachment.findById(req.params.id).orFail(allegatoNonTrovato);
 
             if (!puoAccedere(req, attachment.resource)) {
-                return permessiInsufficienti(res);
+                throw forbidden();
             }
 
             // Il file lo serve sempre il gestionale, anche quando i byte stanno
@@ -207,7 +205,7 @@ class NoteAttachmentController {
             const attachment = await NoteAttachment.findById(req.params.id).orFail(allegatoNonTrovato);
 
             if (!puoAccedere(req, attachment.resource, { scrittura: true })) {
-                return permessiInsufficienti(res);
+                throw forbidden();
             }
 
             await NoteAttachment.deleteOne({ _id: attachment._id });

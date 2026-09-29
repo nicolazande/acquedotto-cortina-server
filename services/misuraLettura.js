@@ -24,6 +24,5 @@ const misuraCambiata = (esistente, corpo) => CAMPI_DELLA_MISURA
     .filter((campo) => Object.hasOwn(corpo, campo) && !stessoValore(campo, esistente[campo], corpo[campo]));
 
 module.exports = {
-    CAMPI_DELLA_MISURA,
     misuraCambiata,
 };

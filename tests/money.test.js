@@ -7,6 +7,7 @@ const {
     fromCents,
     multiplyCents,
     rateToBasisPoints,
+    stessoImporto,
     sumCents,
     toCents,
 } = require('../utils/money');
@@ -136,4 +137,13 @@ test('sumMoneyBy: somma esatta di importi', () => {
 
     assert.equal(sumMoneyBy(righe, (r) => r.v), 0.6);
     assert.equal(sumMoneyBy(Array(3).fill({ v: 33.33 }), (r) => r.v), 99.99);
+});
+
+test('stessoImporto: la tolleranza e un centesimo, e si confrontano centesimi', () => {
+    assert.equal(stessoImporto(10, 10.01), true);
+    assert.equal(stessoImporto(10, 10.02), false);
+    assert.equal(stessoImporto('10,5', 10.5), true);
+    assert.equal(stessoImporto(0.1 + 0.2, 0.3), true);
+    assert.equal(stessoImporto(10, 10.02, 0.02), true);
+    assert.equal(stessoImporto(undefined, 0), true);
 });

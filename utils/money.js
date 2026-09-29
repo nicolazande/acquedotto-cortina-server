@@ -108,8 +108,15 @@ const applyRateToLines = (lines) => {
     );
 };
 
+// Due importi sono lo stesso importo se differiscono al massimo della
+// tolleranza. Si confrontano i centesimi, non i numeri con la virgola.
+const stessoImporto = (a, b, tolleranza = MONEY_TOLERANCE) => (
+    Math.abs(toCents(a) - toCents(b)) <= toCents(tolleranza)
+);
+
 module.exports = {
     MONEY_TOLERANCE,
+    stessoImporto,
     applyRate,
     applyRateToLines,
     fromCents,

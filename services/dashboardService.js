@@ -7,12 +7,12 @@ const Scadenza = require('../models/Scadenza');
 const AuditLog = require('../models/AuditLog');
 const { delayAggregation } = require('./deadlineService');
 const { saldataExpression } = require('../models/Scadenza');
+const { DA_FATTURARE: LETTURE_DA_FATTURARE } = require('../models/Lettura');
 const { fromCents } = require('../utils/money');
 const { tariffeInScadenza } = require('./tariffService');
 const { IN_UFFICIO } = require('../config/delivery');
 
 // Le letture non ancora fatturate: il flag puo mancare del tutto sui record importati.
-const LETTURE_DA_FATTURARE = { $or: [{ fatturata: false }, { fatturata: { $exists: false } }] };
 
 // Lo stato della scadenza e la formula del ritardo arrivano da deadlineService,
 // che e l'unico posto in cui sono definiti.

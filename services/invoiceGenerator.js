@@ -2,6 +2,7 @@ const Articolo = require('../models/Articolo');
 const Cliente = require('../models/Cliente');
 const Fattura = require('../models/Fattura');
 const Lettura = require('../models/Lettura');
+const { DA_FATTURARE } = require('../models/Lettura');
 require('../models/Listino');
 const Servizio = require('../models/Servizio');
 const {
@@ -20,15 +21,16 @@ const { fatturePrecedenti, rigaMoraPer, segnaMoraFatturata } = require('./mora')
 const { runWithOptionalTransaction } = require('./transaction');
 const { righeDellaFattura } = require('./righeFattura');
 const {
-    calculateReadings,
+    calcolaLettura,
     getArticlesByCode,
-    loadReading,
+    loadReadings,
 } = require('./calcoloLettura');
 const {
     cleanServiceLine,
 } = require('./confrontoRighe');
 const { createError, unprocessable } = require('../utils/errors');
 const { uniqueById, withSession } = require('../utils/mongo');
+const { parseBoolean } = require('../utils/values');
 const { customerLabel } = require('../utils/customer');
 
 const releaseReadingsForBilling = async (letturaIds) => {
@@ -61,7 +63,7 @@ const lockReadingsForBilling = async (letturaIds, session) => {
         const locked = await withSession(Lettura.findOneAndUpdate(
             {
                 _id: letturaId,
-                $or: [{ fatturata: false }, { fatturata: { $exists: false } }],
+                ...DA_FATTURARE,
             },
             { $set: { fatturata: true } },
             { new: true }
@@ -90,7 +92,6 @@ const getClienteFromReadings = (readings) => {
     return clientes[0];
 };
 
-const toBoolean = (value) => value === true || ['1', 'true', 'yes'].includes(String(value).toLowerCase());
 
 // I totali della fattura sono la somma delle sue righe, e devono restare tali
 // per sempre: aggiungerne una dalla scheda lasciava imponibile, IVA e totale
@@ -208,7 +209,7 @@ const createManualInvoiceInSession = async (input = {}, session) => {
     });
 
     return {
-        fattura: isConfirmedInvoice({ confermata: toBoolean(confermata), stato })
+        fattura: isConfirmedInvoice({ confermata: confermata === true || parseBoolean(confermata), stato })
             ? await confermaInSessione({ id: fattura._id, session })
             : fattura,
         scadenza,
@@ -240,8 +241,8 @@ const createInvoiceFromReadingsInSession = async ({
             throw createError('Seleziona almeno una lettura da fatturare');
         }
 
-        const readings = await Promise.all(letturaIds.map((id) => loadReading(id, session)));
-        if (readings.some((lettura) => !lettura)) {
+        const readings = await loadReadings(letturaIds, session);
+        if (readings.length !== letturaIds.length) {
             throw createError('Una o più letture non esistono', 404);
         }
 
@@ -262,11 +263,15 @@ const createInvoiceFromReadingsInSession = async ({
         const billingContext = createAnnualFixedContext({ invoiceDate, invoiceYear: year });
         const cliente = getClienteFromReadings(readings);
         const articlesByCode = await getArticlesByCode(session);
-        const calculations = await calculateReadings(letturaIds, billingContext, {
-            articlesByCode,
-            includeFixedCharge,
-            session,
-        });
+        const calculations = [];
+        for (const lettura of readings) {
+            calculations.push(await calcolaLettura(lettura, {
+                ...billingContext,
+                articlesByCode,
+                includeFixedCharge,
+                session,
+            }));
+        }
 
         // La mora si puo lasciare fuori: in un giro in cui i pagamenti non sono
         // ancora stati registrati colpirebbe chi ha pagato.

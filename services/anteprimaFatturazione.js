@@ -18,25 +18,25 @@
 const Cliente = require('../models/Cliente');
 const Contatore = require('../models/Contatore');
 const Lettura = require('../models/Lettura');
+const { DA_FATTURARE } = require('../models/Lettura');
 const {
     buildAnnualFixedLookupCache,
     createAnnualFixedContext,
 } = require('./annualFixedChargeService');
 const { calculateTotals } = require('./billingCalculator');
 const {
-    calculateReadingById,
+    CON_CONTATORE,
+    calcolaLettura,
     getArticlesByCode,
     summarizeBillablePreviews,
 } = require('./calcoloLettura');
 const { avvisiDellaLettura, fatturataDopo, motivoLetturaSuperata } = require('./avvisiLettura');
 const { descriviMora, fatturePrecedenti, rigaMoraPer } = require('./mora');
 const { notFound } = require('../utils/errors');
+const { recordId } = require('../utils/mongo');
 const { sumMoneyBy } = require('../utils/values');
 
-const DA_FATTURARE = { $or: [{ fatturata: false }, { fatturata: { $exists: false } }] };
 const LIMITE_MASSIMO = 2000;
-
-const perId = (record) => String(record?._id || record || '');
 
 // Tutte le letture dei contatori coinvolti, dalla piu vecchia: e la storia su
 // cui si misurano gli avvisi. Una lettura sola per tutta l'anteprima.
@@ -48,7 +48,7 @@ const storiaDeiContatori = async (contatoreIds) => {
     const storia = new Map();
 
     letture.forEach((lettura) => {
-        const chiave = perId(lettura.contatore);
+        const chiave = recordId(lettura.contatore);
         storia.set(chiave, [...(storia.get(chiave) || []), lettura]);
     });
 
@@ -71,7 +71,7 @@ const chiudiGruppo = (gruppo, { articlesByCode, includeDelay, oggi, precedenti }
     let mora = null;
 
     if (totals.letture > 0) {
-        const precedente = precedenti.get(perId(gruppo.cliente));
+        const precedente = precedenti.get(recordId(gruppo.cliente));
 
         try {
             const riga = rigaMoraPer({ articlesByCode, precedente, dataFattura: oggi });
@@ -100,12 +100,13 @@ const calcolaGruppi = async (letture, {
     includeFixedCharge = true,
 } = {}) => {
     const oggi = new Date();
-    const clienteIds = [...new Set(letture.map((lettura) => perId(lettura.contatore?.cliente)).filter(Boolean))];
-    const contatoreIds = [...new Set(letture.map((lettura) => perId(lettura.contatore)).filter(Boolean))];
+    const clienteIds = [...new Set(letture.map((lettura) => recordId(lettura.contatore?.cliente)).filter(Boolean))];
+    const contatoreIds = [...new Set(letture.map((lettura) => recordId(lettura.contatore)).filter(Boolean))];
     const articlesByCode = await getArticlesByCode();
     const storia = await storiaDeiContatori(contatoreIds);
     const precedenti = await fatturePrecedenti(clienteIds, oggi);
     const billingContext = createAnnualFixedContext({ annualFixedLookupCache });
+    const fascePerListino = new Map();
     const gruppi = new Map();
     const anomalieGenerali = [];
 
@@ -120,11 +121,11 @@ const calcolaGruppi = async (letture, {
             continue;
         }
 
-        if (!gruppi.has(perId(cliente))) {
-            gruppi.set(perId(cliente), { cliente, previews: [], anomalies: [] });
+        if (!gruppi.has(recordId(cliente))) {
+            gruppi.set(recordId(cliente), { cliente, previews: [], anomalies: [] });
         }
-        const gruppo = gruppi.get(perId(cliente));
-        const storiaContatore = storia.get(perId(lettura.contatore)) || [];
+        const gruppo = gruppi.get(recordId(cliente));
+        const storiaContatore = storia.get(recordId(lettura.contatore)) || [];
         const successiva = fatturataDopo(lettura, storiaContatore);
 
         if (successiva) {
@@ -137,9 +138,10 @@ const calcolaGruppi = async (letture, {
         }
 
         try {
-            const preview = await calculateReadingById(lettura._id, {
+            const preview = await calcolaLettura(lettura, {
                 ...billingContext,
                 articlesByCode,
+                fascePerListino,
                 includeFixedCharge,
             });
             gruppo.previews.push({
@@ -171,8 +173,6 @@ const calcolaGruppi = async (letture, {
     };
 };
 
-const POPOLA_CONTATORE = { path: 'contatore', populate: ['cliente', 'listino'] };
-
 const previewClienteBilling = async (clienteId, options = {}) => {
     const cliente = await Cliente.findById(clienteId).lean().orFail(() => notFound('Cliente non trovato.'));
     const contatori = await Contatore.find({ cliente: clienteId }).populate('listino cliente').lean();
@@ -181,7 +181,7 @@ const previewClienteBilling = async (clienteId, options = {}) => {
         ...DA_FATTURARE,
     })
         .sort({ data_lettura: 1, _id: 1 })
-        .populate(POPOLA_CONTATORE)
+        .populate(CON_CONTATORE)
         .lean();
     // Per un solo cliente non si precarica l'intera cache delle quote fisse
     // annuali: l'aggregazione completa costerebbe piu di quanto faccia
@@ -211,13 +211,13 @@ const scegliLetture = async (limite) => {
     const contatori = await Contatore.find({ _id: { $in: daFatturare.map((lettura) => lettura.contatore) } })
         .select('cliente')
         .lean();
-    const clienteDelContatore = new Map(contatori.map((contatore) => [perId(contatore), perId(contatore.cliente)]));
+    const clienteDelContatore = new Map(contatori.map((contatore) => [recordId(contatore), recordId(contatore.cliente)]));
     const perCliente = new Map();
 
     daFatturare.forEach((lettura) => {
         // Le letture senza cliente contano ciascuna per se: l'anteprima le
         // mostra come anomalie.
-        const chiave = clienteDelContatore.get(perId(lettura.contatore)) || `senza-cliente-${lettura._id}`;
+        const chiave = clienteDelContatore.get(recordId(lettura.contatore)) || `senza-cliente-${lettura._id}`;
         perCliente.set(chiave, [...(perCliente.get(chiave) || []), lettura._id]);
     });
 
@@ -243,7 +243,7 @@ const previewBillingBatch = async ({ includeDelay = true, includeFixedCharge = t
     const { ids, clientiEsclusi, lettureEscluse } = await scegliLetture(limite);
     const letture = await Lettura.find({ _id: { $in: ids } })
         .sort({ data_lettura: 1, _id: 1 })
-        .populate(POPOLA_CONTATORE)
+        .populate(CON_CONTATORE)
         .lean();
     const { clienti, anomalies } = await calcolaGruppi(letture, {
         annualFixedLookupCache: await buildAnnualFixedLookupCache(),

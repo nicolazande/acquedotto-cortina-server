@@ -12,10 +12,11 @@ const {
     numberOrZero,
     roundMoney,
 } = require('../services/billingCalculator');
+const { stessoImporto } = require('../utils/money');
 
 const TOLERANCE = 0.02;
 
-const closeMoney = (a, b) => Math.abs(roundMoney(a) - roundMoney(b)) <= TOLERANCE;
+const closeMoney = (a, b) => stessoImporto(a, b, TOLERANCE);
 const isCondominiumFixed = (service) => service.articolo?.codice === 'CONDF';
 const isFixedService = (service) => Boolean(service.tipo_quota) || isFixedBand(service);
 const hasBillableNumbers = (service) => (

@@ -373,6 +373,15 @@ fuori. Oltre agli importi dice cosa guardare prima di generare
 
 La scheda del cliente usa lo stesso motore, con le stesse note.
 
+La pagina genera le bozze **quattro alla volta**. Si temeva che due generazioni
+insieme dessero due volte la quota fissa annuale, ma la quota e di un contatore e un
+contatore appartiene a un cliente solo: ogni bozza tocca solo i contatori del suo
+cliente. Sulla copia di prova 684 bozze in 60 secondi (erano 166 una alla volta).
+Il calcolo legge le fasce di ogni listino una volta per giro e le fatture gia
+collegate a una lettura solo nella scheda della lettura; le letture al database
+passano una dopo l'altra, perche dentro una transazione due operazioni insieme
+sulla stessa sessione non sono ammesse.
+
 **Controlli** (`GET /api/fatture/controlli?stato=bozze`, oppure `?year=2026`,
 `services/invoiceControlService.js`). Controlla tutte le bozze, o tutte le
 fatture di un anno: totale contro righe, righe delle letture contro listino,
