@@ -197,3 +197,21 @@ test('le righe generate combaciano con quelle del gestionale precedente', () => 
         assert.equal(campo(mia, nome), campo(vera, nome), `il campo ${nome}`);
     });
 });
+
+test('chi c era prima su un apparecchio: la stessa matricola, chiusa prima, la piu recente', () => {
+    const { predecessorePerMatricola } = require('../services/counterHistoryService');
+    const giorno = (data) => new Date(`${data}T00:00:00.000Z`);
+    const nuovo = { _id: 'n', seriale: '08036108', inizio: giorno('2026-04-27') };
+    const fratelli = [
+        nuovo,
+        { _id: 'a', seriale: '08036108', scadenza: giorno('2020-12-31') },
+        { _id: 'b', seriale: '08036108', scadenza: giorno('2026-04-26') },
+        { _id: 'c', seriale: '99999999', scadenza: giorno('2026-04-26') },
+        // Ancora in servizio (data sentinella del vecchio programma): non e un predecessore.
+        { _id: 'd', seriale: '08036108', scadenza: giorno('2099-12-31') },
+    ];
+
+    assert.equal(predecessorePerMatricola(nuovo, fratelli)._id, 'b');
+    assert.equal(predecessorePerMatricola({ ...nuovo, seriale: '' }, fratelli), null);
+    assert.equal(predecessorePerMatricola({ ...nuovo, inizio: null }, fratelli), null);
+});

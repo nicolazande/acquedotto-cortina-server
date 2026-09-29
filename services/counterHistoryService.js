@@ -9,6 +9,7 @@
 // sui contatori e sulle loro letture. Qui si mettono solo in fila.
 const Contatore = require('../models/Contatore');
 const Lettura = require('../models/Lettura');
+const { dataReale, toDate } = require('../utils/dates');
 const { notFound } = require('../utils/errors');
 
 // Un anello della catena, con cio che serve a chi ricostruisce: quale
@@ -77,4 +78,22 @@ const storiaContatore = async (contatoreId) => {
     };
 };
 
-module.exports = { storiaContatore };
+// Chi c'era prima su questo apparecchio, quando cambia l'intestatario: il
+// contatore con la stessa matricola chiuso prima dell'attivazione di questo, il
+// piu recente. Un subentro non lascia un collegamento (`precedente` lo mette
+// solo una sostituzione): lo lega la matricola, che resta quella del pezzo
+// montato. `fratelli` sono i contatori con la stessa matricola.
+const predecessorePerMatricola = (nuovo, fratelli) => {
+    const attivazione = toDate(nuovo?.inizio);
+    if (!nuovo?.seriale || !attivazione) {
+        return null;
+    }
+
+    return fratelli
+        .filter((fratello) => fratello.seriale === nuovo.seriale && String(fratello._id) !== String(nuovo._id))
+        .map((fratello) => ({ contatore: fratello, fine: dataReale(fratello.scadenza) }))
+        .filter(({ fine }) => fine && fine < attivazione)
+        .sort((a, b) => b.fine - a.fine)[0]?.contatore || null;
+};
+
+module.exports = { predecessorePerMatricola, storiaContatore };

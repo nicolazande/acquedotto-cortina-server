@@ -7,7 +7,7 @@
 // proprie colonne e ha i tre formati senza riscriverli, e una correzione
 // all'impaginazione vale per tutti invece che per uno solo.
 //
-// Le colonne sono `{ titolo, campo, larghezza, numero }`. `larghezza` e un peso,
+// Le colonne sono `{ titolo, campo, larghezza, numero, euro }`. `larghezza` e un peso,
 // non una misura: ogni formato lo scala sulla propria pagina, quindi contano i
 // rapporti fra le colonne e non i valori assoluti. `numero` allinea a destra.
 
@@ -29,6 +29,13 @@ const riferimento = (colonna, riga) => {
     } while (n >= 0);
     return `${nome}${riga}`;
 };
+
+// Un importo si legge all'italiana nel PDF e nel Word (57.850,43); nell'Excel
+// resta un numero, perche lo si possa sommare.
+const IMPORTO = new Intl.NumberFormat('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const testoCella = (valore, colonna) => (
+    colonna?.euro && valore !== '' && Number.isFinite(Number(valore)) ? IMPORTO.format(Number(valore)) : valore
+);
 
 const cella = (valore, colonna, riga, indice) => {
     const rif = riferimento(indice, riga);
@@ -126,7 +133,14 @@ const perLaCella = (valore, larghezza, corpo) => {
     return `${tagliato}...`;
 };
 
-const creaPdf = (colonne, righe, { anno, ente }) => {
+// `intestazione` e cio che si legge in cima a ogni pagina, `piede` in fondo
+// all'ultima: "Elenco consumi - Anno 2025" e "N utenze" se non si dice altro.
+const creaPdf = (colonne, righe, {
+    anno,
+    ente,
+    intestazione: titoloPagina = `Elenco consumi - Anno ${anno}`,
+    piede = `${righe.length} utenze`,
+}) => {
     // Dodici colonne non stanno in verticale: l'A4 va girato.
     const pdf = new PdfDocument({ larghezza: LARGHEZZA, altezza: ALTEZZA });
     const scala = (LARGHEZZA - MARGINE * 2) / colonne.reduce((s, c) => s + c.larghezza, 0);
@@ -140,7 +154,7 @@ const creaPdf = (colonne, righe, { anno, ente }) => {
         primaPagina = false;
         y = MARGINE;
         pdf.text(ente, MARGINE, y, { size: 11, font: 'bold' });
-        pdf.text(`Elenco consumi - Anno ${anno}`, LARGHEZZA - MARGINE - 150, y, { size: 10 });
+        pdf.text(titoloPagina, LARGHEZZA - MARGINE - 190, y, { size: 10 });
         y += 22;
         let x = MARGINE;
         colonne.forEach((c, i) => {
@@ -168,7 +182,7 @@ const creaPdf = (colonne, righe, { anno, ente }) => {
 
         let x = MARGINE;
         colonne.forEach((c, i) => {
-            pdf.cellText(perLaCella(riga[c.campo], larghezze[i], 6.5), x, y, larghezze[i], 12, {
+            pdf.cellText(perLaCella(testoCella(riga[c.campo], c), larghezze[i], 6.5), x, y, larghezze[i], 12, {
                 size: 6.5,
                 align: c.numero ? 'right' : 'left',
                 padding: GRONDA / 2,
@@ -178,7 +192,7 @@ const creaPdf = (colonne, righe, { anno, ente }) => {
         y += 12;
     });
 
-    pdf.text(`${righe.length} utenze`, MARGINE, ALTEZZA - MARGINE, { size: 7 });
+    pdf.text(piede, MARGINE, ALTEZZA - MARGINE, { size: 7 });
     return pdf.toBuffer();
 };
 
@@ -199,13 +213,13 @@ const cellaWord = (valore, larghezza, scala) => '<w:tc><w:tcPr>'
     + `<w:tcW w:w="${Math.round(larghezza * scala)}" w:type="dxa"/></w:tcPr>`
     + `<w:p><w:r><w:t xml:space="preserve">${xmlSicuro(valore)}</w:t></w:r></w:p></w:tc>`;
 
-const creaWord = (colonne, righe, { anno, ente }) => {
+const creaWord = (colonne, righe, { anno, ente, intestazione: titoloPagina = `Elenco consumi ${anno}` }) => {
     const titolo = '<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">'
-        + `${xmlSicuro(`${ente} - Elenco consumi ${anno}`)}</w:t></w:r></w:p>`;
+        + `${xmlSicuro(`${ente} - ${titoloPagina}`)}</w:t></w:r></w:p>`;
     const scala = scalaWord(colonne);
     const intestazione = `<w:tr>${colonne.map((c) => cellaWord(c.titolo, c.larghezza, scala)).join('')}</w:tr>`;
     const corpo = righe
-        .map((r) => `<w:tr>${colonne.map((c) => cellaWord(r[c.campo], c.larghezza, scala)).join('')}</w:tr>`)
+        .map((r) => `<w:tr>${colonne.map((c) => cellaWord(testoCella(r[c.campo], c), c.larghezza, scala)).join('')}</w:tr>`)
         .join('');
     // La tabella dichiara bordi e larghezza complessiva, e il corpo la
     // dimensione del foglio: in orizzontale, perche le dodici colonne in

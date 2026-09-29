@@ -56,6 +56,18 @@ const trovaElenco = (req, res) => {
     return elenco;
 };
 
+// Le righe dell'elenco, impaginate nel formato chiesto, con il titolo e il piede
+// che l'elenco dichiara (quelli dei consumi se non ne dichiara).
+const creaTabella = async (elenco, formato, anno) => {
+    const righe = await elenco.righe(anno);
+    return formato.crea(elenco, righe, {
+        anno,
+        ente: anagrafe.denominazione,
+        intestazione: elenco.intestazione?.(anno),
+        piede: elenco.piede?.(righe),
+    });
+};
+
 const scaricaElenco = async (req, res) => {
     try {
         const elenco = trovaElenco(req, res);
@@ -80,7 +92,7 @@ const scaricaElenco = async (req, res) => {
         const anno = annoRichiesto(req.query.anno);
         const buffer = elenco.testo
             ? formato.crea(elenco, await elenco.testo(anno))
-            : formato.crea(elenco, await elenco.righe(anno), { anno, ente: anagrafe.denominazione });
+            : await creaTabella(elenco, formato, anno);
         const filename = `${elenco.nomeFile(anno)}.${formato.estensione}`;
 
         res.setHeader('Content-Type', formato.tipo);

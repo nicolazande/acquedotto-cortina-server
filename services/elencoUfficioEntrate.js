@@ -18,7 +18,8 @@ require('../models/Cliente');
 require('../models/Edificio');
 require('../models/Lettura');
 const anagrafe = require('../config/anagrafeTributaria');
-const { dataCompatta, dataReale, toDate } = require('../utils/dates');
+const { predecessorePerMatricola } = require('./counterHistoryService');
+const { dataCompatta, toDate } = require('../utils/dates');
 const { fromCents, toCents } = require('../utils/money');
 const { siglaProvincia } = require('../utils/province');
 const { senzaAccenti } = require('../utils/values');
@@ -255,15 +256,7 @@ const eRigaAConsumo = (riga) => (
 // non Bernardi, subentrato ad Alberti fatturato l'anno prima. Un primo impianto
 // non si dichiara come nuovo: compare l'anno in cui viene fatturato.
 const subentriDaDichiarare = ({ nuovi, fratelli, fatturati }) => nuovi.filter((nuovo) => {
-    const attivazione = toDate(nuovo.inizio);
-    if (!nuovo.seriale || !attivazione) return false;
-
-    const predecessore = fratelli
-        .filter((f) => f.seriale === nuovo.seriale && String(f._id) !== String(nuovo._id))
-        .map((f) => ({ contatore: f, fine: dataReale(f.scadenza) }))
-        .filter(({ fine }) => fine && fine < attivazione)
-        .sort((a, b) => b.fine - a.fine)[0]?.contatore;
-
+    const predecessore = predecessorePerMatricola(nuovo, fratelli);
     return Boolean(predecessore) && fatturati.has(String(predecessore._id));
 });
 
