@@ -9,7 +9,7 @@
 // qui: una fattura formalmente valida ma fiscalmente sbagliata e peggio di una
 // che non viene generata.
 
-const { invoiceCode, modalitaPagamentoXml, naturaPerIva, tipoDocumentoXml } = require('../config/invoicing');
+const { modalitaPagamentoXml, naturaPerIva, numeroDocumento, tipoDocumentoXml } = require('../config/invoicing');
 const { AZIENDA } = require('../config/azienda');
 const { abiDellIban, cabDellIban } = require('../utils/iban');
 const { CODICE_DESTINATARIO_ASSENTE, codiceDestinatarioValido, destinatarioNonGestito } = require('../config/delivery');
@@ -200,6 +200,11 @@ const buildInvoiceXml = ({ cliente, fattura, scadenza, servizi }) => {
         throw unprocessable('La fattura non ha una data valida.');
     }
 
+    // Il numero e obbligatorio nel tracciato: una bozza non ce l'ha ancora.
+    if (!numeroDocumento(fattura)) {
+        throw unprocessable('La fattura non ha un numero: il file XML si prepara dopo la conferma.');
+    }
+
     const anagrafica = anagraficaCliente(cliente, fattura);
     const nonGestito = destinatarioNonGestito(cliente);
     if (nonGestito) {
@@ -210,7 +215,7 @@ const buildInvoiceXml = ({ cliente, fattura, scadenza, servizi }) => {
     // malformato non va scritto nel tracciato, vale come codice assente.
     const destinatario = codiceDestinatarioValido(cliente?.codice_destinatario)
         || CODICE_DESTINATARIO_ASSENTE;
-    const numero = invoiceCode(fattura) || `${fattura.anno}/${fattura.numero}`;
+    const numero = numeroDocumento(fattura);
 
     // Le righe si costruiscono qui: un problema su una riga (una natura IVA che
     // manca) e piu specifico del totale che non torna, e va detto per primo.

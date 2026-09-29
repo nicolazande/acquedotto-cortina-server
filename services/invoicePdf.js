@@ -56,7 +56,7 @@ const { isEmptyValue: isEmpty, numberOrZero, senzaAccenti } = require('../utils/
 const { unprocessable } = require('../utils/errors');
 const { formatItalianDate } = require('../utils/dates');
 const { customerLabel } = require('../utils/customer');
-const { invoiceCode: documentCode } = require('../config/invoicing');
+const { haNumero, isConfirmedInvoice, numeroDocumento } = require('../config/invoicing');
 
 const asciiText = (value) => senzaAccenti(value)
     .replace(/€/g, 'EUR')
@@ -82,17 +82,6 @@ const billingAddress = (cliente) => {
         ),
     };
 };
-
-// I documenti emessi da questo gestionale hanno una serie: il codice mostrato e
-// anno/serie/numero. Quelli importati non ce l'hanno e mantengono la forma storica.
-const invoiceCode = (fattura) => (
-    fattura?.serie
-        ? documentCode({ anno: fattura.anno, numero: fattura.numero, serie: fattura.serie })
-        : [
-            fattura?.anno,
-            fattura?.numero !== undefined ? String(fattura.numero).padStart(4, '0') : '',
-        ].filter(Boolean).join('-')
-);
 
 const readPpmToken = (buffer, cursor) => {
     let index = cursor;
@@ -561,7 +550,9 @@ const drawDocumentBox = (pdf, fattura) => {
     pdf.cellText('Anno', 321, 348, 63, 19, { align: 'center', font: 'bold', size: 8 });
     pdf.cellText(fattura.anno || '', 384, 348, 62, 19, { align: 'center', font: 'bold', size: 8 });
     pdf.cellText('Doc. Numero', 446, 348, 79, 19, { align: 'center', font: 'bold', size: 8 });
-    pdf.cellText(fattura.numero ?? '', 525, 348, 46, 19, { align: 'center', font: 'bold', size: 8 });
+    // Una bozza non ha ancora un numero: lo riceve alla conferma.
+    const numero = haNumero(fattura) ? fattura.numero : '';
+    pdf.cellText(isConfirmedInvoice(fattura) ? numero : (numero || 'BOZZA'), 525, 348, 46, 19, { align: 'center', font: 'bold', size: 8 });
     pdf.rect(321, 370, 119, 24, { fill: GRAY, stroke: BLACK });
     pdf.rect(440, 370, 131, 24, { fill: GRAY, stroke: BLACK });
     pdf.cellText('TOTALE DA PAGARE:', 321, 370, 119, 24, { align: 'center', font: 'bold', size: 8 });
@@ -726,7 +717,7 @@ const generateInvoicePdf = async (fatturaId) => {
 
     return {
         buffer: pdf.toBuffer(),
-        filename: `fattura-${invoiceCode(fattura) || fattura._id}.pdf`,
+        filename: `fattura-${numeroDocumento(fattura).replace(/\//g, '-') || `bozza-${fattura._id}`}.pdf`,
     };
 };
 

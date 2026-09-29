@@ -1,9 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
+const { isConfirmedInvoice } = require('../config/invoicing');
 const {
     assertInvoiceEditable,
-    isConfirmedInvoice,
     unlockOptions,
 } = require('../services/invoiceLockService');
 

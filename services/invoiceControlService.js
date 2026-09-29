@@ -1,17 +1,54 @@
+// I controlli delle fatture: il totale torna con le righe, le righe con il
+// listino, la quota fissa c'e dove e dovuta, il cliente e la scadenza ci sono.
+//
+// Si controllano tutte le fatture chieste, non le piu recenti: prima erano le
+// ultime duecento, e dopo un giro di settecento bozze il controllo ne guardava
+// una su tre. Due modi: tutte le bozze da confermare, qualunque sia l'anno,
+// oppure tutte le fatture di un anno. Dalle bozze senza errori parte la
+// conferma in blocco.
+
 const Fattura = require('../models/Fattura');
 const { buildAnnualFixedLookupCache } = require('./annualFixedChargeService');
-const { isConfirmedInvoice } = require('./invoiceLockService');
 const { verifyInvoiceCalculation } = require('./verificaFattura');
+const { FILTRO_CONFERMATE, isConfirmedInvoice, numeroDocumento } = require('../config/invoicing');
 const { customerLabel } = require('../utils/customer');
 
 const { MONEY_TOLERANCE } = require('../utils/money');
 const isNonZero = (value) => Math.abs(Number(value) || 0) > MONEY_TOLERANCE;
 
-const getControlsQuery = ({ limit, year } = {}) => ({
-    limit: Math.min(Number(limit) || 150, 500),
-    query: Number.isFinite(Number(year)) ? { anno: Number(year) } : {},
-    year: Number.isFinite(Number(year)) ? Number(year) : null,
-});
+// Le fatture si controllano qualcuna alla volta. Una per volta, con il server e
+// il database in due posti diversi, settecento bozze richiedevano minuti: il
+// tempo e quasi tutto attesa della rete, non calcolo.
+const QUANTE_INSIEME = 8;
+
+const perOgnuna = async (elementi, operazione) => {
+    const risultati = new Array(elementi.length);
+    let prossimo = 0;
+    const lavora = async () => {
+        while (prossimo < elementi.length) {
+            const indice = prossimo;
+            prossimo += 1;
+            risultati[indice] = await operazione(elementi[indice]);
+        }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(QUANTE_INSIEME, elementi.length) }, lavora));
+    return risultati;
+};
+
+// Le bozze da confermare sono quelle nate qui. Una bozza importata dal vecchio
+// programma - se ce n'e - ha un numero che non e della serie, e confermarla in
+// blocco la numererebbe nel suo anno: si guarda e si conferma dalla sua scheda.
+const BOZZA_IMPORTATA = { serie: { $not: { $type: 'string' } }, numero: { $gt: 0 } };
+
+const getControlsQuery = ({ stato, year } = {}) => {
+    if (stato === 'bozze') {
+        return { query: { $nor: [FILTRO_CONFERMATE, BOZZA_IMPORTATA] }, year: null };
+    }
+
+    const anno = Number(year) > 0 ? Number(year) : new Date().getFullYear();
+    return { query: { anno }, year: anno };
+};
 
 const createSummary = (year) => ({
     anno: year,
@@ -36,6 +73,8 @@ const createIssue = (fattura, type, severity, message, extra = {}) => ({
     message,
     anno: fattura.anno,
     numero: fattura.numero,
+    serie: fattura.serie,
+    documento: numeroDocumento(fattura),
     data_fattura: fattura.data_fattura,
     cliente: fattura.cliente,
     clienteLabel: getCustomerLabel(fattura),
@@ -64,7 +103,7 @@ const inspectInvoice = async (fattura, annualFixedLookupCache) => {
     }
 
     try {
-        const verification = await verifyInvoiceCalculation(fattura._id, { annualFixedLookupCache });
+        const verification = await verifyInvoiceCalculation(fattura._id, { annualFixedLookupCache, fattura });
         const calculation = verification.summary;
 
         // Che il totale corrisponda alle righe vale per qualunque fattura: e
@@ -90,10 +129,13 @@ const inspectInvoice = async (fattura, annualFixedLookupCache) => {
             }));
         }
 
-        if (calculation.letture > 0 && isNonZero(calculation.deltaServizi)) {
+        // Solo le righe delle letture: la mora o una riga aggiunta a mano non
+        // vengono dal listino, e contarle dava uno scostamento su ogni fattura
+        // con la mora.
+        if (calculation.letture > 0 && isNonZero(calculation.deltaLetture)) {
             counters.scostamentoListino = 1;
             issues.push(createIssue(fattura, 'listino', 'info', 'Righe salvate diverse dalla stima listino', {
-                delta: calculation.deltaServizi,
+                delta: calculation.deltaLetture,
             }));
         }
     } catch (error) {
@@ -113,25 +155,28 @@ const addCounters = (target, source) => {
 };
 
 const getInvoiceControlDashboard = async (options = {}) => {
-    const { limit, query, year } = getControlsQuery(options);
+    const { query, year } = getControlsQuery(options);
     const fatture = await Fattura.find(query)
-        .sort({ data_fattura: -1, numero: -1, _id: -1 })
-        .limit(limit)
+        .sort({ data_fattura: 1, createdAt: 1, _id: 1 })
         .populate('cliente scadenza')
         .lean();
     const annualFixedLookupCache = await buildAnnualFixedLookupCache();
+    const risultati = await perOgnuna(fatture, (fattura) => inspectInvoice(fattura, annualFixedLookupCache));
     const summary = createSummary(year);
-    const issues = [];
     summary.controllate = fatture.length;
+    risultati.forEach((result) => addCounters(summary, result.counters));
 
-    for (const fattura of fatture) {
-        const result = await inspectInvoice(fattura, annualFixedLookupCache);
-        addCounters(summary, result.counters);
-        issues.push(...result.issues);
-    }
+    // Una bozza si conferma se nessun controllo ha trovato un errore: gli
+    // avvisi sono da guardare, ma non fermano la conferma.
+    const conErrori = new Set(risultati.flatMap((result) => result.issues)
+        .filter((issue) => issue.severity === 'danger')
+        .map((issue) => String(issue.fatturaId)));
 
     return {
-        issues: issues.slice(0, limit),
+        issues: risultati.flatMap((result) => result.issues),
+        confermabili: fatture
+            .filter((fattura) => !isConfirmedInvoice(fattura) && !conErrori.has(String(fattura._id)))
+            .map((fattura) => fattura._id),
         summary,
     };
 };

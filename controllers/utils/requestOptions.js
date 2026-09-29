@@ -7,9 +7,9 @@ const { parseOptionalBoolean } = require('../../utils/values');
 const invoiceGenerationOptions = (body = {}) => ({
     data_fattura: body.data_fattura,
     data_scadenza: body.data_scadenza,
+    includeDelay: parseOptionalBoolean(body.includeDelay),
     includeFixedCharge: parseOptionalBoolean(body.includeFixedCharge),
     tipo_documento: body.tipo_documento,
-    confermata: body.confermata,
 });
 
 module.exports = {

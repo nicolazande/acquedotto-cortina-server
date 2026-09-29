@@ -230,6 +230,7 @@ classDiagram
         Date pagamento
         Number anno
         Number numero
+        String serie
         String cognome
         String nome
         Number totale

@@ -5,6 +5,7 @@ const ConsegnaController = require('../controllers/ConsegnaController');
 
 router.post('/', FatturaController.createFattura);
 router.post('/genera-da-letture', FatturaController.generateFromReadings);
+router.post('/conferma', FatturaController.confermaBozze);
 router.get('/generazione/anteprima', FatturaController.getGenerationPreview);
 router.get('/controlli', FatturaController.getControlDashboard);
 router.get('/', FatturaController.getFatture);

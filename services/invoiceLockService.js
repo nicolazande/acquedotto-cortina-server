@@ -32,7 +32,7 @@ const assertInvoiceEditableById = async (fatturaId, action, options) => {
 
     const fattura = await findInvoiceLock(fatturaId);
     if (!fattura) {
-        throw notFound('Fattura not found');
+        throw notFound('Fattura non trovata.');
     }
 
     assertInvoiceEditable(fattura, action, options);
@@ -45,7 +45,7 @@ const assertInvoiceEditableById = async (fatturaId, action, options) => {
 const assertServiceInvoiceEditable = async (servizioId, action, options) => {
     const servizio = await Servizio.findById(servizioId).lean();
     if (!servizio) {
-        throw notFound('Servizio not found');
+        throw notFound('Riga della fattura non trovata.');
     }
 
     if (servizio.fattura) {
@@ -69,5 +69,4 @@ module.exports = {
     unlockOptions,
     assertInvoiceEditableById,
     assertServiceInvoiceEditable,
-    isConfirmedInvoice,
 };

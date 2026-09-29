@@ -15,7 +15,9 @@ const fatturaSchema = new Schema(
         // `numero` non e nemmeno il numero del documento ma il civico
         // dell'indirizzo, per un difetto dell'import (docs/manutenzione.md). I
         // documenti emessi da questo gestionale usano una serie propria, con
-        // progressivo pulito che riparte da 1 ogni anno.
+        // progressivo pulito che riparte da 1 ogni anno. Serie, numero e codice
+        // arrivano con la conferma: una bozza non li ha ancora
+        // (services/numerazioneFatture.js).
         serie: { type: String, required: false },
         destinazione: { type: String, required: false },
         imponibile: { type: Number, required: false },

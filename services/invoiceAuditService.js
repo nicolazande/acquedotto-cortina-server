@@ -1,4 +1,5 @@
 const { diffFields, writeAuditLog } = require('./auditLogService');
+const { numeroDocumento } = require('../config/invoicing');
 
 const INVOICE_AUDIT_FIELDS = [
     'cliente',
@@ -29,8 +30,7 @@ const SERVICE_AUDIT_FIELDS = [
 
 const invoiceLabel = (fattura) => [
     fattura?.tipo_documento || 'Fattura',
-    fattura?.anno,
-    fattura?.numero,
+    numeroDocumento(fattura) || 'bozza',
     fattura?.ragione_sociale || fattura?.nome_cliente,
 ].filter(Boolean).join(' - ');
 

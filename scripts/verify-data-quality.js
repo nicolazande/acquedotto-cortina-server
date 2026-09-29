@@ -11,6 +11,7 @@
 const mongoose = require('mongoose');
 const { runScript } = require('./utils/runScript');
 const { codiceDestinatarioValido, CAMPO_DATA_CONSEGNA } = require('../config/delivery');
+const { haNumero, isConfirmedInvoice, numeroDocumento } = require('../config/invoicing');
 const { codiceFiscaleValido, partitaIvaValida } = require('../utils/codiciFiscali');
 const { dataReale } = require('../utils/dates');
 const { toCents } = require('../utils/money');
@@ -108,16 +109,24 @@ const controllaLetture = async (letture, contatoriPerId, lettureFatturate) => {
 };
 
 const controllaFatture = async (fatture, clientiPerId, scadenzePerId) => {
-    const etichetta = (f) => `${f.anno}/${f.serie ? `${f.serie}/` : ''}${f.numero} ${f.ragione_sociale || ''}`;
+    const etichetta = (f) => `${numeroDocumento(f) || `bozza ${f.anno || ''}`} ${f.ragione_sociale || ''}`;
 
     regola('fatture', 'senza cliente', fatture.filter((f) => !f.cliente || !clientiPerId.has(String(f.cliente))), etichetta);
     regola('fatture', 'senza data', fatture.filter((f) => !dataReale(f.data_fattura)), etichetta);
-    regola('fatture', 'senza numero', fatture.filter((f) => f.numero === null || f.numero === undefined), etichetta);
+    // Una bozza il numero non ce l'ha ancora: lo riceve alla conferma.
+    regola('fatture', 'confermate senza numero', fatture.filter((f) => isConfirmedInvoice(f) && !haNumero(f)), etichetta);
+    // Un numero su una bozza e legittimo solo se la fattura era confermata e
+    // poi riportata a bozza. Prima del 29/09/2026 il numero si dava alla nascita
+    // della bozza: quelle numerate allora lo tengono, e fanno partire le
+    // prossime dopo di loro. Da guardare, e se non sono mai uscite cancellare e
+    // rigenerare.
+    regola('fatture', 'bozze con un numero (riportate a bozza, o numerate prima del 29/09/2026)',
+        fatture.filter((f) => !isConfirmedInvoice(f) && haNumero(f)), etichetta);
     regola('fatture', 'stato e spunta "confermata" che non dicono la stessa cosa',
         fatture.filter((f) => (f.stato === 'confermata') !== Boolean(f.confermata)), etichetta);
 
     const perNumero = new Map();
-    fatture.forEach((f) => {
+    fatture.filter(haNumero).forEach((f) => {
         const chiave = `${f.anno}|${f.serie || ''}|${f.numero}`;
         perNumero.set(chiave, [...(perNumero.get(chiave) || []), f]);
     });
@@ -129,7 +138,7 @@ const controllaFatture = async (fatture, clientiPerId, scadenzePerId) => {
         conScadenza.filter((f) => toCents(scadenzePerId.get(String(f.scadenza)).totale) !== toCents(f.totale_fattura)),
         (f) => `${etichetta(f)}: fattura ${f.totale_fattura}, scadenza ${scadenzePerId.get(String(f.scadenza)).totale}`);
     regola('fatture', 'collegate alla scadenza di un altro documento',
-        conScadenza.filter((f) => !f.serie && (() => {
+        conScadenza.filter((f) => haNumero(f) && !f.serie && (() => {
             const s = scadenzePerId.get(String(f.scadenza));
             return s.anno !== f.anno || s.numero !== f.numero;
         })()),

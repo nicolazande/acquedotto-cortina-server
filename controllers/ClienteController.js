@@ -74,6 +74,7 @@ const getCliente = async (req, res) => {
 const getFatturazionePreview = async (req, res) => {
     try {
         const result = await previewClienteBilling(req.params.id, {
+            includeDelay: parseOptionalBoolean(req.query.includeDelay),
             includeFixedCharge: parseOptionalBoolean(req.query.includeFixedCharge),
         });
         res.status(200).json(result);

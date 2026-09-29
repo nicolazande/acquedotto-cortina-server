@@ -108,6 +108,8 @@ Endpoint principali:
 ```text
 GET  /api/fatture/generazione/anteprima
 POST /api/fatture/genera-da-letture
+GET  /api/fatture/controlli?stato=bozze
+POST /api/fatture/conferma
 GET  /api/letture/:id/calcolo
 GET  /api/fatture/:id/verifica-calcolo
 GET  /api/fatture/:id/pdf
@@ -115,10 +117,10 @@ GET  /api/fatture/:id/pdf
 
 Le fatture generate salvano:
 
-- numero progressivo per anno tramite `invoice_counters`
+- stato `bozza`, senza numero: il numero progressivo per anno arriva con la
+  conferma, dalla scheda o in blocco dai controlli (vedi `docs/fatturazione.md`)
 - riferimenti alle letture fatturate
 - righe servizio con listino, fascia, aliquota IVA e snapshot del calcolo
-- stato iniziale `bozza` o `confermata`
 
 Su MongoDB con replica set o Atlas la generazione usa una transazione: fattura, righe servizio e flag `fatturata` delle letture vengono salvati insieme. Su MongoDB locale standalone il codice resta compatibile e usa un fallback non transazionale.
 

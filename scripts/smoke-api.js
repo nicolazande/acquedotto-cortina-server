@@ -585,32 +585,35 @@ const testInvoiceDeletionCascade = async () => {
         const { body: letturaLibera } = await request(`/letture/${lettura._id}`);
         assert(letturaLibera.fatturata === false, 'reading should be billable again after invoice deletion');
 
-        // la lettura deve poter rientrare davvero in una nuova fattura
-        const { body: rigenerata } = await request('/fatture/genera-da-letture', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ letture: [lettura._id], data_fattura: OGGI }),
-        });
-        assert(rigenerata.fattura?._id, 'reading should be billable again');
-        // Cancellare l'ultima fattura ne libera il numero: la prossima non lo salta.
-        // Prima il contatore andava solo avanti, e due fatture di prova cancellate
-        // facevano partire la prima vera dal numero 3.
-        assert(
-            Number(rigenerata.fattura.numero) <= Number(fattura.numero),
-            `deleting the last invoice should free its number (${fattura.numero} -> ${rigenerata.fattura.numero})`
-        );
-        await request(`/fatture/${rigenerata.fattura._id}`, { method: 'DELETE' });
+        // La bozza non ha numero: lo riceve alla conferma, cosi cancellarla non
+        // lascia buchi nella numerazione.
+        assert(!fattura.numero && !fattura.serie && !fattura.codice, `a draft should have no number, got ${fattura.numero}`);
 
-        const { body: terza } = await request('/fatture/genera-da-letture', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ letture: [lettura._id], data_fattura: OGGI }),
-        });
+        // la lettura deve poter rientrare davvero in una nuova fattura
+        const generaEConferma = async () => {
+            const { body: generata } = await request('/fatture/genera-da-letture', json('POST', {
+                letture: [lettura._id], data_fattura: OGGI,
+            }));
+            assert(generata.fattura?._id, 'reading should be billable again');
+            const { body: confermata } = await request(`/fatture/${generata.fattura._id}`, json('PUT', { confermata: true }));
+            assert(Number(confermata.numero) > 0 && confermata.codice, 'confirming a draft should give it a number');
+            const { body: scadenza } = await request(`/scadenze/${confermata.scadenza}`);
+            assert(Number(scadenza.numero) === Number(confermata.numero), 'the deadline should carry the invoice number');
+            return confermata;
+        };
+
+        // Cancellare l'ultima fattura confermata, mai uscita, ne libera il
+        // numero: la prossima non lo salta. Prima il contatore andava solo
+        // avanti, e due fatture di prova cancellate facevano partire la prima
+        // vera dal numero 3.
+        const rigenerata = await generaEConferma();
+        await request(`/fatture/${rigenerata._id}?sbloccoConfermato=true`, { method: 'DELETE' });
+        const terza = await generaEConferma();
         assert(
-            Number(terza.fattura?.numero) === Number(rigenerata.fattura.numero),
-            `a freed number should be reused (${rigenerata.fattura.numero} -> ${terza.fattura?.numero})`
+            Number(terza.numero) === Number(rigenerata.numero),
+            `a freed number should be reused (${rigenerata.numero} -> ${terza.numero})`
         );
-        await request(`/fatture/${terza.fattura._id}`, { method: 'DELETE' });
+        await request(`/fatture/${terza._id}?sbloccoConfermato=true`, { method: 'DELETE' });
     } finally {
         await deleteCreatedRecords(createdRecords);
     }
@@ -1015,6 +1018,7 @@ const testDelayFeeChargedOnce = async () => {
     }
 
     const createdRecords = [];
+    let vecchia = null;
 
     try {
         const cliente = await createTrackedRecord(createdRecords, 'clienti', {
@@ -1031,14 +1035,16 @@ const testDelayFeeChargedOnce = async () => {
             codice: 'SMOKE-MORA', seriale: 'SMOKE-MORA', cliente: cliente._id, listino: listino._id,
         });
 
-        // La fattura vecchia con la scadenza gia superata: e lei a far scattare
-        // la penale sulle successive.
-        const vecchia = await createRecord('fatture', {
-            cliente: cliente._id, data_fattura: giorniDopo(-120), tipo_documento: 'Fattura',
-            data_scadenza: giorniDopo(-90), imponibile: 10, iva: 1, totale_fattura: 11,
+        // La fattura vecchia, confermata, con la scadenza gia superata: e lei a
+        // far scattare la penale sulle successive. Una bozza non la farebbe
+        // scattare, perche il cliente non l'ha mai ricevuta. E di un anno in cui
+        // non ci sono fatture della serie: una data piu vecchia dell'ultima
+        // numerata dell'anno non si potrebbe confermare.
+        vecchia = await createRecord('fatture', {
+            cliente: cliente._id, data_fattura: '2001-03-01', tipo_documento: 'Fattura',
+            data_scadenza: '2001-03-31', imponibile: 10, iva: 1, totale_fattura: 11, confermata: true,
         });
-        createdRecords.push({ resource: 'fatture', id: vecchia._id });
-        createdRecords.push({ resource: 'scadenze', id: vecchia.scadenza });
+        assert(Number(vecchia.numero) > 0, 'the old invoice should be confirmed with a number');
 
         const scaduta = await request(`/scadenze/${vecchia.scadenza}`);
         assert(scaduta.body.ritardo > 0, 'the old deadline should be overdue');
@@ -1077,7 +1083,24 @@ const testDelayFeeChargedOnce = async () => {
         await request(`/fatture/${conMora.id}`, { method: 'DELETE' });
         const liberata = await request(`/scadenze/${vecchia.scadenza}`);
         assert(!liberata.body.mora_fatturata, 'deleting the invoice should free the deadline again');
+
+        // Si puo lasciarla fuori: con i pagamenti non ancora registrati
+        // colpirebbe chi ha pagato.
+        const senzaMora = await request('/fatture/genera-da-letture', json('POST', {
+            letture: [(await createTrackedRecord(createdRecords, 'letture', {
+                data_lettura: OGGI, consumo: 30, unita_misura: 'm3', fatturata: false, contatore: contatore._id,
+            }))._id],
+            data_fattura: OGGI,
+            includeFixedCharge: false,
+            includeDelay: false,
+        }));
+        createdRecords.push({ resource: 'fatture', id: senzaMora.body.fattura._id });
+        assert(
+            !senzaMora.body.servizi.some((riga) => riga.calcolo_snapshot?.quota === 'delay'),
+            'the late fee should be left out on request'
+        );
     } finally {
+        await request(`/fatture/${vecchia?._id}?sbloccoConfermato=true`, { method: 'DELETE' }).catch(() => {});
         await deleteCreatedRecords(createdRecords);
     }
 };
@@ -1213,6 +1236,17 @@ const testConfermaDallaMaschera = async () => {
             sbloccoConfermato: true,
         }));
         assert(riaperta.stato === 'bozza', `unconfirming should go back to draft, got ${riaperta.stato}`);
+
+        // Riportata a bozza tiene il suo numero: puo essere gia uscita, e
+        // confermandola di nuovo non ne riceve un secondo.
+        assert(Number(confermata.numero) > 0, 'confirming from the form should assign a number');
+        assert(riaperta.numero === confermata.numero, 'a draft that had a number should keep it');
+        const { body: riconfermata } = await request(`/fatture/${fattura._id}`, json('PUT', {
+            ...riaperta,
+            confermata: true,
+        }));
+        assert(riconfermata.numero === confermata.numero, 'confirming again should not assign a new number');
+        await request(`/fatture/${fattura._id}?sbloccoConfermato=true`, { method: 'DELETE' });
     } finally {
         await deleteCreatedRecords(createdRecords);
     }
@@ -1360,6 +1394,7 @@ const testBurnedNumberNotReused = async () => {
             cliente: cliente._id,
             data_fattura: OGGI,
             tipo_documento: 'Fattura',
+            confermata: true,
             imponibile: 10,
             iva: 1,
             totale_fattura: 11,
@@ -1552,22 +1587,103 @@ const testDeliveryRollback = async () => {
             'a confirmed invoice should be editable after the unlock'
         );
 
+        const { body: numerata } = await request(`/fatture/${fattura._id}`);
         await request(`/fatture/${fattura._id}?sbloccoConfermato=true`, { method: 'DELETE' });
         const seguente = await createRecord('fatture', {
             cliente: cliente._id,
             data_fattura: OGGI,
             tipo_documento: 'Fattura',
+            confermata: true,
             imponibile: 10,
             iva: 1,
             totale_fattura: 11,
         });
         createdRecords.push({ resource: 'fatture', id: seguente._id });
         assert(
-            Number(seguente.numero) === Number(fattura.numero) + 1,
-            `an invoice that went out must keep its number after deletion (${fattura.numero} -> ${seguente.numero})`
+            Number(seguente.numero) === Number(numerata.numero) + 1,
+            `an invoice that went out must keep its number after deletion (${numerata.numero} -> ${seguente.numero})`
         );
-        await request(`/fatture/${seguente._id}`, { method: 'DELETE' });
+        await request(`/fatture/${seguente._id}?sbloccoConfermato=true`, { method: 'DELETE' });
     } finally {
+        await deleteCreatedRecords(createdRecords);
+    }
+};
+
+// La conferma in blocco, il passo dopo un giro di fatturazione: le bozze
+// ricevono il numero nell'ordine della loro data, e una bozza datata prima
+// dell'ultima fattura numerata resta bozza con il suo motivo.
+const testBulkConfirm = async () => {
+    if (skipMutation) {
+        console.log('skipped');
+        return;
+    }
+
+    const createdRecords = [];
+    const confermate = [];
+    const bozza = async (cliente, data) => {
+        const fattura = await createRecord('fatture', {
+            cliente: cliente._id, data_fattura: data, tipo_documento: 'Fattura',
+            imponibile: 10, iva: 1, totale_fattura: 11,
+        });
+        createdRecords.push({ resource: 'fatture', id: fattura._id });
+        return fattura;
+    };
+
+    try {
+        const cliente = await createTrackedRecord(createdRecords, 'clienti', {
+            nome: 'Smoke', cognome: 'Blocco', ragione_sociale: 'Smoke Blocco',
+        });
+        const prima = await bozza(cliente, OGGI);
+        const seconda = await bozza(cliente, OGGI);
+        assert(!prima.numero && !seconda.numero, 'drafts should have no number');
+
+        const { body: esito } = await request('/fatture/conferma', json('POST', { fatture: [seconda._id, prima._id] }));
+        confermate.push(...esito.confermate);
+        assert(esito.confermate.length === 2 && esito.rifiutate.length === 0, 'both drafts should be confirmed');
+        const [numeroPrima, numeroSeconda] = await Promise.all([prima, seconda].map(async (fattura) => (
+            Number((await request(`/fatture/${fattura._id}`)).body.numero)
+        )));
+        assert(numeroSeconda === numeroPrima + 1, `numbers should follow the order of creation (${numeroPrima}, ${numeroSeconda})`);
+
+        const { body: dinuovo } = await request('/fatture/conferma', json('POST', { fatture: [prima._id] }));
+        assert(dinuovo.confermate.length === 0 && dinuovo.saltate === 1, 'a confirmed invoice is not confirmed twice');
+
+        // Una bozza datata prima dell'ultima numerata avrebbe un numero piu alto
+        // e una data piu vecchia. Il primo gennaio "ieri" e un altro anno, con
+        // la sua serie: la prova non si fa.
+        const ieri = giorniDopo(-1);
+        if (ieri.slice(0, 4) === OGGI.slice(0, 4)) {
+            const indietro = await bozza(cliente, ieri);
+            const { body: rifiuto } = await request('/fatture/conferma', json('POST', { fatture: [indietro._id] }));
+            assert(rifiuto.rifiutate.length === 1 && /data più vecchia/.test(rifiuto.rifiutate[0].motivo),
+                'a draft dated before the last numbered invoice must stay a draft');
+
+            // Spostando la data della bozza, la scadenza la segue.
+            const { body: primaDiSpostarla } = await request(`/scadenze/${indietro.scadenza}`);
+            await request(`/fatture/${indietro._id}`, json('PUT', { data_fattura: OGGI }));
+            const { body: spostata } = await request(`/scadenze/${indietro.scadenza}`);
+            assert(
+                new Date(spostata.scadenza) - new Date(primaDiSpostarla.scadenza) === 24 * 60 * 60 * 1000,
+                'the deadline of a draft should move with its date'
+            );
+        }
+
+        // Una data nel futuro non si conferma: bloccherebbe tutte le altre.
+        const futura = await bozza(cliente, giorniDopo(3));
+        const { body: nelFuturo } = await request('/fatture/conferma', json('POST', { fatture: [futura._id] }));
+        assert(nelFuturo.rifiutate.length === 1 && /nel futuro/.test(nelFuturo.rifiutate[0].motivo),
+            'a draft dated in the future must stay a draft');
+
+        // Chi manda solo lo stato conferma lo stesso passando dalla conferma: con il numero.
+        const soloStato = await bozza(cliente, OGGI);
+        const { body: conStato } = await request(`/fatture/${soloStato._id}`, json('PUT', { stato: 'confermata' }));
+        confermate.push(conStato);
+        assert(conStato.confermata === true && Number(conStato.numero) > 0, 'confirming through the state should assign a number');
+    } finally {
+        // Dall'ultima alla prima, cosi i numeri tornano liberi.
+        for (const fattura of [...confermate].reverse()) {
+            await request(`/fatture/${fattura._id}?sbloccoConfermato=true`, { method: 'DELETE' }).catch(() => {});
+        }
         await deleteCreatedRecords(createdRecords);
     }
 };
@@ -1581,6 +1697,7 @@ const main = async () => {
     await step('billing preview/generation/verification', testBillingGeneration);
     await step('invoice deletion cascade', testInvoiceDeletionCascade);
     await step('a number that went out is never reused', testBurnedNumberNotReused);
+    await step('drafts confirmed together get numbers in order', testBulkConfirm);
     await step('invoice delivery queue', testInvoiceDelivery);
     await step('going back from an electronic invoice', testDeliveryRollback);
     await step('tariff renewal', testTariffRenewal);

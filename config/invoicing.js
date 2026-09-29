@@ -23,6 +23,23 @@ const invoiceCode = ({ anno, numero, serie }) => (
 const emessaDalGestionale = (fattura) => Boolean(fattura?.serie);
 const FILTRO_EMESSE_DAL_GESTIONALE = { serie: { $type: 'string', $ne: '' } };
 
+// Il numero arriva con la conferma: una bozza non ne ha, ne serie ne codice,
+// cosi cancellarla non lascia buchi nella numerazione. Una fattura riportata a
+// bozza tiene il numero che aveva, perche puo essere gia uscita. Lo storico
+// importato ha sempre un numero.
+const haNumero = (fattura) => Number(fattura?.numero) > 0;
+
+// Come si chiama un documento: 2026/A/12 per quelli emessi da qui, anno/numero
+// per quelli importati, che una serie non ce l'hanno. Una bozza non ha ancora un
+// nome: stringa vuota, e chi lo mostra dice "bozza".
+const numeroDocumento = (fattura) => {
+    if (!haNumero(fattura)) {
+        return '';
+    }
+
+    return invoiceCode(fattura) || [fattura.anno, fattura.numero].filter(Boolean).join('/');
+};
+
 // Una fattura confermata: la spunta o lo stato, che il modello tiene allineati.
 // Decide sia il blocco delle modifiche sia se la fattura si puo consegnare, o
 // mostrare al cliente nel suo portale. Il filtro e la stessa regola scritta per
@@ -125,10 +142,12 @@ module.exports = {
     FILTRO_EMESSE_DAL_GESTIONALE,
     emessaDalGestionale,
     giorniDelTermine,
+    haNumero,
     isConfirmedInvoice,
     modalitaPagamentoXml,
     INVOICE_SERIES,
     invoiceCode,
     naturaPerIva,
+    numeroDocumento,
     tipoDocumentoXml,
 };

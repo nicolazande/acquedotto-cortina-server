@@ -38,7 +38,7 @@ const getPortalData = async (req, res) => {
         const contatoreIds = contatori.map((contatore) => contatore._id);
         const [fatture, letture] = await Promise.all([
             Fattura.find(sueFatture(clienteId))
-                .select('tipo_documento anno numero data_fattura codice imponibile iva totale_fattura stato confermata scadenza')
+                .select('tipo_documento anno serie numero data_fattura codice imponibile iva totale_fattura stato confermata scadenza')
                 .populate('scadenza', 'scadenza saldo pagamento ritardo totale')
                 .sort({ data_fattura: -1, _id: -1 })
                 .limit(60)

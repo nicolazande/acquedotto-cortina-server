@@ -13,6 +13,7 @@ const {
     sendServiceError,
 } = require('./utils/controllerActions');
 const { invoiceGenerationOptions, parseOptionalBoolean } = require('./utils/requestOptions');
+const { confermaFattura, confermaFatture } = require('../services/confermaFatture');
 const {
     createManualInvoice,
     createInvoiceFromReadings,
@@ -33,28 +34,66 @@ const {
     writeInvoiceAudit,
     writeInvoiceUpdateAudit,
 } = require('../services/invoiceAuditService');
-const { withComputedDelay, withDeadlineDelay } = require('../services/deadlineService');
+const {
+    spostaScadenzaConLaFattura,
+    withComputedDelay,
+    withDeadlineDelay,
+} = require('../services/deadlineService');
+const { verificaDataNumerata } = require('../services/numerazioneFatture');
 const { getInvoiceControlDashboard } = require('../services/invoiceControlService');
 const { deleteInvoice } = require('../services/invoiceDeletionService');
 const { generateInvoicePdf } = require('../services/invoicePdf');
 const { buildInvoiceXml } = require('../services/invoiceXml');
 const { fatturaViews } = require('../config/listViews');
-const { notFound } = require('../utils/errors');
+const { haNumero, isConfirmedInvoice } = require('../config/invoicing');
+const { startOfDay } = require('../utils/dates');
+const { badRequest, notFound, unprocessable } = require('../utils/errors');
 
 const invoiceStatus = (confermata) => (parseOptionalBoolean(confermata) ? 'confermata' : 'bozza');
 
+// Numero, serie e codice li assegna la conferma, l'anno segue la data: la
+// maschera rispedisce il record intero, e da li non si riscrivono.
+const CAMPI_DELLA_NUMERAZIONE = ['anno', 'numero', 'serie', 'codice'];
+
 const normalizeInvoicePayload = (body = {}) => {
     const payload = { ...body };
+    CAMPI_DELLA_NUMERAZIONE.forEach((campo) => delete payload[campo]);
+    delete payload.sbloccoConfermato;
 
     // La spunta "Confermata" decide. La maschera rispedisce l'intero record,
     // quindi insieme alla spunta arriva anche lo stato di prima: tenerlo
     // significava confermare una fattura che restava fra le bozze.
+    // Chi manda solo lo stato dice la stessa cosa con l'altro campo: senza
+    // tradurlo, la fattura passava a confermata senza passare dalla conferma, e
+    // quindi senza numero.
     if (payload.confermata !== undefined) {
         payload.confermata = parseOptionalBoolean(payload.confermata);
+        payload.stato = invoiceStatus(payload.confermata);
+    } else if (payload.stato !== undefined) {
+        payload.confermata = /^confermata$/i.test(String(payload.stato));
         payload.stato = invoiceStatus(payload.confermata);
     }
 
     return payload;
+};
+
+// La data di una fattura che cambia. Su una bozza senza numero l'anno la segue;
+// una fattura numerata resta nel suo anno e fra i numeri vicini
+// (services/numerazioneFatture.js). Restituisce se la data e cambiata davvero:
+// la maschera rispedisce anche quella di prima.
+const cambioDiData = async (fattura, payload) => {
+    const nuova = startOfDay(payload.data_fattura);
+    if (!nuova || nuova.getTime() === startOfDay(fattura.data_fattura)?.getTime()) {
+        return false;
+    }
+
+    if (haNumero(fattura)) {
+        await verificaDataNumerata({ fattura, data_fattura: nuova });
+    } else {
+        payload.anno = nuova.getUTCFullYear();
+    }
+
+    return true;
 };
 
 const withEditableInvoice = (handler, idParam, action) => async (req, res) => {
@@ -69,7 +108,13 @@ const withEditableInvoice = (handler, idParam, action) => async (req, res) => {
 const createFattura = async (req, res) => {
     try {
         const result = await createManualInvoice(req.body);
-        await writeInvoiceAudit(req, result.fattura, 'fattura.creata', `Creata ${invoiceLabel(result.fattura)}`);
+        const confermata = isConfirmedInvoice(result.fattura);
+        await writeInvoiceAudit(
+            req,
+            result.fattura,
+            confermata ? 'fattura.confermata' : 'fattura.creata',
+            `${confermata ? 'Creata e confermata' : 'Creata'} ${invoiceLabel(result.fattura)}`
+        );
         res.status(201).json(result.fattura);
     } catch (error) {
         sendServiceError(res, error, 'Creazione della fattura non riuscita.', 400);
@@ -104,6 +149,7 @@ const generateFromReadings = async (req, res) => {
 const getGenerationPreview = async (req, res) => {
     try {
         const result = await previewBillingBatch({
+            includeDelay: parseOptionalBoolean(req.query.includeDelay),
             includeFixedCharge: parseOptionalBoolean(req.query.includeFixedCharge),
             limit: req.query.limit,
         });
@@ -116,8 +162,8 @@ const getGenerationPreview = async (req, res) => {
 const getControlDashboard = async (req, res) => {
     try {
         const result = await getInvoiceControlDashboard({
-            limit: req.query.limit,
-            year: req.query.year || new Date().getFullYear(),
+            stato: req.query.stato,
+            year: req.query.year,
         });
         res.status(200).json(result);
     } catch (error) {
@@ -160,6 +206,9 @@ const downloadXml = async (req, res) => {
     try {
         // La scadenza entra nel tracciato: dice al cliente entro quando pagare.
         const fattura = await Fattura.findById(req.params.id).populate('cliente scadenza').orFail(fatturaNonTrovata).lean();
+        if (!isConfirmedInvoice(fattura)) {
+            throw unprocessable('La fattura è una bozza: il file XML si prepara dopo la conferma.');
+        }
 
         const servizi = await righeDellaFattura(fattura._id);
 
@@ -199,15 +248,51 @@ const updateFattura = async (req, res) => {
         const suDocumentoEmesso = assertInvoiceEditable(before, 'modificare la fattura', unlockOptions(req));
 
         const payload = normalizeInvoicePayload(req.body);
-        delete payload.sbloccoConfermato;
-        const after = await Fattura.findByIdAndUpdate(req.params.id, payload, { new: true }).lean();
+        const dataCambiata = await cambioDiData(before, payload);
+
+        // Confermare una bozza le da il numero: passa dalla conferma, l'unico
+        // punto in cui un numero si assegna.
+        const conferma = payload.confermata === true && !isConfirmedInvoice(before);
+        const after = conferma
+            ? await confermaFattura(req.params.id, payload)
+            : await Fattura.findByIdAndUpdate(req.params.id, payload, { new: true }).lean();
+        // La scadenza di una bozza segue la sua data: e cio che si fa quando la
+        // conferma rifiuta una data piu vecchia dell'ultima fattura numerata.
+        if (dataCambiata && !isConfirmedInvoice(before)) {
+            await spostaScadenzaConLaFattura({ fattura: before, nuovaData: payload.data_fattura });
+        }
         const azione = suDocumentoEmesso
             ? 'fattura.modificata_dopo_conferma'
-            : (payload.confermata ? 'fattura.confermata' : 'fattura.modificata');
+            : (conferma ? 'fattura.confermata' : 'fattura.modificata');
         await writeInvoiceUpdateAudit(req, before, after, azione);
         return res.status(200).json(after);
     } catch (error) {
         return sendServiceError(res, error, 'Modifica della fattura non riuscita.', error.status || 400);
+    }
+};
+
+// Le bozze di un giro di fatturazione, confermate insieme dai controlli. Ognuna
+// riceve il suo numero; quelle che non si possono confermare restano bozze, e la
+// risposta dice perche.
+const confermaBozze = async (req, res) => {
+    try {
+        const ids = Array.isArray(req.body?.fatture) ? req.body.fatture : [];
+        if (ids.length === 0) {
+            throw badRequest('Indica le bozze da confermare.');
+        }
+
+        const esito = await confermaFatture(ids);
+        for (const fattura of esito.confermate) {
+            await writeInvoiceAudit(req, fattura, 'fattura.confermata', `Confermata ${invoiceLabel(fattura)}`);
+        }
+
+        return res.status(200).json({
+            confermate: esito.confermate.map(({ _id, codice, numero }) => ({ _id, codice, numero })),
+            rifiutate: esito.rifiutate,
+            saltate: esito.saltate,
+        });
+    } catch (error) {
+        return sendServiceError(res, error, 'Conferma delle bozze non riuscita.', 400);
     }
 };
 
@@ -297,6 +382,7 @@ module.exports = {
     downloadPdf,
     downloadXml,
     updateFattura,
+    confermaBozze,
     deleteFattura,
     getAuditLog,
     associateCliente: withEditableInvoice(associateCliente, 'fatturaId', 'associare il cliente'),

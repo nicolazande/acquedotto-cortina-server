@@ -3,8 +3,17 @@
 // cliente - un cliente, una fattura.
 //
 // Serve alla pagina di generazione, che mostra i gruppi prima di crearli, e alla
-// scheda del cliente. Sta fuori dalla generazione perche non crea niente: chi
-// legge questo file non deve chiedersi se sta anche scrivendo.
+// scheda del cliente: il motore e lo stesso, cosi le due non raccontano cose
+// diverse. Sta fuori dalla generazione perche non crea niente: chi legge questo
+// file non deve chiedersi se sta anche scrivendo.
+//
+// Oltre agli importi l'anteprima dice cosa guardare prima di generare:
+// - le letture che non si fatturano in automatico (anomalie): un calcolo che
+//   non riesce, una lettura piu vecchia di una gia fatturata;
+// - quelle che si possono fatturare ma vanno controllate (avvisi): un anno gia
+//   chiuso, un consumo fuori misura. Il cliente e "da verificare", e la
+//   selezione di tutti lo lascia fuori;
+// - la mora che la fattura porterebbe, cliente per cliente.
 
 const Cliente = require('../models/Cliente');
 const Contatore = require('../models/Contatore');
@@ -13,115 +22,137 @@ const {
     buildAnnualFixedLookupCache,
     createAnnualFixedContext,
 } = require('./annualFixedChargeService');
+const { calculateTotals } = require('./billingCalculator');
 const {
     calculateReadingById,
     getArticlesByCode,
     summarizeBillablePreviews,
 } = require('./calcoloLettura');
-const { createError } = require('../utils/errors');
+const { avvisiDellaLettura, fatturataDopo, motivoLetturaSuperata } = require('./avvisiLettura');
+const { descriviMora, fatturePrecedenti, rigaMoraPer } = require('./mora');
+const { notFound } = require('../utils/errors');
 const { sumMoneyBy } = require('../utils/values');
 
-const previewClienteBilling = async (clienteId, { includeFixedCharge = true } = {}) => {
-    const cliente = await Cliente.findById(clienteId).lean();
-    if (!cliente) {
-        throw createError('Cliente not found', 404);
-    }
+const DA_FATTURARE = { $or: [{ fatturata: false }, { fatturata: { $exists: false } }] };
+const LIMITE_MASSIMO = 2000;
 
-    const contatori = await Contatore.find({ cliente: clienteId }).populate('listino cliente').lean();
-    const letture = await Lettura.find({
-        contatore: { $in: contatori.map((contatore) => contatore._id) },
-        $or: [{ fatturata: false }, { fatturata: { $exists: false } }],
-    }).sort({ data_lettura: 1, _id: 1 }).lean();
-    // Gli articoli si leggono una volta sola invece che per ogni lettura.
-    // Qui non si precarica l'intera cache delle quote fisse annuali: per un solo
-    // cliente l'aggregazione completa costerebbe piu di quanto faccia risparmiare,
-    // e la cache incrementale per contatore/anno basta.
-    const articlesByCode = await getArticlesByCode();
-    const billingContext = createAnnualFixedContext();
-    const previews = [];
+const perId = (record) => String(record?._id || record || '');
 
-    for (const lettura of letture) {
+// Tutte le letture dei contatori coinvolti, dalla piu vecchia: e la storia su
+// cui si misurano gli avvisi. Una lettura sola per tutta l'anteprima.
+const storiaDeiContatori = async (contatoreIds) => {
+    const letture = await Lettura.find({ contatore: { $in: contatoreIds } })
+        .select('contatore data_lettura consumo fatturata')
+        .sort({ data_lettura: 1, _id: 1 })
+        .lean();
+    const storia = new Map();
+
+    letture.forEach((lettura) => {
+        const chiave = perId(lettura.contatore);
+        storia.set(chiave, [...(storia.get(chiave) || []), lettura]);
+    });
+
+    return storia;
+};
+
+const sommaTotali = (a, b) => ({
+    ...a,
+    imponibile: sumMoneyBy([a, b], (totali) => totali.imponibile),
+    iva: sumMoneyBy([a, b], (totali) => totali.iva),
+    totale_fattura: sumMoneyBy([a, b], (totali) => totali.totale_fattura),
+});
+
+// Un gruppo pronto: gli importi delle letture, piu la mora se la fattura la
+// porterebbe. La mora c'e solo se c'e una fattura, cioe almeno una lettura da
+// fatturare. Si calcola anche quando la si lascia fuori, per dire quanto vale:
+// entra nel totale solo se inclusa.
+const chiudiGruppo = (gruppo, { articlesByCode, includeDelay, oggi, precedenti }) => {
+    let totals = summarizeBillablePreviews(gruppo.previews);
+    let mora = null;
+
+    if (totals.letture > 0) {
+        const precedente = precedenti.get(perId(gruppo.cliente));
+
         try {
-            previews.push(await calculateReadingById(lettura._id, {
-                ...billingContext,
-                articlesByCode,
-                includeFixedCharge,
-            }));
+            const riga = rigaMoraPer({ articlesByCode, precedente, dataFattura: oggi });
+            if (riga) {
+                mora = { ...descriviMora(precedente, oggi), inclusa: includeDelay, totals: calculateTotals([riga]) };
+                totals = includeDelay ? sommaTotali(totals, mora.totals) : totals;
+            }
         } catch (error) {
-            previews.push({ lettura, error: error.message });
+            gruppo.anomalies.push({ message: error.message });
         }
     }
 
     return {
-        cliente,
-        contatori,
-        previews,
-        totals: summarizeBillablePreviews(previews),
+        ...gruppo,
+        mora,
+        totals,
+        daVerificare: gruppo.previews.some((preview) => preview.avvisi?.length > 0),
     };
 };
 
-const getOrCreateBillingGroup = (groups, cliente) => {
-    const key = String(cliente?._id || '');
-    if (!groups.has(key)) {
-        groups.set(key, {
-            cliente,
-            previews: [],
-            anomalies: [],
-        });
-    }
-    return groups.get(key);
-};
-
-const toBillingGroupSummary = (group) => {
-    return {
-        cliente: group.cliente,
-        previews: group.previews,
-        anomalies: group.anomalies,
-        totals: summarizeBillablePreviews(group.previews),
-    };
-};
-
-const previewBillingBatch = async ({ includeFixedCharge = true, limit = 500 } = {}) => {
-    const maxReadings = Math.min(Math.max(Number.parseInt(limit, 10) || 500, 1), 2000);
-    const letture = await Lettura.find({
-        $or: [{ fatturata: false }, { fatturata: { $exists: false } }],
-    })
-        .sort({ data_lettura: 1, _id: 1 })
-        .limit(maxReadings)
-        .populate({
-            path: 'contatore',
-            populate: ['cliente', 'listino'],
-        })
-        .lean();
-    const [articlesByCode, annualFixedLookupCache] = await Promise.all([
-        getArticlesByCode(),
-        buildAnnualFixedLookupCache(),
-    ]);
-    const groups = new Map();
-    const globalAnomalies = [];
+// Il calcolo di letture gia caricate (con contatore, listino e cliente), diviso
+// per cliente.
+const calcolaGruppi = async (letture, {
+    annualFixedLookupCache,
+    includeDelay = true,
+    includeFixedCharge = true,
+} = {}) => {
+    const oggi = new Date();
+    const clienteIds = [...new Set(letture.map((lettura) => perId(lettura.contatore?.cliente)).filter(Boolean))];
+    const contatoreIds = [...new Set(letture.map((lettura) => perId(lettura.contatore)).filter(Boolean))];
+    const articlesByCode = await getArticlesByCode();
+    const storia = await storiaDeiContatori(contatoreIds);
+    const precedenti = await fatturePrecedenti(clienteIds, oggi);
     const billingContext = createAnnualFixedContext({ annualFixedLookupCache });
+    const gruppi = new Map();
+    const anomalieGenerali = [];
 
     for (const lettura of letture) {
         const cliente = lettura.contatore?.cliente;
 
         if (!cliente?._id) {
-            globalAnomalies.push({
+            anomalieGenerali.push({
                 lettura: lettura._id,
                 message: 'Lettura senza cliente collegato al contatore',
             });
             continue;
         }
 
-        const group = getOrCreateBillingGroup(groups, cliente);
+        if (!gruppi.has(perId(cliente))) {
+            gruppi.set(perId(cliente), { cliente, previews: [], anomalies: [] });
+        }
+        const gruppo = gruppi.get(perId(cliente));
+        const storiaContatore = storia.get(perId(lettura.contatore)) || [];
+        const successiva = fatturataDopo(lettura, storiaContatore);
+
+        if (successiva) {
+            gruppo.anomalies.push({
+                lettura,
+                contatore: lettura.contatore,
+                message: motivoLetturaSuperata(lettura, successiva),
+            });
+            continue;
+        }
 
         try {
-            group.previews.push(await calculateReadingById(lettura._id, {
+            const preview = await calculateReadingById(lettura._id, {
                 ...billingContext,
                 articlesByCode,
                 includeFixedCharge,
-            }));
+            });
+            gruppo.previews.push({
+                ...preview,
+                avvisi: avvisiDellaLettura({
+                    lettura,
+                    consumo: preview.billableConsumption,
+                    storia: storiaContatore,
+                    oggi,
+                }),
+            });
         } catch (error) {
-            group.anomalies.push({
+            gruppo.anomalies.push({
                 lettura,
                 contatore: lettura.contatore,
                 message: error.message,
@@ -129,22 +160,120 @@ const previewBillingBatch = async ({ includeFixedCharge = true, limit = 500 } = 
         }
     }
 
-    const clienti = [...groups.values()].map(toBillingGroupSummary);
-    const readyGroups = clienti.filter((group) => group.totals.letture > 0);
+    return {
+        clienti: [...gruppi.values()].map((gruppo) => chiudiGruppo(gruppo, {
+            articlesByCode,
+            includeDelay: includeDelay !== false,
+            oggi,
+            precedenti,
+        })),
+        anomalies: anomalieGenerali,
+    };
+};
+
+const POPOLA_CONTATORE = { path: 'contatore', populate: ['cliente', 'listino'] };
+
+const previewClienteBilling = async (clienteId, options = {}) => {
+    const cliente = await Cliente.findById(clienteId).lean().orFail(() => notFound('Cliente non trovato.'));
+    const contatori = await Contatore.find({ cliente: clienteId }).populate('listino cliente').lean();
+    const letture = await Lettura.find({
+        contatore: { $in: contatori.map((contatore) => contatore._id) },
+        ...DA_FATTURARE,
+    })
+        .sort({ data_lettura: 1, _id: 1 })
+        .populate(POPOLA_CONTATORE)
+        .lean();
+    // Per un solo cliente non si precarica l'intera cache delle quote fisse
+    // annuali: l'aggregazione completa costerebbe piu di quanto faccia
+    // risparmiare, e la cache incrementale per contatore/anno basta.
+    const { clienti, anomalies } = await calcolaGruppi(letture, options);
+    const gruppo = clienti[0] || { previews: [], anomalies: [], mora: null, daVerificare: false };
 
     return {
-        limit: maxReadings,
+        cliente,
+        contatori,
+        previews: gruppo.previews,
+        anomalies: [...anomalies, ...gruppo.anomalies],
+        mora: gruppo.mora,
+        daVerificare: gruppo.daVerificare,
+        totals: gruppo.totals || summarizeBillablePreviews([]),
+    };
+};
+
+// Quali clienti entrano nell'anteprima: tutte le loro letture da fatturare, in
+// ordine di lettura, finche non si arriva al limite. Un cliente non si spezza
+// mai: le sue letture escluse finirebbero in una seconda fattura.
+const scegliLetture = async (limite) => {
+    const daFatturare = await Lettura.find(DA_FATTURARE)
+        .select('_id contatore')
+        .sort({ data_lettura: 1, _id: 1 })
+        .lean();
+    const contatori = await Contatore.find({ _id: { $in: daFatturare.map((lettura) => lettura.contatore) } })
+        .select('cliente')
+        .lean();
+    const clienteDelContatore = new Map(contatori.map((contatore) => [perId(contatore), perId(contatore.cliente)]));
+    const perCliente = new Map();
+
+    daFatturare.forEach((lettura) => {
+        // Le letture senza cliente contano ciascuna per se: l'anteprima le
+        // mostra come anomalie.
+        const chiave = clienteDelContatore.get(perId(lettura.contatore)) || `senza-cliente-${lettura._id}`;
+        perCliente.set(chiave, [...(perCliente.get(chiave) || []), lettura._id]);
+    });
+
+    const scelte = [];
+    let clientiInclusi = 0;
+    for (const ids of perCliente.values()) {
+        if (clientiInclusi > 0 && scelte.length + ids.length > limite) {
+            break;
+        }
+        scelte.push(...ids);
+        clientiInclusi += 1;
+    }
+
+    return {
+        ids: scelte,
+        clientiEsclusi: perCliente.size - clientiInclusi,
+        lettureEscluse: daFatturare.length - scelte.length,
+    };
+};
+
+const previewBillingBatch = async ({ includeDelay = true, includeFixedCharge = true, limit = LIMITE_MASSIMO } = {}) => {
+    const limite = Math.min(Math.max(Number.parseInt(limit, 10) || LIMITE_MASSIMO, 1), LIMITE_MASSIMO);
+    const { ids, clientiEsclusi, lettureEscluse } = await scegliLetture(limite);
+    const letture = await Lettura.find({ _id: { $in: ids } })
+        .sort({ data_lettura: 1, _id: 1 })
+        .populate(POPOLA_CONTATORE)
+        .lean();
+    const { clienti, anomalies } = await calcolaGruppi(letture, {
+        annualFixedLookupCache: await buildAnnualFixedLookupCache(),
+        includeDelay,
+        includeFixedCharge,
+    });
+    const pronti = clienti.filter((gruppo) => gruppo.totals.letture > 0);
+    const conMora = pronti.filter((gruppo) => gruppo.mora);
+
+    return {
+        limit: limite,
         scannedReadings: letture.length,
-        hasMore: letture.length === maxReadings,
+        hasMore: clientiEsclusi > 0,
+        clientiEsclusi,
+        lettureEscluse,
         clienti,
-        anomalies: globalAnomalies,
+        anomalies,
         totals: {
-            clienti: readyGroups.length,
-            letture: readyGroups.reduce((total, group) => total + group.totals.letture, 0),
-            imponibile: sumMoneyBy(readyGroups, (group) => group.totals.imponibile),
-            iva: sumMoneyBy(readyGroups, (group) => group.totals.iva),
-            totale_fattura: sumMoneyBy(readyGroups, (group) => group.totals.totale_fattura),
-            anomalie: globalAnomalies.length + clienti.reduce((total, group) => total + group.anomalies.length, 0),
+            clienti: pronti.length,
+            letture: pronti.reduce((total, gruppo) => total + gruppo.totals.letture, 0),
+            imponibile: sumMoneyBy(pronti, (gruppo) => gruppo.totals.imponibile),
+            iva: sumMoneyBy(pronti, (gruppo) => gruppo.totals.iva),
+            totale_fattura: sumMoneyBy(pronti, (gruppo) => gruppo.totals.totale_fattura),
+            anomalie: anomalies.length + clienti.reduce((total, gruppo) => total + gruppo.anomalies.length, 0),
+            daVerificare: pronti.filter((gruppo) => gruppo.daVerificare).length,
+            mora: {
+                inclusa: includeDelay !== false,
+                clienti: conMora.length,
+                importo: sumMoneyBy(conMora, (gruppo) => gruppo.mora.totals.totale_fattura),
+            },
         },
     };
 };

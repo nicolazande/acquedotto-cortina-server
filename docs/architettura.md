@@ -59,14 +59,18 @@ va aggiunta qui, non ricopiata.
 | `billingCalculator.js`      | **puro, senza database**: da lettura + fasce + articoli produce righe e totali |
 | `calcoloLettura.js`         | **quanto costa una lettura**: indice precedente, fasce, quota fissa. Non scrive |
 | `confrontoRighe.js`         | le righe che una fattura ha contro quelle che dovrebbe avere      |
-| `invoiceGenerator.js`       | **l'unico che scrive fatture**: numera, blocca le letture, salva, rifa i totali |
+| `invoiceGenerator.js`       | **l'unico che crea fatture**: bozze senza numero, blocca le letture, rifa i totali |
+| `confermaFatture.js`        | la conferma, una o in blocco: l'unico punto in cui si assegna un numero |
+| `numerazioneFatture.js`     | il numero dopo il piu alto preso, la data che non torna indietro, i numeri usciti |
+| `mora.js`                   | quando una fattura porta la mora, e la sua riga                   |
+| `avvisiLettura.js`          | **puro**: letture superate, anni chiusi, consumi fuori misura     |
 | `verificaFattura.js`        | "questa fattura torna?" e l'aggiunta della quota fissa mancante   |
-| `anteprimaFatturazione.js`  | cosa si fatturerebbe adesso, raggruppato per cliente. Non scrive  |
+| `anteprimaFatturazione.js`  | cosa si fatturerebbe adesso, per cliente, con avvisi e mora. Non scrive |
 | `invoiceDeletionService.js` | cancellazione completa di una fattura (righe, scadenza, sblocco letture) |
 | `invoiceLockService.js`     | regola unica sulle fatture confermate                             |
 | `annualFixedChargeService.js` | quota fissa gia applicata nell'anno per contatore                |
 | `deadlineService.js`        | scadenze, calcolo del ritardo in JavaScript e in aggregazione MongoDB |
-| `invoiceControlService.js`  | cruscotto anomalie su piu fatture                                 |
+| `invoiceControlService.js`  | controlli su tutte le bozze o su un anno, e le bozze confermabili |
 | `invoicePdf.js`             | generatore PDF scritto a mano, senza dipendenze esterne           |
 | `invoiceXml.js`             | fattura elettronica nel tracciato FatturaPA 1.2                   |
 | `deliveryPlan.js`           | **puro, senza database**: dove deve andare una fattura e cosa lo blocca |
@@ -80,7 +84,7 @@ va aggiunta qui, non ricopiata.
 | `invoiceAuditService.js` / `auditLogService.js` | tracciamento delle modifiche      |
 | `transaction.js`            | transazione quando il database la supporta, fallback quando no    |
 | `righeFattura.js`           | come si leggono le righe di una fattura: due forme, non sette copie |
-| `counters.js`               | i progressivi persistenti: numero della fattura e progressivo di invio |
+| `counters.js`               | i progressivi persistenti: contatore delle serie, progressivo di invio, codice dell'Anagrafe |
 | `counterHistoryService.js`  | la storia di un punto di fornitura attraverso le sostituzioni     |
 
 `billingCalculator.js` e `deliveryPlan.js` non conoscono Mongoose: si testano
@@ -119,19 +123,23 @@ che non ammette anelli:
 
 ```
                        calcoloLettura        confrontoRighe
-                         (219 righe)          (194 righe)
+                         (197 righe)          (187 righe)
                           |      \             /      |
         anteprimaFatturazione     invoiceGenerator     |
-             (157 righe)            (449 righe)        |
-                                         \             |
-                                          verificaFattura
-                                            (209 righe)
+             (284 righe)            (340 righe)        |
+                  \              /       \             |
+                   mora, avvisiLettura     verificaFattura
+                                            (207 righe)
 ```
 
 Chi sta sotto non sa che esiste chi sta sopra. `calcoloLettura` e
 `confrontoRighe` non scrivono niente: si leggono senza chiedersi se stanno
 cambiando qualcosa. `invoiceGenerator` resta l'unico che crea documenti e ne
-rifa i totali - anche la quota fissa, che aggiunge una riga, passa da li.
+rifa i totali - anche la quota fissa, che aggiunge una riga, passa da li. La
+mora sta in un modulo suo perche la usano sia la generazione sia l'anteprima:
+prima viveva nella generazione, e l'anteprima non la vedeva. Il numero, invece,
+lo assegna solo la conferma (`confermaFatture.js`), che la generazione chiama
+quando una fattura nasce gia confermata.
 
 `deliveryService.js` ha superato le seicento righe a settembre 2026, ed era il
 segnale previsto: dentro c'erano due cose. Ora la coda - pianifica, elabora,

@@ -20,7 +20,7 @@ const {
     calculateReadingInvoice,
     numberOrZero,
 } = require('./billingCalculator');
-const { createError } = require('../utils/errors');
+const { createError, notFound } = require('../utils/errors');
 const { hasValue, normalizeText, sumMoneyBy } = require('../utils/values');
 const { uniqueById, withSession } = require('../utils/mongo');
 
@@ -97,7 +97,7 @@ const calculateReadingById = async (letturaId, options = {}) => {
     const { session } = options;
     const lettura = await loadReading(letturaId, session);
     if (!lettura) {
-        throw createError('Lettura not found', 404);
+        throw notFound('Lettura non trovata.');
     }
 
     if (!lettura.contatore?.listino) {

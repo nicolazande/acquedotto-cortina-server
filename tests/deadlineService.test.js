@@ -9,7 +9,7 @@ const {
     withComputedDelay,
     withDeadlineDelay,
 } = require('../services/deadlineService');
-const { isConfirmedInvoice } = require('../services/invoiceLockService');
+const { isConfirmedInvoice } = require('../config/invoicing');
 
 const OGGI = new Date('2026-06-15T10:30:00.000Z');
 

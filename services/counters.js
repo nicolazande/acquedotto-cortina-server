@@ -21,9 +21,9 @@ const { dataCompatta } = require('../utils/dates');
 // (scope, anno) e vuole comunque un valore.
 const SENZA_ANNO = 0;
 
-// Il contatore dei numeri di fattura di una serie. Lo usano chi assegna un numero
-// e chi lo libera cancellando l'ultima fattura: scritto due volte, basterebbe
-// cambiarne una perche i due non si parlino piu.
+// Il contatore dei numeri di fattura di una serie. Il numero si ricava dalle
+// fatture che esistono (services/numerazioneFatture.js): il contatore ricorda
+// l'ultimo numero uscito e mette in fila due conferme contemporanee.
 const scopeDellaSerie = (serie) => `fatture:${serie}`;
 
 const prossimoNumero = async ({ scope, year = SENZA_ANNO, session, quanti = 1 }) => {

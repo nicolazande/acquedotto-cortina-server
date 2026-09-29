@@ -173,6 +173,7 @@ GET    /api/fasce/:id/listino                               getListinoAssociato
 ```text
 POST   /api/fatture                                         createFattura
 POST   /api/fatture/genera-da-letture                       generateFromReadings
+POST   /api/fatture/conferma                                confermaBozze
 GET    /api/fatture/generazione/anteprima                   getGenerationPreview
 GET    /api/fatture/controlli                               getControlDashboard
 GET    /api/fatture                                         getFatture
@@ -281,9 +282,23 @@ password solo come testo.
 
 ### `/api/fatture`
 - `POST /genera-da-letture` — corpo: `letture` (array di id), `data_fattura`,
-  `data_scadenza`, `includeFixedCharge`, `tipo_documento`, `confermata`.
-- `GET /generazione/anteprima` — `limit` (default 500, massimo 2000). Raggruppa per
-  cliente le letture non ancora fatturate e ne mostra il calcolo.
+  `data_scadenza`, `includeFixedCharge`, `includeDelay` (la mora, inclusa se non
+  si dice altro), `tipo_documento`. Crea sempre una **bozza, senza numero**.
+- `GET /generazione/anteprima` — `limit` (default e massimo 2000), `includeFixedCharge`,
+  `includeDelay`. Raggruppa per cliente le letture non ancora fatturate e ne mostra
+  il calcolo, senza mai spezzare un cliente; dice quali letture non entrano in
+  fattura (`anomalies`), quali vanno guardate (`avvisi`, cliente `daVerificare`) e
+  la mora di ciascuno (`mora`). `clientiEsclusi` e `lettureEscluse` dicono cosa e
+  rimasto fuori dal limite.
+- `GET /controlli` — `stato=bozze` controlla tutte le bozze, altrimenti tutte le
+  fatture di `year`. Restituisce `summary`, `issues` e `confermabili` (le bozze
+  senza errori).
+- `POST /conferma` — corpo: `fatture` (array di id). Conferma le bozze indicate e
+  assegna i numeri nell'ordine della data; risponde con `confermate` (id e
+  codice), `rifiutate` (con il motivo) e `saltate` (gia confermate o sparite).
+- `PUT /:id` — con `confermata: true` su una bozza la conferma e le da il numero.
+  `anno`, `numero`, `serie` e `codice` non si scrivono: li decide la conferma.
+- `GET /:id/xml` — rifiutato con 422 su una bozza senza numero.
 - `GET /:id/verifica-calcolo` — confronta le righe salvate con il ricalcolo attuale.
 - `POST /:id/quota-fissa` — aggiunge la quota fissa se applicabile.
 - `DELETE /:id` — cancella la fattura **con le sue righe servizio e la scadenza**,

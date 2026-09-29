@@ -44,7 +44,7 @@ const storiaContatore = async (contatoreId) => {
         .lean();
 
     if (!partenza) {
-        throw notFound('Contatore not found');
+        throw notFound('Contatore non trovato.');
     }
 
     const catena = [partenza];

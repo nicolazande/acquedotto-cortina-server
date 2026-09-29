@@ -21,7 +21,7 @@ const { recordId, withSession } = require('../utils/mongo');
 const deleteInvoiceInSession = async (fatturaId, session, unlock) => {
     const fattura = await withSession(Fattura.findById(fatturaId), session).lean();
     if (!fattura) {
-        throw notFound('Fattura not found');
+        throw notFound('Fattura non trovata.');
     }
 
     const eraConfermata = assertInvoiceEditable(fattura, 'cancellare la fattura', unlock);

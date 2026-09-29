@@ -3,22 +3,20 @@ const Cliente = require('../models/Cliente');
 const Fattura = require('../models/Fattura');
 const Lettura = require('../models/Lettura');
 require('../models/Listino');
-const Scadenza = require('../models/Scadenza');
 const Servizio = require('../models/Servizio');
 const {
     createAnnualFixedContext,
 } = require('./annualFixedChargeService');
-const { calculateDelay, ensureInvoiceDeadline, syncInvoiceDeadlineTotal } = require('./deadlineService');
+const { ensureInvoiceDeadline, syncInvoiceDeadlineTotal } = require('./deadlineService');
 const {
-    DEFAULT_DELAY_ARTICLE_CODE,
     calculateTotals,
     getTaxRate,
     numberOrZero,
-    recordId,
     roundMoney,
 } = require('./billingCalculator');
-const { INVOICE_SERIES, invoiceCode } = require('../config/invoicing');
-const { reserveInvoiceNumber } = require('./numerazioneFatture');
+const { confermaInSessione } = require('./confermaFatture');
+const { isConfirmedInvoice } = require('../config/invoicing');
+const { fatturePrecedenti, rigaMoraPer, segnaMoraFatturata } = require('./mora');
 const { runWithOptionalTransaction } = require('./transaction');
 const { righeDellaFattura } = require('./righeFattura');
 const {
@@ -30,11 +28,8 @@ const {
     cleanServiceLine,
 } = require('./confrontoRighe');
 const { createError, unprocessable } = require('../utils/errors');
-const { hasValue } = require('../utils/values');
 const { uniqueById, withSession } = require('../utils/mongo');
 const { customerLabel } = require('../utils/customer');
-
-const DEFAULT_DELAY_FEE = Number.parseFloat(process.env.INVOICE_DELAY_FEE || '6');
 
 const releaseReadingsForBilling = async (letturaIds) => {
     if (!letturaIds.length) {
@@ -95,92 +90,7 @@ const getClienteFromReadings = (readings) => {
     return clientes[0];
 };
 
-const buildDelayLine = ({ article, previousInvoice }) => {
-    const taxRate = getTaxRate(article);
-    const price = roundMoney(Number.isFinite(DEFAULT_DELAY_FEE) ? DEFAULT_DELAY_FEE : 6);
-    const previousCode = hasValue(previousInvoice?.numero) ? previousInvoice.numero : previousInvoice?.codice;
-    const previousCodeLabel = hasValue(previousCode) ? String(previousCode) : undefined;
-
-    return {
-        descrizione: 'Ritardo pagamento fattura precedente',
-        tipo_attivita: previousCodeLabel ? `-${previousCodeLabel}` : undefined,
-        metri_cubi: 1,
-        prezzo: price,
-        valore_unitario: price,
-        descrizione_attivita: previousCodeLabel,
-        articolo: article?._id || article || undefined,
-        iva_percentuale: taxRate,
-        aliquota_iva: taxRate,
-        calcolo_snapshot: {
-            articolo: article ? {
-                _id: recordId(article),
-                codice: article.codice,
-                descrizione: article.descrizione,
-                iva: article.iva,
-            } : undefined,
-            precedente_fattura: previousInvoice ? {
-                _id: recordId(previousInvoice),
-                anno: previousInvoice.anno,
-                numero: previousInvoice.numero,
-                data_fattura: previousInvoice.data_fattura,
-            } : undefined,
-            scadenza: previousInvoice?.scadenza ? {
-                _id: recordId(previousInvoice.scadenza),
-                scadenza: previousInvoice.scadenza.scadenza,
-                pagamento: previousInvoice.scadenza.pagamento,
-                saldo: previousInvoice.scadenza.saldo,
-            } : undefined,
-            totale_riga: price,
-            quota: 'delay',
-        },
-    };
-};
-
-const getDelayLineForCustomer = async ({ articlesByCode, clienteId, invoiceDate, session }) => {
-    const previousInvoice = await withSession(Fattura.findOne({
-        cliente: clienteId,
-        data_fattura: { $lt: invoiceDate },
-    }), session)
-        .sort({ data_fattura: -1, _id: -1 })
-        .populate('scadenza')
-        .lean();
-
-    if (!previousInvoice?.scadenza || calculateDelay(previousInvoice.scadenza, invoiceDate) <= 0) {
-        return null;
-    }
-
-    // La penale si addebita una volta sola per scadenza. Senza questo controllo
-    // un cliente fatturato due volte mentre la stessa scadenza resta aperta la
-    // pagherebbe due volte, e con 694 scadenze aperte non e un caso di scuola.
-    if (previousInvoice.scadenza.mora_fatturata) {
-        return null;
-    }
-
-    const article = articlesByCode[DEFAULT_DELAY_ARTICLE_CODE];
-    if (!article) {
-        throw createError('Articolo GG_DELAY mancante: impossibile calcolare il ritardo in modo sicuro');
-    }
-
-    return {
-        ...buildDelayLine({ article, previousInvoice }),
-        // Da segnare sulla scadenza appena la fattura esiste davvero: se la
-        // generazione fallisce, la penale non risulta addebitata.
-        scadenzaDaSegnare: recordId(previousInvoice.scadenza),
-    };
-};
-
-// La penale e stata messa in fattura: da qui in avanti quella scadenza non ne
-// genera altre.
-const segnaMoraFatturata = async (scadenzaId, session) => {
-    if (!scadenzaId) {
-        return;
-    }
-
-    await withSession(Scadenza.updateOne({ _id: scadenzaId }, { $set: { mora_fatturata: true } }), session);
-};
-
 const toBoolean = (value) => value === true || ['1', 'true', 'yes'].includes(String(value).toLowerCase());
-const getInvoiceStatus = (confermata) => (toBoolean(confermata) ? 'confermata' : 'bozza');
 
 // I totali della fattura sono la somma delle sue righe, e devono restare tali
 // per sempre: aggiungerne una dalla scheda lasciava imponibile, IVA e totale
@@ -243,32 +153,35 @@ const creaRigaManuale = async ({ articoloId, imponibile, descrizione }, fatturaI
     return { servizio, totali: await ricalcolaTotaliFattura(fatturaId, session) };
 };
 
+// Una fattura nasce sempre bozza, senza numero: il numero lo da la conferma
+// (services/confermaFatture.js). Chi la crea gia confermata passa di li nella
+// stessa transazione: se la conferma non e possibile non resta niente. Senza
+// transazioni (il database di sviluppo) resta la bozza.
 const createManualInvoiceInSession = async (input = {}, session) => {
     const invoiceDate = input.data_fattura ? new Date(input.data_fattura) : new Date();
-    const year = input.anno || invoiceDate.getFullYear();
-    const serie = input.serie || INVOICE_SERIES;
-    const numero = hasValue(input.numero)
-        ? numberOrZero(input.numero)
-        : await reserveInvoiceNumber(year, session, serie);
     const cliente = input.cliente
         ? await withSession(Cliente.findById(input.cliente), session).lean()
         : null;
     const intestatario = customerLabel(cliente);
-    const confermata = toBoolean(input.confermata);
-    // `articolo` guida la riga, non e un campo della fattura: va tolto prima di
-    // scrivere il documento.
-    const { articolo: articoloId, ...campiFattura } = input;
+    // `articolo` guida la riga e non e un campo della fattura. Stato, anno,
+    // numero, serie e codice li decidono la data e la conferma, non la maschera.
+    const {
+        articolo: articoloId,
+        confermata,
+        stato,
+        anno,
+        numero,
+        serie,
+        codice,
+        ...campiFattura
+    } = input;
     const [fattura] = await Fattura.create([{
         ...campiFattura,
         tipo_documento: input.tipo_documento || 'Fattura',
         ragione_sociale: input.ragione_sociale || intestatario,
-        confermata,
-        stato: input.stato || getInvoiceStatus(confermata),
+        stato: 'bozza',
         origine: input.origine || 'manuale',
-        anno: year,
-        numero,
-        serie,
-        codice: input.codice || invoiceCode({ anno: year, numero, serie }),
+        anno: invoiceDate.getUTCFullYear(),
         data_fattura: invoiceDate,
         nome_cliente: input.nome_cliente || intestatario,
         cliente: cliente?._id || input.cliente,
@@ -295,7 +208,9 @@ const createManualInvoiceInSession = async (input = {}, session) => {
     });
 
     return {
-        fattura,
+        fattura: isConfirmedInvoice({ confermata: toBoolean(confermata), stato })
+            ? await confermaInSessione({ id: fattura._id, session })
+            : fattura,
         scadenza,
         servizio,
     };
@@ -305,10 +220,12 @@ const createManualInvoice = (input) => runWithOptionalTransaction((session) => (
     createManualInvoiceInSession(input, session)
 ));
 
+// Le letture di un cliente diventano una bozza: righe calcolate, mora se
+// dovuta, scadenza. Il numero arriva con la conferma.
 const createInvoiceFromReadingsInSession = async ({
-    confermata = false,
     data_fattura,
     data_scadenza,
+    includeDelay = true,
     includeFixedCharge = true,
     letture,
     tipo_documento = 'Fattura',
@@ -341,7 +258,7 @@ const createInvoiceFromReadingsInSession = async ({
         }
 
         const invoiceDate = data_fattura ? new Date(data_fattura) : new Date();
-        const year = invoiceDate.getFullYear();
+        const year = invoiceDate.getUTCFullYear();
         const billingContext = createAnnualFixedContext({ invoiceDate, invoiceYear: year });
         const cliente = getClienteFromReadings(readings);
         const articlesByCode = await getArticlesByCode(session);
@@ -351,16 +268,16 @@ const createInvoiceFromReadingsInSession = async ({
             session,
         });
 
-        const delayLine = await getDelayLineForCustomer({
+        // La mora si puo lasciare fuori: in un giro in cui i pagamenti non sono
+        // ancora stati registrati colpirebbe chi ha pagato.
+        const precedenti = includeDelay === false
+            ? new Map()
+            : await fatturePrecedenti([cliente._id], invoiceDate, session);
+        const rigaMora = rigaMoraPer({
             articlesByCode,
-            clienteId: cliente._id,
-            invoiceDate,
-            session,
+            precedente: precedenti.get(String(cliente._id)),
+            dataFattura: invoiceDate,
         });
-        // Il riferimento alla scadenza da segnare non e un dato della riga:
-        // viaggia a parte, altrimenti finirebbe salvato nel servizio.
-        const scadenzaDaSegnare = delayLine?.scadenzaDaSegnare;
-        const rigaMora = delayLine ? { ...delayLine, scadenzaDaSegnare: undefined } : null;
         const allLines = [
             ...calculations.flatMap((calculation) => calculation.lines),
             ...(rigaMora ? [rigaMora] : []),
@@ -371,18 +288,13 @@ const createInvoiceFromReadingsInSession = async ({
 
         const totals = calculateTotals(allLines);
         lockedReadingIds = await lockReadingsForBilling(letturaIds, session);
-        const numero = await reserveInvoiceNumber(year, session, INVOICE_SERIES);
 
         const [fattura] = await Fattura.create([{
             tipo_documento,
             ragione_sociale: customerLabel(cliente),
-            confermata: toBoolean(confermata),
-            stato: getInvoiceStatus(confermata),
+            stato: 'bozza',
             origine: 'letture',
             anno: year,
-            numero,
-            serie: INVOICE_SERIES,
-            codice: invoiceCode({ anno: year, numero, serie: INVOICE_SERIES }),
             data_fattura: invoiceDate,
             imponibile: totals.imponibile,
             iva: totals.iva,
@@ -402,7 +314,7 @@ const createInvoiceFromReadingsInSession = async ({
             fattura,
             session,
         });
-        await segnaMoraFatturata(scadenzaDaSegnare, session);
+        await segnaMoraFatturata(rigaMora, session);
 
         return {
             fattura,

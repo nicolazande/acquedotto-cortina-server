@@ -189,9 +189,24 @@ si fa a mano.
 
 ## Mora per ritardato pagamento
 
-Se il cliente ha una fattura precedente la cui scadenza risulta gia superata alla
-data della nuova fattura, viene aggiunta una riga con l'articolo `GG_DELAY` e
-importo `INVOICE_DELAY_FEE` (default 6 EUR, esente IVA).
+Se l'ultima fattura **confermata** del cliente ha una scadenza gia superata alla
+data della nuova fattura - non pagata, o pagata dopo la scadenza - viene aggiunta
+una riga con l'articolo `GG_DELAY` e importo `INVOICE_DELAY_FEE` (default 6 EUR,
+esente IVA). Le regole stanno in `services/mora.js`:
+
+- una **bozza non conta** come fattura precedente: il cliente non l'ha ricevuta,
+  e non puo essere in ritardo nel pagarla;
+- la mora si addebita **una volta sola per scadenza** (`mora_fatturata`); se la
+  fattura che la portava viene cancellata, la scadenza torna addebitabile;
+- l'**anteprima** della generazione la mostra cliente per cliente e nel
+  riepilogo (quanti clienti, quanto in tutto), anche quando e esclusa;
+- si puo **lasciare fuori** (`includeDelay: false` nella generazione e
+  nell'anteprima, l'interruttore *Mora per i ritardi* nella pagina).
+
+> La mora e affidabile solo se gli incassi sono registrati. Sulla copia dei dati
+> di settembre 2026 le scadenze 2025 aperte sono quasi tutte pagamenti mai
+> registrati: un giro di novembre con la mora inclusa l'avrebbe messa a 680
+> clienti, 4.080 EUR. L'anteprima lo dice prima di generare.
 
 ## Totali e IVA
 
@@ -280,6 +295,31 @@ l'id del cliente in Gesco, uguale su tutte le sue fatture. Agganciare la
 numerazione nuova a quei valori significava partire da numeri arbitrari e non
 poter garantire l'unicita.
 
+Il numero si assegna **alla conferma**, non quando nasce la bozza. Prima la bozza
+lo riceveva subito, e in un giro di fatturazione le bozze si cancellano e si
+rigenerano: ogni bozza cancellata lasciava un buco nella serie. Ora:
+
+- una **bozza non ha numero**, serie ne codice: nell'interfaccia si chiama
+  *Bozza*, sul PDF il numero e `BOZZA`, e il file XML non si produce;
+- **confermandola** riceve il numero, dalla scheda o in blocco dai *Controlli*
+  (`POST /api/fatture/conferma`). In blocco i numeri seguono la data della
+  fattura e poi l'ordine in cui le bozze sono nate, cioe quello della
+  generazione; la scadenza riceve anno e numero insieme alla fattura;
+- numeri e date vanno nello **stesso verso**: una bozza datata prima dell'ultima
+  fattura numerata dell'anno non si conferma, e il motivo lo dice. Lo stesso
+  giorno va bene. Una data **nel futuro** non si conferma: una fattura datata
+  dicembre per sbaglio e confermata a marzo bloccherebbe tutte le altre fino a
+  dicembre;
+- una fattura riportata a bozza **tiene il suo numero**: puo essere gia uscita,
+  e confermandola di nuovo non ne riceve un secondo. Una fattura numerata non
+  cambia anno, e la sua data resta fra quelle dei numeri vicini;
+- l'anno di una bozza segue la sua data, e la sua scadenza si sposta con lei
+  degli stessi giorni (se non e pagata e non e condivisa con altre fatture);
+- una bozza importata dal vecchio programma, se ce ne sono, ha un "numero" che
+  e il civico dell'indirizzo: confermandola riceve un numero della serie. La
+  conferma in blocco non la considera, si conferma dalla sua scheda.
+  `verify-data-quality` elenca le bozze che hanno un numero.
+
 Con la serie dedicata:
 
 - il progressivo riparte da **1 a ogni anno** e non dipende dallo storico;
@@ -288,24 +328,65 @@ Con la serie dedicata:
   E parziale perche sullo storico, privo di serie, non sarebbe applicabile;
 - le fatture importate restano com'erano e non entrano in conflitto: hanno
   numeri uguali ma serie assente, quindi sono distinguibili.
-- cancellare l'ultima fattura della serie ne **libera il numero**: il contatore
-  torna al numero piu alto rimasto e la prossima fattura riprende da li. Vale solo
-  per un documento che non e mai uscito - nessuna consegna evasa davvero, nessun
-  file XML prodotto, nessuna data di invio - e solo per l'ultimo: una fattura
-  cancellata in mezzo lascia un buco, che non si chiude senza rinumerare quelle
-  dopo.
+- il numero nuovo e quello **dopo il piu alto** fra le fatture che esistono e i
+  numeri usciti: si ricava ogni volta dai dati. Cosi cancellare l'ultima fattura
+  della serie ne **libera il numero** da solo. Vale solo per un documento che non
+  e mai uscito - nessuna consegna evasa davvero, nessun file XML prodotto,
+  nessuna data di invio - e solo per l'ultimo: una fattura cancellata in mezzo
+  lascia un buco, che non si chiude senza rinumerare quelle dopo.
 - un numero **uscito non torna mai libero**, nemmeno quando la fattura viene poi
-  cancellata: il contatore se lo ricorda (`ultimo_uscito`) e non scende sotto.
-  Senza, cancellando dopo una fattura di prova il contatore tornava al numero piu
-  alto rimasto e la fattura seguente si riprendeva il numero di quella uscita.
-  Le regole della numerazione stanno tutte in `services/numerazioneFatture.js`.
+  cancellata: il contatore se lo ricorda (`ultimo_uscito`) e il numero nuovo non
+  scende sotto.
+- il contatore della serie serve anche a mettere in fila due conferme
+  contemporanee: dentro una transazione la seconda si ferma e riparte con il
+  numero della prima. Senza transazioni (il database di sviluppo) e l'indice
+  unico a impedire il doppione.
+
+Le regole della numerazione stanno tutte in `services/numerazioneFatture.js`, la
+conferma in `services/confermaFatture.js`.
 
 > La lettera della serie va concordata con chi tiene la contabilita: e una scelta
 > fiscale, non tecnica. Si cambia con `INVOICE_SERIES` e vale dalla fattura
 > successiva; le fatture gia emesse mantengono la loro.
 
-I numeri non vengono mai riusati: una generazione fallita lascia un buco nella
-numerazione, ed e voluto.
+## Anteprima, controlli e conferma: il giro di fatturazione
+
+Un giro - quello di novembre, circa novecento letture - passa da tre pagine.
+
+**Generazione** (`GET /api/fatture/generazione/anteprima`,
+`services/anteprimaFatturazione.js`). Legge tutte le letture da fatturare, fino
+a 2.000, e le raggruppa per cliente: un cliente, una fattura. Se il limite taglia,
+taglia fra un cliente e l'altro, mai dentro un cliente, e dice quanti ne restano
+fuori. Oltre agli importi dice cosa guardare prima di generare
+(`services/avvisiLettura.js`):
+
+- **non entra in fattura** una lettura il cui calcolo non riesce (un riparto
+  condominiale, un listino senza fasce) o che e **piu vecchia di una gia
+  fatturata** sullo stesso contatore: di solito l'aveva fatturata il vecchio
+  programma senza segnarla. Si segna fatturata dalla sua scheda;
+- **da verificare** una lettura di un **anno gia chiuso**, o con un **consumo
+  fuori misura**: almeno il triplo del ritmo abituale del contatore (la mediana
+  degli ultimi tre periodi di almeno un mese, riportata alla durata di questo) e
+  almeno 50 m³ in piu. Il cliente si puo generare, ma *Seleziona tutti* lo
+  lascia fuori;
+- la **mora** che ciascuna fattura porterebbe.
+
+La scheda del cliente usa lo stesso motore, con le stesse note.
+
+**Controlli** (`GET /api/fatture/controlli?stato=bozze`, oppure `?year=2026`,
+`services/invoiceControlService.js`). Controlla tutte le bozze, o tutte le
+fatture di un anno: totale contro righe, righe delle letture contro listino,
+quota fissa mancante, cliente e scadenza. Qualche fattura alla volta, perche il
+tempo e quasi tutto attesa del database: sulla copia di prova 684 bozze in 3
+secondi, l'anno 2025 intero in meno di 3. Restituisce anche le bozze senza
+errori (`confermabili`).
+
+**Conferma in blocco** (`POST /api/fatture/conferma` con `{ fatture: [...] }`).
+Conferma le bozze indicate, ognuna nella sua transazione: quelle che non si
+possono confermare restano bozze e tornano con il motivo; quelle gia confermate
+si saltano. Ogni conferma finisce nel giornale come `fattura.confermata`.
+
+Una bozza si cancella senza sblocco e senza conseguenze sulla numerazione.
 
 ## Fattura elettronica (XML)
 
@@ -462,8 +543,9 @@ applicare la quota fissa o cancellarla. Il controllo e centralizzato in
 ```text
 GET  /api/letture/:id/calcolo            anteprima del calcolo di una singola lettura
 GET  /api/fatture/:id/verifica-calcolo   confronto fra righe salvate e ricalcolo
-GET  /api/fatture/controlli              cruscotto anomalie su piu fatture
-GET  /api/fatture/generazione/anteprima  clienti e letture pronti per la fatturazione
+GET  /api/fatture/controlli              controlli su tutte le bozze (?stato=bozze) o su un anno (?year=)
+GET  /api/fatture/generazione/anteprima  clienti e letture pronti per la fatturazione, con avvisi e mora
+POST /api/fatture/conferma               conferma in blocco delle bozze indicate
 ```
 
 `verifica-calcolo` e il punto di partenza quando un totale non torna: mostra

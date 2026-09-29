@@ -1,3 +1,4 @@
+const Fattura = require('../models/Fattura');
 const Scadenza = require('../models/Scadenza');
 const { saldataExpression } = require('../models/Scadenza');
 const { numberOrZero } = require('../utils/values');
@@ -107,6 +108,7 @@ const buildDeadlinePayload = ({ cliente, dueDate, fattura }) => {
         saldo: false,
         pagamento: null,
         anno: fattura?.anno,
+        serie: fattura?.serie,
         numero: fattura?.numero,
         cognome: nameParts.cognome,
         nome: nameParts.nome,
@@ -148,6 +150,28 @@ const syncInvoiceDeadlineTotal = async ({ fattura, session }) => {
     );
 };
 
+// Una bozza cambia data: la sua scadenza si sposta degli stessi giorni, cosi
+// resta il termine che aveva - trenta giorni, o la data scritta a mano. Solo se
+// la scadenza e sua e non e gia pagata.
+const spostaScadenzaConLaFattura = async ({ fattura, nuovaData, session }) => {
+    const giorni = daysBetween(fattura?.data_fattura, nuovaData);
+    const scadenzaId = fattura?.scadenza?._id || fattura?.scadenza;
+    if (!giorni || !scadenzaId) {
+        return null;
+    }
+
+    const condivisa = await Fattura.exists({ scadenza: scadenzaId, _id: { $ne: fattura._id } }).session(session || null);
+    const scadenza = await Scadenza.findById(scadenzaId).session(session || null).lean();
+    if (condivisa || !scadenza?.scadenza || scadenza.saldo) {
+        return null;
+    }
+
+    return Scadenza.findByIdAndUpdate(
+        scadenzaId,
+        { $set: { scadenza: addDays(scadenza.scadenza, giorni) } },
+        { new: true, session }
+    );
+};
 
 // Una scadenza saldata con una data di pagamento vera, cioe non la sentinella
 // del gestionale precedente.
@@ -201,6 +225,7 @@ module.exports = {
     calculateDelay,
     ensureInvoiceDeadline,
     getDueDate,
+    spostaScadenzaConLaFattura,
     syncInvoiceDeadlineTotal,
     withDeadlineDelay,
     withComputedDelay,

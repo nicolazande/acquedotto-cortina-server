@@ -8,6 +8,9 @@ const scadenzaSchema = new Schema(
         pagamento: { type: Date, required: false },
         anno: { type: Number, required: false },
         numero: { type: Number, required: false },
+        // La serie della fattura, per quelle emesse da questo gestionale: senza,
+        // 2026/12 della serie nuova e 2025/12 dello storico si confondono.
+        serie: { type: String, required: false },
         cognome: { type: String, required: false },
         nome: { type: String, required: false },
         totale: { type: Number, required: false },

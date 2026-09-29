@@ -18,7 +18,7 @@ const {
     richiedeFatturaElettronica,
 } = require('../config/delivery');
 const { customerLabel } = require('../utils/customer');
-const { emessaDalGestionale, invoiceCode, isConfirmedInvoice } = require('../config/invoicing');
+const { emessaDalGestionale, isConfirmedInvoice, numeroDocumento } = require('../config/invoicing');
 const { dataReale, formatItalianDate } = require('../utils/dates');
 const { setOrUnset, soloValorizzati } = require('../utils/mongo');
 
@@ -163,9 +163,7 @@ const pianoConsegne = ({ cliente, fattura }) => {
     return {
         fattura: fattura?._id,
         cliente: cliente?._id,
-        // Le fatture importate non hanno serie: per loro l'etichetta resta
-        // anno/numero, che e come compaiono nello storico.
-        documento: invoiceCode(fattura || {}) || [fattura?.anno, fattura?.numero].filter(Boolean).join('/'),
+        documento: numeroDocumento(fattura),
         intestatario: customerLabel(cliente, fattura),
         // Una fattura del vecchio programma entra in coda solo dalla sua scheda:
         // la scheda lo dice, cosi non la si cerca invano nella pagina Consegne.
