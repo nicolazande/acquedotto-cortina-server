@@ -163,6 +163,21 @@ const numeroRiusabile = ({ fattura, consegne = [] }) => {
     ));
 };
 
+// Il numero di questa fattura e uscito dal gestionale: il contatore se lo
+// ricorda, e se la fattura venisse cancellata non tornerebbe libero. Lo storico
+// importato non ha un numero della serie, e non c'e niente da ricordare.
+const segnaNumeroUscito = async (fattura, session) => {
+    if (!haNumeroDiSerie(fattura)) {
+        return;
+    }
+
+    await InvoiceCounter.updateOne(
+        { scope: scopeDellaSerie(fattura.serie), year: fattura.anno },
+        { $max: { ultimo_uscito: Number(fattura.numero) } },
+        { upsert: true, session }
+    );
+};
+
 // Cosa ne e del numero di una fattura appena cancellata: se e uscita lo si
 // ricorda, cosi non torna libero. Va chiamata dopo la cancellazione, cosi il
 // documento non conta piu fra quelli che esistono. Restituisce se il numero e
@@ -178,12 +193,7 @@ const congedaNumero = async ({ fattura, consegne, session }) => {
         return Number(fattura.numero) > await pavimento({ anno: fattura.anno, serie: fattura.serie, session });
     }
 
-    await InvoiceCounter.updateOne(
-        { scope: scopeDellaSerie(fattura.serie), year: fattura.anno },
-        { $max: { ultimo_uscito: Number(fattura.numero) } },
-        { upsert: true, session }
-    );
-
+    await segnaNumeroUscito(fattura, session);
     return false;
 };
 
@@ -192,5 +202,6 @@ module.exports = {
     congedaNumero,
     haNumeroDiSerie,
     numeroRiusabile,
+    segnaNumeroUscito,
     verificaDataNumerata,
 };

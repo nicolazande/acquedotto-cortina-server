@@ -131,10 +131,30 @@ const segnaMoraFatturata = async (riga, session) => {
     await withSession(Scadenza.updateOne({ _id: scadenzaId }, { $set: { mora_fatturata: true } }), session);
 };
 
+// Il contrario: le righe della mora sono state tolte - con la loro fattura, o da
+// sole - e le scadenze che le avevano generate tornano addebitabili. Altrimenti
+// resterebbero segnate per una mora che non esiste piu. Restituisce quante.
+const liberaMora = async (righe, session) => {
+    const scadenzeIds = righe
+        .filter((riga) => riga?.calcolo_snapshot?.quota === 'delay')
+        .map((riga) => riga.calcolo_snapshot?.scadenza?._id)
+        .filter(Boolean);
+
+    if (scadenzeIds.length > 0) {
+        await withSession(
+            Scadenza.updateMany({ _id: { $in: scadenzeIds } }, { $unset: { mora_fatturata: '' } }),
+            session
+        );
+    }
+
+    return scadenzeIds.length;
+};
+
 module.exports = {
     IMPORTO_MORA,
     descriviMora,
     fatturePrecedenti,
+    liberaMora,
     moraDovuta,
     rigaMoraPer,
     segnaMoraFatturata,

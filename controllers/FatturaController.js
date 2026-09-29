@@ -39,7 +39,7 @@ const {
     withComputedDelay,
     withDeadlineDelay,
 } = require('../services/deadlineService');
-const { verificaDataNumerata } = require('../services/numerazioneFatture');
+const { segnaNumeroUscito, verificaDataNumerata } = require('../services/numerazioneFatture');
 const { getInvoiceControlDashboard } = require('../services/invoiceControlService');
 const { deleteInvoice } = require('../services/invoiceDeletionService');
 const { generateInvoicePdf } = require('../services/invoicePdf');
@@ -214,6 +214,9 @@ const downloadXml = async (req, res) => {
             scadenza: fattura.scadenza,
             servizi,
         });
+        // Un file scaricato puo finire allo SdI anche senza passare da Consegne:
+        // da qui il numero conta come uscito, e non torna piu libero.
+        await segnaNumeroUscito(fattura);
 
         res.setHeader('Content-Type', 'application/xml; charset=utf-8');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);

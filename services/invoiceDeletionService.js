@@ -5,6 +5,7 @@ const Scadenza = require('../models/Scadenza');
 const Servizio = require('../models/Servizio');
 const { getReadingIdsFromServices } = require('./confrontoRighe');
 const { assertInvoiceEditable } = require('./invoiceLockService');
+const { liberaMora } = require('./mora');
 const { congedaNumero } = require('./numerazioneFatture');
 const { runWithOptionalTransaction } = require('./transaction');
 const { notFound } = require('../utils/errors');
@@ -69,19 +70,8 @@ const deleteInvoiceInSession = async (fatturaId, session, unlock) => {
     }
 
     // Se la fattura portava la penale per il ritardo, la scadenza che l'aveva
-    // generata torna addebitabile: altrimenti resterebbe marcata come "mora gia
-    // fatturata" per una mora che non esiste piu.
-    const scadenzeDaLiberare = servizi
-        .filter((servizio) => servizio.calcolo_snapshot?.quota === 'delay')
-        .map((servizio) => servizio.calcolo_snapshot?.scadenza?._id)
-        .filter(Boolean);
-
-    if (scadenzeDaLiberare.length > 0) {
-        await withSession(
-            Scadenza.updateMany({ _id: { $in: scadenzeDaLiberare } }, { $unset: { mora_fatturata: '' } }),
-            session
-        );
-    }
+    // generata torna addebitabile.
+    const moreLiberate = await liberaMora(servizi, session);
 
     // Prima di cancellarle, le consegne dicono se il documento e gia uscito: e
     // l'unico modo di sapere cosa fare del suo numero.
@@ -103,7 +93,7 @@ const deleteInvoiceInSession = async (fatturaId, session, unlock) => {
         letturaSbloccate,
         scadenzaCancellata,
         consegneCancellate: consegne.deletedCount || 0,
-        moreLiberate: scadenzeDaLiberare.length,
+        moreLiberate,
         numeroLiberato,
     };
 };

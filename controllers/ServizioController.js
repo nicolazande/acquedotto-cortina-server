@@ -20,6 +20,7 @@ const {
     writeServiceUpdateAudit,
 } = require('../services/invoiceAuditService');
 const { ricalcolaTotaliFattura } = require('../services/invoiceGenerator');
+const { liberaMora } = require('../services/mora');
 
 const populate = 'lettura articolo fattura listino fascia';
 
@@ -64,6 +65,9 @@ const deleteServizio = async (req, res) => {
     try {
         const servizio = await assertServiceInvoiceEditable(req.params.id, 'cancellare righe servizio', unlockOptions(req));
         await Servizio.deleteOne({ _id: req.params.id });
+        // Togliendo la riga della mora, la scadenza che l'aveva generata torna
+        // addebitabile, come quando si cancella la fattura intera.
+        await liberaMora([servizio]);
         await ricalcolaTotaliFattura(servizio.fattura);
         await writeServiceAudit(req, servizio, 'fattura.servizio_cancellato', 'Cancellata riga servizio');
         res.status(204).send();

@@ -1076,10 +1076,18 @@ const testDelayFeeChargedOnce = async () => {
         const secondaMora = await generaDa(20);
         assert(secondaMora.length === 0, `the late fee must not be charged twice, found ${secondaMora.length}`);
 
-        // Cancellando la fattura che portava la penale, la scadenza torna
-        // addebitabile: restare marcata per una mora che non esiste piu
-        // sarebbe una memoria falsa.
-        const conMora = createdRecords.filter((voce) => voce.resource === 'fatture').slice(-2, -1)[0];
+        // Togliendo solo la riga della penale, la scadenza torna addebitabile:
+        // restare marcata per una mora che non esiste piu sarebbe una memoria
+        // falsa.
+        await request(`/servizi/${primaMora[0]._id}`, { method: 'DELETE' });
+        const liberataDallaRiga = await request(`/scadenze/${vecchia.scadenza}`);
+        assert(!liberataDallaRiga.body.mora_fatturata, 'deleting the late-fee line should free the deadline again');
+
+        // Cosi la penale torna nella fattura dopo; e cancellando la fattura
+        // intera che la porta, la scadenza si libera di nuovo.
+        const ancoraMora = await generaDa(25);
+        assert(ancoraMora.length === 1, `the freed deadline should charge the fee again, found ${ancoraMora.length}`);
+        const conMora = createdRecords.filter((voce) => voce.resource === 'fatture').at(-1);
         await request(`/fatture/${conMora.id}`, { method: 'DELETE' });
         const liberata = await request(`/scadenze/${vecchia.scadenza}`);
         assert(!liberata.body.mora_fatturata, 'deleting the invoice should free the deadline again');
@@ -1433,6 +1441,27 @@ const testBurnedNumberNotReused = async () => {
             `freeing a later number must not bring back one that went out (${uscita.numero} -> ${seguente.numero})`
         );
         await cancella(seguente);
+
+        // Anche l'XML scaricato dalla scheda fa uscire il numero: il file puo
+        // arrivare allo SdI senza passare da Consegne.
+        const acqua = (await request('/articoli?limit=100')).body.data.find((articolo) => articolo.codice === 'ACQUA');
+        const conCodice = await createTrackedRecord(createdRecords, 'clienti', {
+            ragione_sociale: 'Smoke Numero XML', codice_fiscale: 'RSSMRA85T10A562S',
+            indirizzo_residenza: 'Via Zuel', numero_residenza: '1', cap_residenza: '32043',
+            localita_residenza: 'Cortina', provincia_residenza: 'Belluno', nazione_residenza: 'ITA',
+        });
+        const scaricata = await createRecord('fatture', {
+            cliente: conCodice._id, articolo: acqua._id, imponibile: 10,
+            tipo_documento: 'Fattura', data_fattura: OGGI, confermata: true,
+        });
+        await request(`/fatture/${scaricata._id}/xml`);
+        await cancella(scaricata);
+        const dopoXml = await nuovaFattura(cliente);
+        assert(
+            Number(dopoXml.numero) === Number(scaricata.numero) + 1,
+            `an XML downloaded from the invoice page takes the number out (${scaricata.numero} -> ${dopoXml.numero})`
+        );
+        await cancella(dopoXml);
     } finally {
         await deleteCreatedRecords(createdRecords);
     }

@@ -197,7 +197,8 @@ esente IVA). Le regole stanno in `services/mora.js`:
 - una **bozza non conta** come fattura precedente: il cliente non l'ha ricevuta,
   e non puo essere in ritardo nel pagarla;
 - la mora si addebita **una volta sola per scadenza** (`mora_fatturata`); se la
-  fattura che la portava viene cancellata, la scadenza torna addebitabile;
+  fattura che la portava viene cancellata, o se si toglie solo la sua riga, la
+  scadenza torna addebitabile (`liberaMora`);
 - l'**anteprima** della generazione la mostra cliente per cliente e nel
   riepilogo (quanti clienti, quanto in tutto), anche quando e esclusa;
 - si puo **lasciare fuori** (`includeDelay: false` nella generazione e
@@ -336,7 +337,8 @@ Con la serie dedicata:
   lascia un buco, che non si chiude senza rinumerare quelle dopo.
 - un numero **uscito non torna mai libero**, nemmeno quando la fattura viene poi
   cancellata: il contatore se lo ricorda (`ultimo_uscito`) e il numero nuovo non
-  scende sotto.
+  scende sotto. Conta come uscito anche l'XML scaricato dalla scheda della
+  fattura: il file puo arrivare allo SdI senza passare da Consegne.
 - il contatore della serie serve anche a mettere in fila due conferme
   contemporanee: dentro una transazione la seconda si ferma e riparte con il
   numero della prima. Senza transazioni (il database di sviluppo) e l'indice

@@ -3,10 +3,9 @@
 // lettura dopo parte da li, e cambiarla vorrebbe dire far pagare due volte un
 // consumo o non farlo pagare mai.
 const { toDate } = require('../utils/dates');
+const { recordId } = require('../utils/mongo');
 
 const CAMPI_DELLA_MISURA = ['consumo', 'data_lettura', 'contatore', 'unita_misura'];
-
-const idDi = (valore) => valore?._id ?? valore;
 
 const stessoValore = (campo, prima, dopo) => {
     if (campo === 'data_lettura') {
@@ -15,7 +14,7 @@ const stessoValore = (campo, prima, dopo) => {
     if (campo === 'consumo') {
         return Number(prima) === Number(dopo);
     }
-    return String(idDi(prima) ?? '') === String(idDi(dopo) ?? '');
+    return recordId(prima) === recordId(dopo);
 };
 
 // I campi della misura che una modifica cambierebbe. Un campo che non arriva
