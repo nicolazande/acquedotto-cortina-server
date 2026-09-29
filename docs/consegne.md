@@ -197,7 +197,10 @@ una consegna: si stampa o si scarica, si controlla, e solo dopo la si segna evas
 
 4. **Stampa** (`POST /api/consegne/stampa`) restituisce un solo PDF con le
    fatture da consegnare a mano, una per pagina, a blocchi di duecento nell'ordine
-   delle buste. La stampa non sposta niente: finche non vengono segnate evase, la
+   delle buste: per nome, oppure (`ordine: 'localita'`) per localita e poi per
+   indirizzo, che comincia con la via - le buste di Cortina strada per strada,
+   quelle fuori paese raggruppate per citta. La localita la scrive *Prepara*
+   sulla consegna (`localita`). La stampa non sposta niente: finche non vengono segnate evase, la
    successiva ripete lo stesso blocco, cosi una stampa andata storta - la
    stampante inceppata, il PDF chiuso per sbaglio - si rifa premendo di nuovo.
    Nel blocco entrano prima quelle gia stampate e non ancora evase, poi le

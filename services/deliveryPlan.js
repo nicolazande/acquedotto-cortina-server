@@ -30,13 +30,17 @@ const testo = (valore) => String(valore ?? '').trim();
 
 const primoValorizzato = (...valori) => valori.map(testo).find(Boolean) || '';
 
+// La localita dell'indirizzo di spedizione. Viaggia anche da sola sulla
+// consegna: la stampa puo ordinare le buste per localita e via.
+const localitaPostale = (cliente) => primoValorizzato(cliente?.localita_fatturazione, cliente?.localita_residenza);
+
 // L'indirizzo di spedizione: quello di fatturazione quando c'e, altrimenti la
 // residenza. E lo stesso criterio usato dal PDF della fattura.
 const indirizzoPostale = (cliente) => {
     const via = primoValorizzato(cliente?.indirizzo_fatturazione, cliente?.indirizzo_residenza);
     const numero = primoValorizzato(cliente?.numero_fatturazione, cliente?.numero_residenza);
     const cap = primoValorizzato(cliente?.cap_fatturazione, cliente?.cap_residenza);
-    const localita = primoValorizzato(cliente?.localita_fatturazione, cliente?.localita_residenza);
+    const localita = localitaPostale(cliente);
 
     if (!via || !localita) {
         return '';
@@ -89,6 +93,7 @@ const consegnaCortesia = (cliente) => {
         return {
             ...base,
             destinatario: indirizzo,
+            localita: indirizzo ? localitaPostale(cliente) : '',
             problema: indirizzo ? null : 'Il cliente non ha un indirizzo di spedizione.',
         };
     }
@@ -190,6 +195,7 @@ const campiDalPiano = (piano, consegna) => ({
     tipo: consegna.tipo,
     canale: consegna.canale,
     destinatario: consegna.destinatario,
+    localita: consegna.localita || null,
     documento: piano.documento,
     intestatario: piano.intestatario,
     automatica: consegna.automatico,

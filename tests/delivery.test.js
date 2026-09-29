@@ -122,6 +122,15 @@ test("l'indirizzo di fatturazione ha la precedenza sulla residenza", () => {
     assert.equal(indirizzo, 'Via Cadore 10 - 32100 Belluno');
 });
 
+test('la copia postale porta anche la localita, per ordinare le buste', () => {
+    const piano = pianoConsegne({ cliente: cliente({ localita_fatturazione: 'Belluno', indirizzo_fatturazione: 'Via Cadore' }), fattura: fattura() });
+    const postale = piano.consegne.find((consegna) => consegna.canale === 'postale');
+
+    assert.equal(postale.localita, 'Belluno');
+    assert.equal(pianoConsegne({ cliente: cliente({ indirizzo_residenza: '' }), fattura: fattura() })
+        .consegne.find((consegna) => consegna.canale === 'postale').localita, '');
+});
+
 test('un indirizzo senza localita non e un indirizzo', () => {
     assert.equal(indirizzoPostale({ indirizzo_residenza: 'Via Roma' }), '');
     assert.equal(indirizzoPostale({}), '');
@@ -574,6 +583,7 @@ const stampata = () => {
     return inCoda({
         cliente: 'cliente-1',
         destinatario: indirizzoPostale(cliente()),
+        localita: cliente().localita_residenza,
         documento: piano.documento,
         intestatario: piano.intestatario,
         automatica: false,

@@ -158,10 +158,17 @@ const BLOCCATE = { ...IN_UFFICIO.daStampare, problema: { $ne: null } };
 
 // Le consegne nell'ordine in cui si preparano: alfabetico italiano, indifferente
 // alle maiuscole. Senza, "ANNO 8919 srl" finisce prima di "Achenza" e le buste
-// escono in un ordine che non e quello in cui si imbustano. A parita decide
+// escono in un ordine che non e quello in cui si imbustano. Per nome, oppure per
+// localita e poi per indirizzo (che comincia con la via): le buste di Cortina
+// strada per strada, quelle fuori paese raggruppate per citta. A parita decide
 // `_id`: due stampe dello stesso blocco devono prendere le stesse consegne.
-const inOrdine = (filtro, limite) => Consegna.find(filtro)
-    .sort({ intestatario: 1, createdAt: 1, _id: 1 })
+const ORDINI = {
+    nome: { intestatario: 1, createdAt: 1, _id: 1 },
+    localita: { localita: 1, destinatario: 1, intestatario: 1, _id: 1 },
+};
+
+const inOrdine = (filtro, limite, ordine = 'nome') => Consegna.find(filtro)
+    .sort(ORDINI[ordine] || ORDINI.nome)
     .collation({ locale: 'it', strength: 1 })
     .limit(limite)
     .lean();
@@ -171,15 +178,15 @@ const inOrdine = (filtro, limite) => Consegna.find(filtro)
 // ripremendo esce lo stesso blocco anche se nel frattempo Prepara ha aggiunto
 // fatture che vengono prima in ordine alfabetico, e nessuna di quelle che
 // "Segna evase" chiudera resta fuori dall'ultimo file.
-const blocco = async ({ daFare, uscite, limite }) => {
-    const giaUscite = await inOrdine(uscite, limite);
+const blocco = async ({ daFare, uscite, limite, ordine }) => {
+    const giaUscite = await inOrdine(uscite, limite, ordine);
     const posti = limite - giaUscite.length;
 
     if (posti <= 0) {
         return giaUscite;
     }
 
-    return [...giaUscite, ...await inOrdine({ ...daFare, _id: { $nin: giaUscite.map((consegna) => consegna._id) } }, posti)];
+    return [...giaUscite, ...await inOrdine({ ...daFare, _id: { $nin: giaUscite.map((consegna) => consegna._id) } }, posti, ordine)];
 };
 
 // Le fatture da imbustare, in un unico PDF, un blocco per volta. La stampa non
@@ -187,13 +194,14 @@ const blocco = async ({ daFare, uscite, limite }) => {
 // stesse, e cosi una stampa andata storta - la stampante inceppata, il PDF
 // chiuso per sbaglio - si rifa premendo di nuovo. Segnate evase quelle
 // stampate, la stampa passa alle prossime.
-const stampaDaConsegnare = async ({ limite } = {}) => {
+const stampaDaConsegnare = async ({ limite, ordine } = {}) => {
     // Il segno porta l'ora di prima di leggere i dati, come per l'XML.
     const stampataIl = new Date();
     const cartacee = await blocco({
         daFare: STAMPABILI,
         uscite: IN_UFFICIO.stampate,
         limite: tetto(limite, MAX_DA_STAMPARE),
+        ordine,
     });
 
     // Una fattura riportata a bozza dopo essere entrata in coda non si stampa:

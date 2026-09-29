@@ -122,7 +122,7 @@ const segnaEvaseInBlocco = async (req, res) => {
 // stampa, si controlla, e solo dopo si dichiarano evase.
 const stampa = async (req, res) => {
     try {
-        const { buffer, filename, stampate, rimaste, bloccate } = await stampaDaConsegnare({ limite: req.body.limite });
+        const { buffer, filename, stampate, rimaste, bloccate } = await stampaDaConsegnare({ limite: req.body.limite, ordine: req.body.ordine });
 
         await registra(req, null, 'consegna.stampata', `Stampate ${stampate} fatture da consegnare`, {
             stampate, rimaste, bloccate,
