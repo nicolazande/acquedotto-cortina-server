@@ -18,10 +18,10 @@ const {
 const {
     CODICI_ARTICOLO_DEL_CALCOLO,
     calculateReadingInvoice,
-    numberOrZero,
+    isSplitCondominiumCounter,
 } = require('./billingCalculator');
 const { createError, notFound } = require('../utils/errors');
-const { hasValue, normalizeText, sumMoneyBy } = require('../utils/values');
+const { hasValue, sumMoneyBy } = require('../utils/values');
 const { uniqueById, withSession } = require('../utils/mongo');
 
 const isBillablePreview = (preview) => !preview.error && preview.lines?.length;
@@ -35,24 +35,6 @@ const summarizeBillablePreviews = (previews) => {
         iva: sumMoneyBy(billablePreviews, (preview) => preview.totals.iva),
         totale_fattura: sumMoneyBy(billablePreviews, (preview) => preview.totals.totale_fattura),
     };
-};
-
-const isCondominiumSplitCounter = (contatore) => {
-    const counterType = normalizeText(contatore?.tipo_contatore);
-    const activity = normalizeText(contatore?.tipo_attivita);
-    const share = numberOrZero(contatore?.consumo);
-    const hasSplitShare = share > 0 && Math.abs(share - 100) > 0.001;
-
-    return (
-        counterType.includes('condominiale') && (
-            counterType.includes('utenze private')
-            || counterType.includes('virtuale')
-            || counterType.includes('ripartit')
-            || hasSplitShare
-        )
-    ) || (
-        activity === 'utenza condominiale' && counterType.includes('ripartit')
-    );
 };
 
 const getPreviousReading = (lettura, session) => {
@@ -128,9 +110,11 @@ const calcolaLettura = async (lettura, options = {}) => {
         throw createError('La lettura deve avere un contatore con listino associato');
     }
 
-    if (!options.allowCondominiumSplit && isCondominiumSplitCounter(lettura.contatore)) {
+    // Il contatore condominiale non si fattura da solo: il suo consumo entra, in
+    // percentuale, nelle fatture delle utenze dell'edificio.
+    if (!options.allowCondominiumSplit && isSplitCondominiumCounter(lettura.contatore)) {
         throw createError(
-            'Questa lettura usa un riparto condominiale: va calcolata con le quote del contatore condominiale prima di generare la fattura automatica.',
+            'Contatore condominiale: il suo consumo si divide fra le utenze dell\'edificio, nelle loro fatture.',
             422
         );
     }
@@ -209,6 +193,8 @@ const calculateReadingById = async (letturaId, options = {}) => {
 module.exports = {
     CON_CONTATORE,
     calcolaLettura,
+    fasceDelListino,
+    getPreviousReading,
     calculateReadingById,
     getArticlesByCode,
     loadReadings,

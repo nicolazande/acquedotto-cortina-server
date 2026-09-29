@@ -13,9 +13,9 @@ const {
     getDate,
 } = require('./annualFixedChargeService');
 const { recordId } = require('./billingCalculator');
-const {
-    calculateReadingById,
-} = require('./calcoloLettura');
+const { calcolaLettura, loadReadings } = require('./calcoloLettura');
+const { verificaQuota } = require('./ripartoCondominiale');
+const { notFound } = require('../utils/errors');
 const { normalizeText, sumMoneyBy } = require('../utils/values');
 const { uniqueById } = require('../utils/mongo');
 const { stessoImporto } = require('../utils/money');
@@ -149,9 +149,17 @@ const calculateInvoiceReadingsFromServices = async ({
     const serviziByReading = groupServicesByReading(servizi);
     const calculations = [];
 
-    for (const letturaId of letturaIds) {
-        const [firstRow = {}] = serviziByReading.get(recordId(letturaId)) || [];
-        calculations.push(await calculateReadingById(letturaId, {
+    const letture = await loadReadings(letturaIds, session);
+    if (letture.length !== letturaIds.length) {
+        throw notFound('Lettura non trovata.');
+    }
+
+    for (const lettura of letture) {
+        const righe = serviziByReading.get(recordId(lettura)) || [];
+        const [firstRow = {}] = righe;
+        // Una lettura del condominiale sulla fattura di un'utenza: e la sua parte.
+        const quota = await verificaQuota({ fascePerListino, fattura, lettura, righe, session });
+        calculations.push(quota || await calcolaLettura(lettura, {
             allowCondominiumSplit: true,
             excludeInvoiceId: fattura._id,
             fascePerListino,

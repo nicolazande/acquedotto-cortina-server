@@ -1717,6 +1717,81 @@ const testBulkConfirm = async () => {
     }
 };
 
+// Il riparto condominiale: in un edificio con il contatore condominiale, ogni
+// utenza paga il suo contatore e la sua parte del consumo comune e della quota
+// fissa comune, con il listino del condominiale.
+const testRipartoCondominiale = async () => {
+    if (skipMutation) {
+        console.log('skipped');
+        return;
+    }
+
+    const createdRecords = [];
+
+    try {
+        const edificio = await createTrackedRecord(createdRecords, 'edifici', { descrizione: 'Smoke Condominio' });
+        const listinoComune = await createTrackedRecord(createdRecords, 'listini', {
+            categoria: `SMOKE CONDOMINIALE ${Date.now()}`, descrizione: 'Listino temporaneo smoke test',
+        });
+        const listinoUtenze = await createTrackedRecord(createdRecords, 'listini', {
+            categoria: `SMOKE UTENZE ${Date.now()}`, descrizione: 'Listino temporaneo smoke test',
+        });
+        for (const [listino, fisso] of [[listinoComune, 30], [listinoUtenze, 50]]) {
+            await createTrackedRecord(createdRecords, 'fasce', {
+                tipo: 'Tariffa Base', min: 1, max: 9999, prezzo: 1, inizio: INIZIO_ANNO, scadenza: FINE_ANNO, listino: listino._id,
+            });
+            await createTrackedRecord(createdRecords, 'fasce', {
+                tipo: 'Fisso', min: 0, max: 999999, prezzo: fisso, inizio: INIZIO_ANNO, scadenza: FINE_ANNO, listino: listino._id,
+            });
+        }
+        const intestatarioComune = await createTrackedRecord(createdRecords, 'clienti', { ragione_sociale: 'Smoke Condominiale' });
+        const comune = await createTrackedRecord(createdRecords, 'contatori', {
+            codice: 'SMOKE-COND', seriale: 'SMOKE-COND', tipo_contatore: '04 - Condominali Ripartiti',
+            tipo_attivita: 'UTENZA CONDOMINIALE', consumo: 100, cliente: intestatarioComune._id,
+            edificio: edificio._id, listino: listinoComune._id,
+        });
+        const lettura = (contatore, consumo, fatturata, data = OGGI) => createTrackedRecord(createdRecords, 'letture', {
+            data_lettura: data, consumo, unita_misura: 'm3', fatturata, contatore: contatore._id,
+        });
+        // 50 m3 comuni nel periodo, dalla lettura di partenza.
+        await lettura(comune, 100, true, INIZIO_ANNO);
+        const letturaComune = await lettura(comune, 150, false);
+
+        const utenze = [];
+        for (const [nome, quota] of [['Uno', 60], ['Due', 40]]) {
+            const cliente = await createTrackedRecord(createdRecords, 'clienti', { ragione_sociale: `Smoke Riparto ${nome}` });
+            const contatore = await createTrackedRecord(createdRecords, 'contatori', {
+                codice: `SMOKE-UT-${nome}`, seriale: `SMOKE-UT-${nome}`, tipo_contatore: '02 - CONDOMINIALE + Utenze Private',
+                consumo: quota, cliente: cliente._id, edificio: edificio._id, listino: listinoUtenze._id,
+            });
+            await lettura(contatore, 0, true, INIZIO_ANNO);
+            utenze.push({ cliente, quota, propria: await lettura(contatore, 10, false) });
+        }
+
+        for (const { cliente, quota, propria } of utenze) {
+            const { body: generata } = await request('/fatture/genera-da-letture', json('POST', {
+                letture: [propria._id], data_fattura: OGGI, includeDelay: false,
+            }));
+            createdRecords.push({ resource: 'fatture', id: generata.fattura._id });
+            const comuni = generata.servizi.filter((riga) => /cont\. condominiale/.test(riga.descrizione));
+            const consumo = comuni.find((riga) => !riga.tipo_quota);
+            const fisso = comuni.find((riga) => riga.tipo_quota);
+            assert(Number(consumo?.metri_cubi) === 50 * quota / 100, `${cliente.ragione_sociale} should pay ${quota}% of 50 m3, got ${consumo?.metri_cubi}`);
+            assert(Number(fisso?.valore_unitario) === 30 * quota / 100, `${cliente.ragione_sociale} should pay ${quota}% of the common fixed charge, got ${fisso?.valore_unitario}`);
+            // Il proprio contatore con il proprio listino: 10 m3 a 1 euro e 50 di fisso.
+            const proprie = generata.servizi.filter((riga) => !/cont\. condominiale/.test(riga.descrizione));
+            assert(proprie.reduce((totale, riga) => totale + Number(riga.valore_unitario), 0) === 60, 'the own meter should be billed as usual');
+            const { body: verifica } = await request(`/fatture/${generata.fattura._id}/verifica-calcolo`);
+            assert(verifica.summary.serviziCoerenti && verifica.summary.righeCalcolateMancanti === 0, 'the check should recompute the share');
+        }
+
+        const { body: comuneDopo } = await request(`/letture/${letturaComune._id}`);
+        assert(comuneDopo.fatturata === true, 'the condominium reading should count as billed once shared');
+    } finally {
+        await deleteCreatedRecords(createdRecords);
+    }
+};
+
 const main = async () => {
     console.log(`Smoke API target: ${apiUrl}`);
     await step('health endpoint', testHealth);
@@ -1733,6 +1808,7 @@ const main = async () => {
     await step('payment registration', testPaymentRegistration);
     await step('referential integrity', testReferentialIntegrity);
     await step('late fee charged once', testDelayFeeChargedOnce);
+    await step('condominium split across the units', testRipartoCondominiale);
     await step('manual invoice lines and totals', testManualInvoiceLines);
     await step('confirming an invoice from the form', testConfermaDallaMaschera);
     await step('a foreign client does not stop the XML archive', testArchivioConClienteEstero);

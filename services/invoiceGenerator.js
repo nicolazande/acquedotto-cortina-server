@@ -18,6 +18,7 @@ const {
 const { confermaInSessione } = require('./confermaFatture');
 const { isConfirmedInvoice } = require('../config/invoicing');
 const { fatturePrecedenti, rigaMoraPer, segnaMoraFatturata } = require('./mora');
+const { quoteCondominiali } = require('./ripartoCondominiale');
 const { runWithOptionalTransaction } = require('./transaction');
 const { righeDellaFattura } = require('./righeFattura');
 const {
@@ -273,6 +274,16 @@ const createInvoiceFromReadingsInSession = async ({
             }));
         }
 
+        // Le utenze di un edificio con il contatore condominiale pagano anche la
+        // loro parte del consumo comune.
+        const quote = await quoteCondominiali({
+            articlesByCode,
+            cliente,
+            contatori: uniqueById(readings.map((lettura) => lettura.contatore)),
+            dataFattura: invoiceDate,
+            session,
+        });
+
         // La mora si puo lasciare fuori: in un giro in cui i pagamenti non sono
         // ancora stati registrati colpirebbe chi ha pagato.
         const precedenti = includeDelay === false
@@ -285,6 +296,7 @@ const createInvoiceFromReadingsInSession = async ({
         });
         const allLines = [
             ...calculations.flatMap((calculation) => calculation.lines),
+            ...quote.flatMap((quota) => quota.lines),
             ...(rigaMora ? [rigaMora] : []),
         ];
         if (allLines.length === 0) {
@@ -320,12 +332,21 @@ const createInvoiceFromReadingsInSession = async ({
             session,
         });
         await segnaMoraFatturata(rigaMora, session);
+        // La lettura del condominiale e entrata in fattura: non e piu fra quelle
+        // da fatturare. Le altre utenze la trovano lo stesso, perche la loro
+        // parte si cerca fra le loro fatture e non su questo segno.
+        if (quote.length > 0) {
+            await withSession(Lettura.updateMany(
+                { _id: { $in: quote.map((quota) => quota.lettura._id) } },
+                { $set: { fatturata: true } }
+            ), session);
+        }
 
         return {
             fattura,
             scadenza,
             servizi: services,
-            calculations,
+            calculations: [...calculations, ...quote],
         };
     } catch (error) {
         if (!session) {

@@ -23,7 +23,8 @@ const {
     buildAnnualFixedLookupCache,
     createAnnualFixedContext,
 } = require('./annualFixedChargeService');
-const { calculateTotals } = require('./billingCalculator');
+const { calculateTotals, isSplitCondominiumCounter } = require('./billingCalculator');
+const { quoteCondominiali } = require('./ripartoCondominiale');
 const {
     CON_CONTATORE,
     calcolaLettura,
@@ -33,7 +34,7 @@ const {
 const { avvisiDellaLettura, fatturataDopo, motivoLetturaSuperata } = require('./avvisiLettura');
 const { descriviMora, fatturePrecedenti, rigaMoraPer } = require('./mora');
 const { notFound } = require('../utils/errors');
-const { recordId } = require('../utils/mongo');
+const { recordId, uniqueById } = require('../utils/mongo');
 const { sumMoneyBy } = require('../utils/values');
 
 const LIMITE_MASSIMO = 2000;
@@ -55,20 +56,23 @@ const storiaDeiContatori = async (contatoreIds) => {
     return storia;
 };
 
-const sommaTotali = (a, b) => ({
-    ...a,
-    imponibile: sumMoneyBy([a, b], (totali) => totali.imponibile),
-    iva: sumMoneyBy([a, b], (totali) => totali.iva),
-    totale_fattura: sumMoneyBy([a, b], (totali) => totali.totale_fattura),
+const sommaTotali = (primi, ...altri) => ({
+    ...primi,
+    imponibile: sumMoneyBy([primi, ...altri], (totali) => totali.imponibile),
+    iva: sumMoneyBy([primi, ...altri], (totali) => totali.iva),
+    totale_fattura: sumMoneyBy([primi, ...altri], (totali) => totali.totale_fattura),
 });
 
-// Un gruppo pronto: gli importi delle letture, piu la mora se la fattura la
-// porterebbe. La mora c'e solo se c'e una fattura, cioe almeno una lettura da
-// fatturare. Si calcola anche quando la si lascia fuori, per dire quanto vale:
-// entra nel totale solo se inclusa.
+// Un gruppo pronto: gli importi delle letture, la parte del condominiale se
+// l'utenza ne paga una, e la mora se la fattura la porterebbe. Mora e quote ci
+// sono solo se c'e una fattura, cioe almeno una lettura da fatturare. La mora si
+// calcola anche quando la si lascia fuori, per dire quanto vale: entra nel
+// totale solo se inclusa.
 const chiudiGruppo = (gruppo, { articlesByCode, includeDelay, oggi, precedenti }) => {
     let totals = summarizeBillablePreviews(gruppo.previews);
     let mora = null;
+    const quote = totals.letture > 0 ? gruppo.quote : [];
+    totals = sommaTotali(totals, ...quote.map((quota) => quota.totals));
 
     if (totals.letture > 0) {
         const precedente = precedenti.get(recordId(gruppo.cliente));
@@ -86,6 +90,7 @@ const chiudiGruppo = (gruppo, { articlesByCode, includeDelay, oggi, precedenti }
 
     return {
         ...gruppo,
+        quote,
         mora,
         totals,
         daVerificare: gruppo.previews.some((preview) => preview.avvisi?.length > 0),
@@ -121,8 +126,14 @@ const calcolaGruppi = async (letture, {
             continue;
         }
 
+        // Il contatore condominiale non si fattura da solo: la sua lettura entra
+        // come quota nelle fatture delle utenze dell'edificio, qui sotto.
+        if (isSplitCondominiumCounter(lettura.contatore)) {
+            continue;
+        }
+
         if (!gruppi.has(recordId(cliente))) {
-            gruppi.set(recordId(cliente), { cliente, previews: [], anomalies: [] });
+            gruppi.set(recordId(cliente), { cliente, previews: [], anomalies: [], quote: [] });
         }
         const gruppo = gruppi.get(recordId(cliente));
         const storiaContatore = storia.get(recordId(lettura.contatore)) || [];
@@ -162,6 +173,16 @@ const calcolaGruppi = async (letture, {
         }
     }
 
+    for (const gruppo of gruppi.values()) {
+        gruppo.quote = await quoteCondominiali({
+            articlesByCode,
+            cliente: gruppo.cliente,
+            contatori: uniqueById(gruppo.previews.map((preview) => preview.contatore)),
+            dataFattura: oggi,
+            fascePerListino,
+        });
+    }
+
     return {
         clienti: [...gruppi.values()].map((gruppo) => chiudiGruppo(gruppo, {
             articlesByCode,
@@ -187,12 +208,13 @@ const previewClienteBilling = async (clienteId, options = {}) => {
     // annuali: l'aggregazione completa costerebbe piu di quanto faccia
     // risparmiare, e la cache incrementale per contatore/anno basta.
     const { clienti, anomalies } = await calcolaGruppi(letture, options);
-    const gruppo = clienti[0] || { previews: [], anomalies: [], mora: null, daVerificare: false };
+    const gruppo = clienti[0] || { previews: [], anomalies: [], quote: [], mora: null, daVerificare: false };
 
     return {
         cliente,
         contatori,
         previews: gruppo.previews,
+        quote: gruppo.quote,
         anomalies: [...anomalies, ...gruppo.anomalies],
         mora: gruppo.mora,
         daVerificare: gruppo.daVerificare,

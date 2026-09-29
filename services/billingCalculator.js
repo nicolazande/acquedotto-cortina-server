@@ -163,11 +163,26 @@ const getApplicableBands = (bands, { date, listinoId } = {}) => {
 
 const getArticleByCode = (articlesByCode, code) => articlesByCode?.[code] || null;
 
+// Il contatore condominiale di un edificio ripartito: legge il consumo comune,
+// che si divide fra le utenze private dell'edificio (services/ripartoCondominiale.js).
+// Da solo non si fattura, e le sue righe usano gli articoli COND e CONDF.
 const isSplitCondominiumCounter = (contatore) => {
     const counterType = normalizeText(contatore?.tipo_contatore);
     const activity = normalizeText(contatore?.tipo_attivita);
 
     return activity === 'utenza condominiale' && counterType.includes('ripartit');
+};
+
+// Un'utenza privata che paga anche una parte del contatore condominiale del suo
+// edificio: il tipo lo dice ("CONDOMINIALE + Utenze Private") e la parte, in
+// percentuale, sta nel campo `consumo` del contatore. Restituisce la quota, o 0.
+const quotaDiRiparto = (contatore) => {
+    const counterType = normalizeText(contatore?.tipo_contatore);
+    const quota = numberOrZero(contatore?.consumo);
+
+    return counterType.includes('condominiale') && counterType.includes('utenze private') && quota > 0 && quota < 100
+        ? quota
+        : 0;
 };
 
 const getWaterArticles = (articlesByCode, contatore) => {
@@ -459,9 +474,11 @@ module.exports = {
     getLineTaxRate,
     getTaxRate,
     isFixedBand,
+    isSplitCondominiumCounter,
     limiteInferiore,
     limiteSuperiore,
     numberOrZero,
+    quotaDiRiparto,
     recordId,
     roundMoney,
 };

@@ -155,37 +155,44 @@ che non sia gia stata fatturata nello stesso anno per quello stesso contatore
 Quando piu fasce fisse sono valide, viene scelta quella il cui intervallo contiene
 il consumo; se nessuna corrisponde si usa la prima.
 
-## Contatori condominiali
+## Contatori condominiali e riparto
 
-Un contatore e considerato "a riparto condominiale" quando il tipo contiene
-"condominiale" **e** almeno una fra: "utenze private", "virtuale", "ripartit", o
-una quota `consumo` maggiore di zero e diversa da 100. Vale anche quando
-l'attivita e "utenza condominiale" e il tipo contiene "ripartit".
+In un edificio con un **contatore condominiale** (tipo "Condominali Ripartiti",
+attivita "Utenza condominiale") il consumo comune si divide fra le **utenze
+private** dello stesso edificio (tipo "CONDOMINIALE + Utenze Private"), secondo
+la quota in percentuale scritta nel campo `consumo` di ciascuna. Oggi c'e un
+solo caso: la Casa ex Lete, con De Anna 33,34, Scarpa 33,33 e Linguiti 33,33.
+Le regole stanno in `services/ripartoCondominiale.js`, quelle pure
+(`isSplitCondominiumCounter`, `quotaDiRiparto`) in `services/billingCalculator.js`.
 
-La quota da sola non basta, ed e voluto: 140 contatori hanno `consumo: 0` e 915
-non ce l'hanno affatto: interpretarli come ripartiti bloccherebbe la
-fatturazione di quasi tutto l'acquedotto. Sui dati attuali la regola seleziona
-**6 contatori**.
+Come lo faceva Gesco, e come lo fa ora la generazione:
 
-Queste letture **non** vengono fatturate automaticamente: la generazione si ferma
-con un errore 422, perche il riparto va calcolato sul contatore condominiale.
-I contatori ripartiti usano gli articoli `COND` e `CONDF` invece di `ACQUA` e `ACQUAF`.
-
-### Come lo faceva il gestionale precedente
-
-Il contatore condominiale legge il totale, e il consumo viene attribuito in
-percentuale ai contatori privati collegati. Ogni lettura del condominiale
-produce, per ciascuna utenza, una riga di consumo e una di quota fissa,
-entrambe ridotte alla sua percentuale:
+- il contatore condominiale **non si fattura da solo**: la sua lettura non entra
+  fra le letture da fatturare, e se la si chiede si ferma con un 422;
+- ogni utenza paga il **suo contatore**, con il suo listino, e accanto la **sua
+  parte** del condominiale: il consumo del periodo e la quota fissa, con il
+  listino del condominiale e gli articoli `COND` e `CONDF`, ridotti alla sua
+  percentuale (i metri cubi a quattro decimali, gli importi al centesimo):
 
 ```text
-Spesa Acqua cont. condominiale. Su Seriale:07496473 Perc. 33   mc 14,3319   4,729527
-Spesa Acqua cont. condominiale. Su Seriale:07496473 Perc. 33   mc  0,3333  11,665500
+Spesa Acqua cont. condominiale. Su Seriale:07496473 Perc. 33,33   mc 14,3319   4,73
+Spesa Acqua cont. condominiale. Su Seriale:07496473 Perc. 33,33   mc  0,3333  11,67
 ```
 
-Nei dati c'e un solo condominio reale, tre utenze al 33,33 / 33,34 / 33,33 su un
-contatore ripartito, piu un contatore "virtuale" senza letture. Oggi il riparto
-si fa a mano.
+- una lettura del condominiale si ripartisce se non e ancora stata fatturata a
+  nessuno, o se e gia nella fattura di un'altra utenza ma non di questa. Una
+  lettura segnata fatturata che nessuna fattura porta e quella da cui si e
+  cominciato a contare: ripartirla farebbe pagare l'intero indice;
+- la quota fissa condominiale si paga una volta l'anno;
+- la lettura del condominiale diventa fatturata alla prima utenza che la paga;
+  le altre la trovano lo stesso, perche la loro parte si cerca fra le loro
+  fatture. Cancellando la fattura di un'utenza la sua parte torna da pagare;
+- l'anteprima mostra la parte di ogni utenza fra le note del cliente, e la
+  verifica di una fattura - anche di quelle di Gesco - rifa il conto in quota.
+
+Un'utenza con una quota ma senza contatore condominiale nell'edificio si
+fattura normalmente: e il caso dei Testimoni di Geova (quota 50), che Gesco
+fatturava cosi e che prima qui si fermava.
 
 ## Mora per ritardato pagamento
 
