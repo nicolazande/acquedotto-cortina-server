@@ -1,4 +1,3 @@
-import json
 import os
 import sys
 import tempfile
@@ -14,9 +13,10 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium import webdriver
 from bs4 import BeautifulSoup
 import requests
-from bson import ObjectId, json_util
+from bson import ObjectId
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from backup_mongodb import salva_backup
 
 SERVER_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(SERVER_ROOT / ".env")
@@ -124,7 +124,8 @@ def backup_before_reset(db) -> Path | None:
     Senza questa rete un import interrotto a meta lascia il database vuoto e non
     c'e modo di tornare indietro: e l'operazione piu rischiosa dell'intero
     sistema. Il backup e scritto in Python, senza strumenti esterni, cosi
-    funziona allo stesso modo su MongoDB locale e remoto.
+    funziona allo stesso modo su MongoDB locale e remoto; e lo stesso di
+    `backup_mongodb.py`, e si ripristina con `restore_backup.py`.
 
     Si puo saltare con IMPORT_SKIP_BACKUP=1, ma solo sapendo cosa si fa.
     """
@@ -132,29 +133,7 @@ def backup_before_reset(db) -> Path | None:
         print("!! Backup saltato su richiesta (IMPORT_SKIP_BACKUP)")
         return None
 
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    destinazione = SERVER_ROOT / "backups" / f"before-import-{stamp}"
-    destinazione.mkdir(parents=True, exist_ok=True)
-
-    conteggi = {}
-    for nome in IMPORT_COLLECTIONS:
-        documenti = list(db[nome].find({}))
-        conteggi[nome] = len(documenti)
-        percorso = destinazione / f"{nome}.json"
-        percorso.write_text(json_util.dumps(documenti), encoding="utf-8")
-
-    manifest = {
-        "creato": datetime.now().isoformat(),
-        "database": db.name,
-        "motivo": "backup automatico prima di IMPORT_RESET_DB",
-        "documenti": conteggi,
-        "ripristino": "documents/script/restore_backup.py <cartella>",
-    }
-    (destinazione / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-
-    totale = sum(conteggi.values())
-    print(f"Backup salvato in {destinazione} ({totale} documenti)")
-    return destinazione
+    return salva_backup(db, "backup automatico prima di IMPORT_RESET_DB", IMPORT_COLLECTIONS, prefisso="before-import")
 
 
 def conta_collection(db) -> dict:

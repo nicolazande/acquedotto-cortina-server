@@ -1,4 +1,19 @@
+"""Copia di sicurezza del database, in file JSON: una cartella per backup.
+
+    .venv/bin/python documents/script/backup_mongodb.py
+    .venv/bin/python documents/script/backup_mongodb.py --uri "<indirizzo del database>"
+
+Salva tutte le collection (o quelle indicate con --collections) in
+`backups/<database>-<data>/`, con un `manifest.json` che dice cosa c'e dentro.
+Si ripristina con `restore_backup.py <cartella>`. E lo stesso backup che l'import
+fa da solo prima di svuotare il database (`salva_backup`): uno solo, cosi il
+ripristino legge sempre la stessa forma.
+
+Legge soltanto: sul database non scrive niente.
+"""
+
 import argparse
+import json
 import os
 from datetime import datetime
 from pathlib import Path
@@ -12,58 +27,57 @@ SERVER_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(SERVER_ROOT / ".env")
 
 DEFAULT_DB_NAME = "acquedotto-zuel"
-DEFAULT_COLLECTIONS = [
-    "articoli",
-    "clienti",
-    "contatori",
-    "edifici",
-    "fasce",
-    "fatture",
-    "letture",
-    "listini",
-    "scadenze",
-    "servizi",
-    "note_attachments",
-]
 
 
-def database_name_from_uri(mongo_uri: str) -> str | None:
-    parsed_uri = urlparse(mongo_uri)
-    db_name = unquote(parsed_uri.path.lstrip("/"))
-    return db_name or None
+def salva_backup(db, motivo: str, collezioni=None, prefisso: str | None = None) -> Path:
+    """Scrive le collection in una cartella nuova e restituisce la cartella.
+
+    Senza `collezioni` le salva tutte, tranne quelle di sistema: un elenco
+    scritto a mano resta indietro appena ne nasce una nuova.
+    """
+    nomi = collezioni or sorted(nome for nome in db.list_collection_names() if not nome.startswith("system."))
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    destinazione = SERVER_ROOT / "backups" / f"{prefisso or db.name}-{stamp}"
+    destinazione.mkdir(parents=True, exist_ok=True)
+
+    conteggi = {}
+    for nome in nomi:
+        documenti = list(db[nome].find({}))
+        conteggi[nome] = len(documenti)
+        (destinazione / f"{nome}.json").write_text(json_util.dumps(documenti), encoding="utf-8")
+
+    manifest = {
+        "creato": datetime.now().isoformat(),
+        "database": db.name,
+        "motivo": motivo,
+        "documenti": conteggi,
+        "ripristino": "documents/script/restore_backup.py <cartella>",
+    }
+    (destinazione / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    print(f"Backup salvato in {destinazione} ({sum(conteggi.values())} documenti)")
+    return destinazione
+
+
+def nome_database(uri: str) -> str:
+    return unquote(urlparse(uri).path.lstrip("/")) or DEFAULT_DB_NAME
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Backup MongoDB collections as JSON files.")
-    parser.add_argument("--uri", default=os.getenv("MONGODB_URI"))
-    parser.add_argument("--db", default=os.getenv("MONGODB_DB"))
-    parser.add_argument("--collections", default=",".join(DEFAULT_COLLECTIONS))
-    parser.add_argument("--output-dir", default=None)
+    parser = argparse.ArgumentParser(description="Copia di sicurezza del database in JSON")
+    parser.add_argument("--uri", default=os.getenv("MONGODB_URI", f"mongodb://localhost:27017/{DEFAULT_DB_NAME}"))
+    parser.add_argument("--db", default=os.getenv("MONGODB_DB"), help="nome del database, se non e nell'indirizzo")
+    parser.add_argument("--collections", default="", help="solo queste, separate da virgola")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    if not args.uri:
-        raise RuntimeError("Set --uri or MONGODB_URI.")
-
-    db_name = args.db or database_name_from_uri(args.uri) or DEFAULT_DB_NAME
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    output_dir = Path(args.output_dir or SERVER_ROOT / "backups" / f"{db_name}-{timestamp}")
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    collections = [item.strip() for item in args.collections.split(",") if item.strip()]
     client = MongoClient(args.uri, serverSelectionTimeoutMS=10000, socketTimeoutMS=120000)
-    db = client[db_name]
-
     try:
-        print(f"Backup database: {db.name}")
-        print(f"Output: {output_dir}")
-        for collection_name in collections:
-            documents = list(db[collection_name].find({}))
-            target = output_dir / f"{collection_name}.json"
-            target.write_text(json_util.dumps(documents, indent=2), encoding="utf-8")
-            print(f"{collection_name}: {len(documents)}")
+        db = client[args.db or nome_database(args.uri)]
+        collezioni = [nome.strip() for nome in args.collections.split(",") if nome.strip()]
+        salva_backup(db, "backup a mano", collezioni or None)
     finally:
         client.close()
 

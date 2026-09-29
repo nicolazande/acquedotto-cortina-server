@@ -292,7 +292,18 @@ CAPTCHA.
 | Stampa un **riepilogo** prima/dopo per collection | prima non si sapeva se avesse importato tutto, una parte o niente |
 | **Riusa la sessione** salvata in `.fasttools-session` | il login ha un CAPTCHA manuale: senza riuso ogni ripresa ne richiede un altro |
 
-Ripristino di un backup:
+### Backup e ripristino
+
+Una copia di sicurezza a mano, di tutte le collection, in `backups/<database>-<data>/`
+(la cartella non va su git). Legge soltanto. Con `--uri` si copia un altro database,
+per esempio la produzione:
+
+```bash
+.venv/bin/python documents/script/backup_mongodb.py
+.venv/bin/python documents/script/backup_mongodb.py --uri "<indirizzo del database>"
+```
+
+E lo stesso backup che l'import fa da solo prima di svuotare. Ripristino:
 
 ```bash
 .venv/bin/python documents/script/restore_backup.py backups/before-import-20260820-120000
