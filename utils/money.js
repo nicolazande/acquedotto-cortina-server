@@ -114,8 +114,13 @@ const stessoImporto = (a, b, tolleranza = MONEY_TOLERANCE) => (
     Math.abs(toCents(a) - toCents(b)) <= toCents(tolleranza)
 );
 
+// Un importo come si legge in Italia, per i documenti da stampare: 57.850,43.
+const IMPORTO_ITALIANO = new Intl.NumberFormat('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const importoItaliano = (euro) => IMPORTO_ITALIANO.format(Number(euro) || 0);
+
 module.exports = {
     MONEY_TOLERANCE,
+    importoItaliano,
     stessoImporto,
     applyRate,
     applyRateToLines,

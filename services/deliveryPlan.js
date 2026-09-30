@@ -17,10 +17,12 @@ const {
     modalitaConsegna,
     richiedeFatturaElettronica,
 } = require('../config/delivery');
+const { AZIENDA } = require('../config/azienda');
 const { customerLabel } = require('../utils/customer');
 const { emessaDalGestionale, isConfirmedInvoice, numeroDocumento } = require('../config/invoicing');
 const { dataReale, formatItalianDate } = require('../utils/dates');
 const { setOrUnset, soloValorizzati } = require('../utils/mongo');
+const { senzaAccenti } = require('../utils/values');
 
 // Controllo volutamente permissivo: serve a intercettare i campi rimasti vuoti
 // o con del testo al posto dell'indirizzo, non a validare le RFC.
@@ -30,9 +32,52 @@ const testo = (valore) => String(valore ?? '').trim();
 
 const primoValorizzato = (...valori) => valori.map(testo).find(Boolean) || '';
 
-// La localita dell'indirizzo di spedizione. Viaggia anche da sola sulla
-// consegna: la stampa puo ordinare le buste per localita e via.
 const localitaPostale = (cliente) => primoValorizzato(cliente?.localita_fatturazione, cliente?.localita_residenza);
+
+const maiuscolo = (valore) => senzaAccenti(valore).toUpperCase().replace(/\s+/g, ' ').trim();
+
+// Le frazioni del paese. A Cortina la localita e la stessa per tutti e la
+// frazione sta nella via ("ZUEL DI SOTTO", "LOC. ACQUABONA", "VIA ACQUABONA"):
+// la si riconosce li, anche nelle grafie che si trovano nei dati ("PEZIE'",
+// "ACQUABOBNA"). Sono le zone dove le fatture si portano a mano.
+const FRAZIONI = [
+    ['ZUEL', /\bZUEL\b/],
+    ['ACQUABONA', /\bACQUABO\w?NA\b/],
+    ['PIAN DA LAGO', /\bPIAN DA LAGO\b/],
+    ['PEZIÈ', /\bPEZI[ES]\b/],
+    ['MANAIGO', /\bMANAIGO\b/],
+    ['BOSCHEDEL', /\bBOSCHEDEL\b/],
+    ['CAMPO', /\bCAMPO\b/],
+    ['SOCUS', /\bSOCUS\b/],
+    ['RONCO', /\bRONCO\b/],
+];
+
+const lettere = (valore) => maiuscolo(valore).replace(/[^A-Z]/g, '');
+
+// Se una localita e il paese dell'acquedotto, scritto intero o accorciato:
+// "Cortina", "Cortina d'Ampezzo", "CORTINA D'AMPEZZO (BL)".
+const PAESE = lettere(AZIENDA.sede.comune);
+const inPaese = (localita) => {
+    const scritta = lettere(localita);
+    return scritta.length >= 5 && (PAESE.startsWith(scritta) || scritta.startsWith(PAESE));
+};
+
+// Dove va una busta: la localita - il paese con il suo nome, qualunque grafia
+// avesse l'indirizzo, o la citta - e la zona, cioe la frazione per chi sta in
+// paese e di nuovo la citta per gli altri. La stampa le mette in ordine di
+// localita, zona e via, o stampa una zona sola: le buste per Zuel, da portare a
+// mano, o quelle per la citta di un amministratore.
+const recapitoPostale = (cliente) => {
+    const localita = localitaPostale(cliente);
+    if (!inPaese(localita)) {
+        return { localita: maiuscolo(localita), zona: maiuscolo(localita) };
+    }
+    const paese = maiuscolo(AZIENDA.sede.comune);
+    const via = maiuscolo(primoValorizzato(cliente?.indirizzo_fatturazione, cliente?.indirizzo_residenza));
+    return { localita: paese, zona: FRAZIONI.find(([, riconosce]) => riconosce.test(via))?.[0] || paese };
+};
+
+const zonaPostale = (cliente) => recapitoPostale(cliente).zona;
 
 // L'indirizzo di spedizione: quello di fatturazione quando c'e, altrimenti la
 // residenza. E lo stesso criterio usato dal PDF della fattura.
@@ -93,7 +138,7 @@ const consegnaCortesia = (cliente) => {
         return {
             ...base,
             destinatario: indirizzo,
-            localita: indirizzo ? localitaPostale(cliente) : '',
+            ...(indirizzo ? recapitoPostale(cliente) : { localita: '', zona: '' }),
             problema: indirizzo ? null : 'Il cliente non ha un indirizzo di spedizione.',
         };
     }
@@ -196,6 +241,7 @@ const campiDalPiano = (piano, consegna) => ({
     canale: consegna.canale,
     destinatario: consegna.destinatario,
     localita: consegna.localita || null,
+    zona: consegna.zona || null,
     documento: piano.documento,
     intestatario: piano.intestatario,
     automatica: consegna.automatico,
@@ -444,4 +490,5 @@ module.exports = {
     chiusura,
     indirizzoPostale,
     pianoConsegne,
+    zonaPostale,
 };

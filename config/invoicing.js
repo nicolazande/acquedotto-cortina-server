@@ -96,20 +96,20 @@ const naturaPerIva = (testoIva) => {
     return voce ? NATURE_IVA[voce] : null;
 };
 
-// Come il cliente paga, nel codice del tracciato. Si legge dal termine scritto
-// sulla sua anagrafica: i 25 clienti in addebito hanno "Addebito in conto a
-// scadenza", per tutti gli altri vale il bonifico.
-const MODALITA_PAGAMENTO = [
-    { riconosce: /addebito|sdd|rid|sepa/i, codice: 'MP19' },
-    { riconosce: /contant/i, codice: 'MP01' },
-];
+// Chi paga con l'addebito in conto: chi ci ha dato l'IBAN. E la regola
+// dell'ufficio - "i clienti che hanno l'IBAN vanno direttamente in banca" - e
+// non il termine scritto in anagrafica: "Addebito in conto a scadenza" c'era su
+// 25 clienti, l'IBAN su 111, e agli altri la fattura diceva bonifico mentre la
+// banca addebitava. Il termine resta, e dice quando si paga.
+const pagaConAddebito = (cliente) => Boolean(String(cliente?.iban || '').trim());
 
-const MODALITA_PREDEFINITA_XML = 'MP05';
-
+// Come il cliente paga, nel codice del tracciato: addebito SDD, contanti per chi
+// ha quel termine, bonifico per tutti gli altri.
 const modalitaPagamentoXml = (cliente) => {
-    const testo = String(cliente?.pagamento || '');
-    return MODALITA_PAGAMENTO.find((modalita) => modalita.riconosce.test(testo))?.codice
-        || MODALITA_PREDEFINITA_XML;
+    if (pagaConAddebito(cliente)) {
+        return 'MP19';
+    }
+    return /contant/i.test(String(cliente?.pagamento || '')) ? 'MP01' : 'MP05';
 };
 
 // Quanti giorni passano fra la fattura e la sua scadenza, secondo il termine di
@@ -145,6 +145,7 @@ module.exports = {
     haNumero,
     isConfirmedInvoice,
     modalitaPagamentoXml,
+    pagaConAddebito,
     INVOICE_SERIES,
     invoiceCode,
     naturaPerIva,

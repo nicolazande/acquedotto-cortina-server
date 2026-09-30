@@ -159,12 +159,32 @@ const BLOCCATE = { ...IN_UFFICIO.daStampare, problema: { $ne: null } };
 // Le consegne nell'ordine in cui si preparano: alfabetico italiano, indifferente
 // alle maiuscole. Senza, "ANNO 8919 srl" finisce prima di "Achenza" e le buste
 // escono in un ordine che non e quello in cui si imbustano. Per nome, oppure per
-// localita e poi per indirizzo (che comincia con la via): le buste di Cortina
-// strada per strada, quelle fuori paese raggruppate per citta. A parita decide
-// `_id`: due stampe dello stesso blocco devono prendere le stesse consegne.
+// localita, zona e indirizzo (che comincia con la via): le buste del paese tutte
+// insieme, frazione per frazione e strada per strada, quelle fuori paese
+// raggruppate per citta. A parita decide `_id`: due stampe dello stesso blocco
+// devono prendere le stesse consegne.
 const ORDINI = {
     nome: { intestatario: 1, createdAt: 1, _id: 1 },
-    localita: { localita: 1, destinatario: 1, intestatario: 1, _id: 1 },
+    zona: { localita: 1, zona: 1, destinatario: 1, intestatario: 1, _id: 1 },
+};
+
+// Una zona sola, quando la si sceglie: vale anche per quelle gia stampate, cosi
+// il blocco di Zuel non si porta dietro le buste di un'altra zona rimaste da
+// segnare evase.
+const inZona = (filtro, zona) => (zona ? { ...filtro, zona } : filtro);
+
+// Quante buste ci sono da stampare in ogni zona, per scegliere cosa stampare, e
+// quante di quelle sono gia stampate e aspettano di essere segnate evase.
+const perZona = (filtro) => Consegna.aggregate([
+    { $match: filtro },
+    { $group: { _id: { $ifNull: ['$zona', ''] }, quante: { $sum: 1 } } },
+    { $sort: { quante: -1, _id: 1 } },
+]);
+
+const zoneDaStampare = async () => {
+    const [daStampare, stampate] = await Promise.all([perZona(STAMPABILI), perZona(IN_UFFICIO.stampate)]);
+    const giaStampate = new Map(stampate.map((riga) => [riga._id, riga.quante]));
+    return daStampare.map((riga) => ({ zona: riga._id, quante: riga.quante, stampate: giaStampate.get(riga._id) || 0 }));
 };
 
 const inOrdine = (filtro, limite, ordine = 'nome') => Consegna.find(filtro)
@@ -194,12 +214,12 @@ const blocco = async ({ daFare, uscite, limite, ordine }) => {
 // stesse, e cosi una stampa andata storta - la stampante inceppata, il PDF
 // chiuso per sbaglio - si rifa premendo di nuovo. Segnate evase quelle
 // stampate, la stampa passa alle prossime.
-const stampaDaConsegnare = async ({ limite, ordine } = {}) => {
+const stampaDaConsegnare = async ({ limite, ordine, zona } = {}) => {
     // Il segno porta l'ora di prima di leggere i dati, come per l'XML.
     const stampataIl = new Date();
     const cartacee = await blocco({
-        daFare: STAMPABILI,
-        uscite: IN_UFFICIO.stampate,
+        daFare: inZona(STAMPABILI, zona),
+        uscite: inZona(IN_UFFICIO.stampate, zona),
         limite: tetto(limite, MAX_DA_STAMPARE),
         ordine,
     });
@@ -225,7 +245,7 @@ const stampaDaConsegnare = async ({ limite, ordine } = {}) => {
 
     // Quante restano fuori per un problema: si dicono, altrimenti "Stampa (N)"
     // non arriverebbe mai a zero senza spiegazione.
-    const bloccate = await Consegna.countDocuments(BLOCCATE);
+    const bloccate = await Consegna.countDocuments(inZona(BLOCCATE, zona));
 
     if (daStampare.length === 0) {
         const motivi = [
@@ -236,7 +256,7 @@ const stampaDaConsegnare = async ({ limite, ordine } = {}) => {
         ].filter(Boolean);
         throw unprocessable(`Non c’è niente da stampare: ${motivi.length
             ? motivi.join(' Inoltre ')
-            : 'la coda delle consegne cartacee è vuota.'}`);
+            : `la coda delle consegne cartacee è vuota${zona ? ` per la zona ${zona}` : ''}.`}`);
     }
 
     // La stampa riuscita lascia il segno e toglie l'errore di un tentativo
@@ -254,7 +274,7 @@ const stampaDaConsegnare = async ({ limite, ordine } = {}) => {
         consegne: ids,
         // Quante aspettano il loro turno dopo queste: senza dirlo, si crederebbe
         // di aver stampato tutto.
-        rimaste: Math.max(0, await Consegna.countDocuments(STAMPABILI) - ids.length),
+        rimaste: Math.max(0, await Consegna.countDocuments(inZona(STAMPABILI, zona)) - ids.length),
         bloccate,
     };
 };
@@ -351,6 +371,7 @@ module.exports = {
     allegatoXml,
     fatturaDellaConsegna,
     stampaDaConsegnare,
+    zoneDaStampare,
     xmlDaTrasmettere,
     xmlDellaConsegna,
 };

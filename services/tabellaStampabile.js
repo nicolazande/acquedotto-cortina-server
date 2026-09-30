@@ -11,6 +11,7 @@
 // non una misura: ogni formato lo scala sulla propria pagina, quindi contano i
 // rapporti fra le colonne e non i valori assoluti. `numero` allinea a destra.
 
+const { importoItaliano } = require('../utils/money');
 const { creaZip } = require('../utils/zip');
 const { PdfDocument, larghezzaDelTesto } = require('./invoicePdf');
 
@@ -32,9 +33,8 @@ const riferimento = (colonna, riga) => {
 
 // Un importo si legge all'italiana nel PDF e nel Word (57.850,43); nell'Excel
 // resta un numero, perche lo si possa sommare.
-const IMPORTO = new Intl.NumberFormat('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const testoCella = (valore, colonna) => (
-    colonna?.euro && valore !== '' && Number.isFinite(Number(valore)) ? IMPORTO.format(Number(valore)) : valore
+    colonna?.euro && valore !== '' && Number.isFinite(Number(valore)) ? importoItaliano(valore) : valore
 );
 
 const cella = (valore, colonna, riga, indice) => {
@@ -154,7 +154,8 @@ const creaPdf = (colonne, righe, {
         primaPagina = false;
         y = MARGINE;
         pdf.text(ente, MARGINE, y, { size: 11, font: 'bold' });
-        pdf.text(titoloPagina, LARGHEZZA - MARGINE - 190, y, { size: 10 });
+        // Allineato al margine destro: un titolo lungo non esce dal foglio.
+        pdf.text(titoloPagina, MARGINE, y, { size: 10, align: 'right', width: LARGHEZZA - (2 * MARGINE) });
         y += 22;
         let x = MARGINE;
         colonne.forEach((c, i) => {

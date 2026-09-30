@@ -11,7 +11,7 @@
 
 const { modalitaPagamentoXml, naturaPerIva, numeroDocumento, tipoDocumentoXml } = require('../config/invoicing');
 const { AZIENDA } = require('../config/azienda');
-const { abiDellIban, cabDellIban } = require('../utils/iban');
+const { abiDellIban, cabDellIban, ibanCompatto, ibanValido } = require('../utils/iban');
 const { CODICE_DESTINATARIO_ASSENTE, codiceDestinatarioValido, destinatarioNonGestito } = require('../config/delivery');
 const { customerLabel } = require('../utils/customer');
 const { getTaxRate } = require('./billingCalculator');
@@ -173,8 +173,11 @@ const datiPagamento = ({ cliente, scadenza, totaleEuro }) => {
     const modalita = modalitaPagamentoXml(cliente);
     // Il conto che si dichiara e quello movimentato: un bonifico arriva su
     // quello dell'acquedotto, un addebito SDD esce da quello del cliente. Se
-    // manca, i suoi campi spariscono da soli: `tag` non scrive valori vuoti.
-    const iban = (modalita === 'MP19' ? cliente?.iban : AZIENDA.banca.iban) || '';
+    // manca, i suoi campi spariscono da soli: `tag` non scrive valori vuoti. Un
+    // IBAN del cliente scritto male resta fuori: lo SdI scarterebbe la fattura.
+    const iban = modalita === 'MP19'
+        ? (ibanValido(cliente?.iban) ? ibanCompatto(cliente.iban) : '')
+        : AZIENDA.banca.iban;
 
     return `    <DatiPagamento>
       <CondizioniPagamento>TP02</CondizioniPagamento>

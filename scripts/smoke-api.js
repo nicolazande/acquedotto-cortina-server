@@ -1060,7 +1060,7 @@ const testDelayFeeChargedOnce = async () => {
             const generata = await request('/fatture/genera-da-letture', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ letture: [lettura._id], data_fattura: OGGI, includeFixedCharge: false }),
+                body: JSON.stringify({ letture: [lettura._id], data_fattura: OGGI, includeFixedCharge: false, includeDelay: true }),
             });
             createdRecords.push({ resource: 'fatture', id: generata.body.fattura._id });
             createdRecords.push({ resource: 'scadenze', id: generata.body.fattura.scadenza });

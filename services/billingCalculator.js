@@ -266,6 +266,21 @@ const getLineTotal = ({ quantity, type, unitPrice, rateo = 1 }) => {
     return fromCents(multiplyCents(prezzoCents, quantity));
 };
 
+// Le quote fisse in piu di un cliente sono contatori virtuali con la matricola
+// del contatore vero e il suffisso "fisso2", "fisso3" e cosi via ("fisso" da
+// solo e il primo in piu). La loro riga si chiama con il suo numero, come
+// concordato con l'ufficio: il listino di quei contatori a volte e stato scelto
+// solo per il prezzo, e il suo nome in fattura confondeva.
+const QUOTA_FISSA_AGGIUNTIVA = /fisso\s*(\d*)\s*$/i;
+
+const descrizioneRiga = ({ contatore, type, listinoLabel }) => {
+    const aggiuntiva = type === 'fixed' && String(contatore?.seriale || '').match(QUOTA_FISSA_AGGIUNTIVA);
+    if (aggiuntiva) {
+        return `Quota fissa aggiuntiva ${aggiuntiva[1]}`.trim();
+    }
+    return `Spesa Acqua ${listinoLabel}`.trim();
+};
+
 const createLine = ({
     article,
     band,
@@ -284,7 +299,7 @@ const createLine = ({
     const listino = contatore?.listino;
 
     return {
-        descrizione: `Spesa Acqua ${listinoLabel}`.trim(),
+        descrizione: descrizioneRiga({ contatore, type, listinoLabel }),
         tipo_tariffa: band.tipo,
         tipo_attivita: contatore?.tipo_attivita,
         metri_cubi: quantity,

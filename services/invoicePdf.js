@@ -13,7 +13,7 @@ const { getLineTaxRate } = require('./billingCalculator');
 const { righeDeiDocumenti, righeDelDocumento } = require('./righeFattura');
 const { applyRate, fromCents, toCents } = require('../utils/money');
 const { AZIENDA } = require('../config/azienda');
-const { ibanLeggibile } = require('../utils/iban');
+const { ibanLeggibile, ibanNascosto } = require('../utils/iban');
 
 const PAGE_WIDTH = 595;
 const PAGE_HEIGHT = 842;
@@ -56,7 +56,7 @@ const { isEmptyValue: isEmpty, numberOrZero, senzaAccenti } = require('../utils/
 const { unprocessable } = require('../utils/errors');
 const { formatItalianDate } = require('../utils/dates');
 const { customerLabel } = require('../utils/customer');
-const { haNumero, isConfirmedInvoice, numeroDocumento } = require('../config/invoicing');
+const { haNumero, isConfirmedInvoice, numeroDocumento, pagaConAddebito } = require('../config/invoicing');
 
 const asciiText = (value) => senzaAccenti(value)
     .replace(/€/g, 'EUR')
@@ -559,11 +559,19 @@ const drawDocumentBox = (pdf, fattura) => {
     pdf.cellText(formatMoney(fattura.totale_fattura), 440, 370, 131, 24, { align: 'center', font: 'bold', size: 14 });
 };
 
+// Come si paga: chi ha dato l'IBAN non fa niente, la banca addebita alla
+// scadenza sul suo conto; gli altri fanno il bonifico sul conto dell'acquedotto.
+// E la stessa regola del tracciato elettronico (`pagaConAddebito`).
 const drawPayment = (pdf, fattura, scadenza) => {
     pdf.rect(20, 360, 109, 20, { fill: LIGHT_GRAY, stroke: BLACK });
     pdf.rect(134, 360, 149, 20, { fill: GRAY, stroke: BLACK });
     pdf.cellText('Data Scadenza:', 20, 360, 109, 20, { align: 'center', font: 'bold', size: 8 });
     pdf.cellText(formatItalianDate(scadenza?.scadenza || fattura.data_fattura), 134, 360, 149, 20, { align: 'center', font: 'bold', size: 8 });
+    if (pagaConAddebito(fattura.cliente)) {
+        pdf.text('Addebito in conto a scadenza', 21, 400, { font: 'bold', size: 8 });
+        pdf.text(`sul conto IBAN:   ${ibanNascosto(fattura.cliente.iban)}`, 21, 424, { font: 'bold', size: 8 });
+        return;
+    }
     pdf.text('Bonifico presso:', 21, 400, { font: 'bold', size: 8 });
     pdf.text(`${companyConfig.bankName}    IBAN:   ${companyConfig.iban}`, 21, 424, { font: 'bold', size: 8 });
 };

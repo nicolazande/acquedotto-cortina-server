@@ -108,6 +108,22 @@ test('quota fissa: quantita 1 al prezzo della fascia, marcata come quota', () =>
     assert.equal(risultato.fixedCharge.total, 99);
 });
 
+test('quota fissa aggiuntiva: il contatore virtuale "fissoN" da il suo numero alla riga', () => {
+    const descrizione = (seriale, fasce = FASCE_STANDARD) => righeFisse(calcola({
+        contatore: contatore({ seriale }),
+        fasce,
+        includeFixedCharge: true,
+    }))[0].descrizione;
+
+    assert.equal(descrizione('346041fisso2'), 'Quota fissa aggiuntiva 2');
+    assert.equal(descrizione('04574051/fisso 3'), 'Quota fissa aggiuntiva 3');
+    assert.equal(descrizione('020225_fisso'), 'Quota fissa aggiuntiva');
+    // Il contatore vero tiene la descrizione di sempre, anche nei consumi.
+    assert.match(descrizione('346041'), /^Spesa Acqua/);
+    assert.ok(righeConsumo(calcola({ contatore: contatore({ seriale: '346041fisso2' }) }))
+        .every((riga) => riga.descrizione.startsWith('Spesa Acqua')));
+});
+
 test('quota fissa esclusa: resta segnalata come disponibile ma non applicata', () => {
     const risultato = calcola({ includeFixedCharge: false });
 

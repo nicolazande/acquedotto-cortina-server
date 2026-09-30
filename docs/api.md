@@ -103,13 +103,15 @@ POST   /api/consegne/:id/annulla                            annulla
 ```
 
 `stampa` restituisce un solo PDF con le fatture da consegnare a mano, una per pagina, a
-blocchi di duecento: finche non vengono segnate evase ripete lo stesso blocco;
+blocchi di duecento, per nome o con `{ ordine: 'zona' }` per localita, zona e via; con
+`{ zona: 'ZUEL' }` solo le buste di quella zona. Finche non vengono segnate evase ripete lo stesso blocco;
 `X-Consegne-Rimaste` dice quante aspettano dopo, `X-Consegne-Bloccate` quante restano
 fuori per un problema scritto sulla riga. `xml` restituisce un archivio zip con un
 file per fattura elettronica da trasmettere, fino a mille; `X-Consegne-Saltate` dice quante
 sono rimaste fuori perche non si possono emettere, `X-Consegne-Rimaste` quante non ci
 stavano. Nessuna delle due chiude le consegne: lasciano il segno `stampata_il` o
-`scaricata_il`, e `evase` con `{ quali: 'stampate' | 'scaricate' }` le segna evase tutte
+`scaricata_il`, e `evase` con `{ quali: 'stampate' | 'scaricate' }` (per le stampate anche
+`zona`, per chiudere solo quelle) le segna evase tutte
 insieme. Risponde `{ quali, evase, daRifare }`: `daRifare` sono quelle rimaste aperte
 perche la fattura e tornata bozza o e cambiata dopo la stampa o lo scarico.
 
@@ -282,8 +284,8 @@ password solo come testo.
 
 ### `/api/fatture`
 - `POST /genera-da-letture` — corpo: `letture` (array di id), `data_fattura`,
-  `data_scadenza`, `includeFixedCharge`, `includeDelay` (la mora, inclusa se non
-  si dice altro), `tipo_documento`. Crea sempre una **bozza, senza numero**.
+  `data_scadenza`, `includeFixedCharge`, `includeDelay` (la mora, inclusa solo
+  con `true`), `tipo_documento`. Crea sempre una **bozza, senza numero**.
 - `GET /generazione/anteprima` — `limit` (default e massimo 2000), `includeFixedCharge`,
   `includeDelay`. Raggruppa per cliente le letture non ancora fatturate e ne mostra
   il calcolo, senza mai spezzare un cliente; dice quali letture non entrano in
@@ -334,7 +336,8 @@ Senza un server di posta configurato l'elaborazione non fallisce: e una
 **prova**. Non spedisce nulla, non data la fattura, e lascia la consegna in coda
 con l'esito scritto sulla riga (`simulate` nei conteggi).
 `GET /api/consegne/riepilogo` riporta lo stato del trasporto in `trasporto`, e il lavoro
-d'ufficio in `daStampare`, `stampate`, `daTrasmettere` e `scaricate`.
+d'ufficio in `daStampare`, `stampate`, `daTrasmettere` e `scaricate`; `zone` elenca
+le buste da stampare per zona (`{ zona, quante, stampate }`).
 
 Viste disponibili con `?vista=`: `in-coda`, `da-stampare`, `automatiche`,
 `errori`, `inviate`, `elettroniche`.

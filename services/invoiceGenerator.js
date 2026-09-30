@@ -227,7 +227,7 @@ const createManualInvoice = (input) => runWithOptionalTransaction((session) => (
 const createInvoiceFromReadingsInSession = async ({
     data_fattura,
     data_scadenza,
-    includeDelay = true,
+    includeDelay = false,
     includeFixedCharge = true,
     letture,
     tipo_documento = 'Fattura',
@@ -284,9 +284,10 @@ const createInvoiceFromReadingsInSession = async ({
             session,
         });
 
-        // La mora si puo lasciare fuori: in un giro in cui i pagamenti non sono
-        // ancora stati registrati colpirebbe chi ha pagato.
-        const precedenti = includeDelay === false
+        // La mora entra solo se la si chiede: gli incassi si registrano nel
+        // programma di contabilita, e con i pagamenti non registrati colpirebbe
+        // chi ha pagato. Chi chiama senza dirlo non la aggiunge.
+        const precedenti = includeDelay !== true
             ? new Map()
             : await fatturePrecedenti([cliente._id], invoiceDate, session);
         const rigaMora = rigaMoraPer({

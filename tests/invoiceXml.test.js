@@ -279,6 +279,32 @@ test('chi paga con addebito dichiara il proprio conto, non quello dell acquedott
     assert.doesNotMatch(xml, /<IstitutoFinanziario>/);
 });
 
+test('chi ha dato l IBAN paga con addebito, qualunque termine abbia in anagrafica', () => {
+    // La regola dell'ufficio: i clienti con l'IBAN vanno direttamente in banca.
+    const { xml } = genera({
+        cliente: { ...cliente, pagamento: '30 Giorni data fattura', iban: 'IT60 X054 2811 1010 0000 0123 456' },
+    });
+
+    assert.match(xml, /<ModalitaPagamento>MP19<\/ModalitaPagamento>/);
+    assert.match(xml, /<IBAN>IT60X0542811101000000123456<\/IBAN>/);
+});
+
+test('un IBAN del cliente scritto male resta fuori dal file, che altrimenti verrebbe scartato', () => {
+    const { xml } = genera({ cliente: { ...cliente, iban: 'ITY0851161070000000027314' } });
+
+    assert.match(xml, /<ModalitaPagamento>MP19<\/ModalitaPagamento>/);
+    assert.doesNotMatch(xml, /<IBAN>/);
+    assert.doesNotMatch(xml, /<ABI>/);
+});
+
+test('con un IBAN estero il file non inventa ABI e CAB', () => {
+    const { xml } = genera({ cliente: { ...cliente, iban: 'GB29 NWBK 6016 1331 9268 19' } });
+
+    assert.match(xml, /<IBAN>GB29NWBK60161331926819<\/IBAN>/);
+    assert.doesNotMatch(xml, /<ABI>/);
+    assert.doesNotMatch(xml, /<CAB>/);
+});
+
 // Chi il tracciato non sa ancora servire: meglio un rifiuto con il motivo che un
 // file da privato italiano intestato a un cliente di Malta.
 

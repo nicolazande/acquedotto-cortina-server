@@ -98,18 +98,22 @@ const azione = (esegui, action, descrizione) => async (req, res) => {
     }
 };
 
+// La zona scelta nella pagina: un testo, oppure niente per tutte.
+const testoDellaRichiesta = (valore) => (typeof valore === 'string' ? valore.trim() : '');
+
 // Tutte insieme le consegne gia stampate, o gia scaricate: cosa si e chiuso, e
 // quante, resta scritto come per quelle evase una per una.
 const CHE_COSA = { stampate: 'già stampate', scaricate: 'con l’XML già scaricato' };
 
 const segnaEvaseInBlocco = async (req, res) => {
     try {
-        const esito = await segnaEvase({ quali: req.body.quali });
+        const esito = await segnaEvase({ quali: req.body.quali, zona: testoDellaRichiesta(req.body.zona) });
         await registra(
             req,
             null,
             'consegna.evase',
-            `Segnate evase ${esito.evase} consegne ${CHE_COSA[esito.quali]}, ${esito.daRifare} da rifare`,
+            `Segnate evase ${esito.evase} consegne ${CHE_COSA[esito.quali]}${esito.zona ? ` (zona ${esito.zona})` : ''}, `
+                + `${esito.daRifare} da rifare`,
             esito
         );
         res.status(200).json(esito);
@@ -122,10 +126,15 @@ const segnaEvaseInBlocco = async (req, res) => {
 // stampa, si controlla, e solo dopo si dichiarano evase.
 const stampa = async (req, res) => {
     try {
-        const { buffer, filename, stampate, rimaste, bloccate } = await stampaDaConsegnare({ limite: req.body.limite, ordine: req.body.ordine });
+        const zona = testoDellaRichiesta(req.body.zona);
+        const { buffer, filename, stampate, rimaste, bloccate } = await stampaDaConsegnare({
+            limite: req.body.limite,
+            ordine: req.body.ordine,
+            zona,
+        });
 
-        await registra(req, null, 'consegna.stampata', `Stampate ${stampate} fatture da consegnare`, {
-            stampate, rimaste, bloccate,
+        await registra(req, null, 'consegna.stampata', `Stampate ${stampate} fatture da consegnare${zona ? ` (zona ${zona})` : ''}`, {
+            stampate, rimaste, bloccate, zona: zona || undefined,
         });
 
         res.setHeader('Content-Type', 'application/pdf');

@@ -155,6 +155,15 @@ che non sia gia stata fatturata nello stesso anno per quello stesso contatore
 Quando piu fasce fisse sono valide, viene scelta quella il cui intervallo contiene
 il consumo; se nessuna corrisponde si usa la prima.
 
+Chi paga **piu quote fisse** - 28 clienti, fra cui il Panificio Ghedina - ha un
+contatore virtuale per ognuna in piu, con la matricola del contatore vero e il
+suffisso `fisso2`, `fisso3` e cosi via (`fisso` da solo vale una). La loro riga
+si chiama **"Quota fissa aggiuntiva 2"**, "3" e cosi via, come concordato con
+l'ufficio a settembre 2026: prima usciva "Spesa Acqua" con il nome del listino, e
+il listino di quei contatori a volte e stato scelto solo per il prezzo
+("SOCIETA' IMMOBILIARI" sul Panificio). La regola sta in `descrizioneRiga`
+(`services/billingCalculator.js`).
+
 ## Contatori condominiali e riparto
 
 In un edificio con un **contatore condominiale** (tipo "Condominali Ripartiti",
@@ -208,8 +217,11 @@ esente IVA). Le regole stanno in `services/mora.js`:
   scadenza torna addebitabile (`liberaMora`);
 - l'**anteprima** della generazione la mostra cliente per cliente e nel
   riepilogo (quanti clienti, quanto in tutto), anche quando e esclusa;
-- si puo **lasciare fuori** (`includeDelay: false` nella generazione e
-  nell'anteprima, l'interruttore *Mora per i ritardi* nella pagina).
+- entra **solo se la si chiede** (`includeDelay: true` nella generazione e
+  nell'anteprima, l'interruttore *Mora per i ritardi* nella pagina, che parte
+  spento): gli incassi si registrano nel programma di contabilita, e l'ufficio
+  ha deciso di fatturare il 2026 senza mora. Chi chiama senza dirlo non la
+  aggiunge, e la generazione dalla scheda di una lettura non la aggiunge mai.
 
 > La mora e affidabile solo se gli incassi sono registrati. Sulla copia dei dati
 > di settembre 2026 le scadenze 2025 aperte sono quasi tutte pagamenti mai
@@ -421,6 +433,21 @@ scadenza, importo e IBAN. Quest'ultimo blocco e quello che dice al cliente dove 
 quando pagare: chi riceve solo la fattura elettronica, senza copia di cortesia,
 non lo saprebbe altrimenti. Il conto che compare dipende da come paga: il proprio
 se e un addebito SEPA (MP19), quello dell'acquedotto se e un bonifico (MP05).
+
+**Paga con addebito chi ci ha dato l'IBAN** (`pagaConAddebito` in
+`config/invoicing.js`): e la regola dell'ufficio, "i clienti che hanno l'IBAN
+vanno direttamente in banca". Il termine scritto in anagrafica non decide: il
+vecchio programma scriveva "Addebito in conto a scadenza" su 25 clienti, l'IBAN
+c'era su 111, e agli altri 86 la fattura diceva bonifico mentre la banca
+addebitava. Il termine resta, e dice solo quando si paga. Il PDF dice "Addebito in
+conto a scadenza" con il conto del cliente mascherato (`ibanNascosto`); l'XML
+porta l'IBAN del cliente solo se e valido (`ibanValido`), perche lo SdI
+scarterebbe il file. Le fatture aperte di questi clienti escono nell'elenco
+**Addebiti** della pagina Elenchi (`services/elencoAddebiti.js`), la distinta da
+passare alla banca, con scritto accanto a ogni riga cosa manca: IBAN non valido
+(6 clienti a settembre 2026) o mandato senza data (5). Il file SEPA vero e
+proprio (CBI SDD) aspetta dalla banca il codice identificativo creditore e il
+codice CUC, che nei dati non ci sono.
 
 I dati di chi emette - ragione sociale, sede, REA, contatti, banca - stanno tutti
 in `config/azienda.js`, **un posto solo**: sono gli stessi che finiscono sul PDF e

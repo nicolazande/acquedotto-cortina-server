@@ -101,7 +101,7 @@ const chiudiGruppo = (gruppo, { articlesByCode, includeDelay, oggi, precedenti }
 // per cliente.
 const calcolaGruppi = async (letture, {
     annualFixedLookupCache,
-    includeDelay = true,
+    includeDelay = false,
     includeFixedCharge = true,
 } = {}) => {
     const oggi = new Date();
@@ -186,7 +186,7 @@ const calcolaGruppi = async (letture, {
     return {
         clienti: [...gruppi.values()].map((gruppo) => chiudiGruppo(gruppo, {
             articlesByCode,
-            includeDelay: includeDelay !== false,
+            includeDelay: includeDelay === true,
             oggi,
             precedenti,
         })),
@@ -260,7 +260,7 @@ const scegliLetture = async (limite) => {
     };
 };
 
-const previewBillingBatch = async ({ includeDelay = true, includeFixedCharge = true, limit = LIMITE_MASSIMO } = {}) => {
+const previewBillingBatch = async ({ includeDelay = false, includeFixedCharge = true, limit = LIMITE_MASSIMO } = {}) => {
     const limite = Math.min(Math.max(Number.parseInt(limit, 10) || LIMITE_MASSIMO, 1), LIMITE_MASSIMO);
     const { ids, clientiEsclusi, lettureEscluse } = await scegliLetture(limite);
     const letture = await Lettura.find({ _id: { $in: ids } })
@@ -292,7 +292,7 @@ const previewBillingBatch = async ({ includeDelay = true, includeFixedCharge = t
             anomalie: anomalies.length + clienti.reduce((total, gruppo) => total + gruppo.anomalies.length, 0),
             daVerificare: pronti.filter((gruppo) => gruppo.daVerificare).length,
             mora: {
-                inclusa: includeDelay !== false,
+                inclusa: includeDelay === true,
                 clienti: conMora.length,
                 importo: sumMoneyBy(conMora, (gruppo) => gruppo.mora.totals.totale_fattura),
             },

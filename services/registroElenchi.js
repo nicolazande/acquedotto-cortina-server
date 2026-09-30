@@ -7,6 +7,7 @@
 // Sta fra i servizi e non in `config` perche i servizi che produce li deve
 // conoscere, e `config` e una foglia: da li non si guarda verso l'alto.
 
+const elencoAddebiti = require('./elencoAddebiti');
 const elencoBim = require('./elencoBim');
 const elencoCategorie = require('./elencoCategorie');
 const elencoSubentri = require('./elencoSubentri');
@@ -49,6 +50,16 @@ const ELENCHI = {
         colonne: elencoSubentri.COLONNE,
         righe: elencoSubentri.righeDellAnno,
         riepilogo: elencoSubentri.riepilogoDellAnno,
+    },
+    // La distinta per la banca: le fatture aperte di chi paga con l'addebito.
+    addebiti: {
+        nomeFile: (anno) => `Addebiti_in_banca_${anno}`,
+        titolo: (anno) => `Addebiti ${anno}`,
+        intestazione: (anno) => `Addebiti in conto da chiedere alla banca - Fatture ${anno}`,
+        piede: elencoAddebiti.piede,
+        colonne: elencoAddebiti.COLONNE,
+        righe: elencoAddebiti.righeDellAnno,
+        riepilogo: elencoAddebiti.riepilogoDellAnno,
     },
 };
 

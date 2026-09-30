@@ -24,9 +24,12 @@ const consegnaSchema = new Schema(
             required: true,
         },
         destinatario: { type: String },
-        // La localita dell'indirizzo di una copia postale: la stampa puo mettere
-        // le buste in ordine di localita e via. La scrive Prepara.
+        // Dove va una copia postale: la localita (il paese o la citta) e la zona
+        // (la frazione in paese, la citta fuori). La stampa mette le buste in
+        // ordine di localita, zona e via, o ne stampa una zona sola. Le scrive
+        // Prepara.
         localita: { type: String },
+        zona: { type: String },
         // Il progressivo con cui il file e stato trasmesso allo SdI. Cambia a
         // ogni tentativo: il nome del file deve essere nuovo, altrimenti la
         // rispedizione viene rifiutata come gia inviata.

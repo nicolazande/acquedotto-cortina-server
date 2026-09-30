@@ -18,6 +18,7 @@ const {
     chiudibiliInBlocco,
     indirizzoPostale,
     pianoConsegne,
+    zonaPostale,
 } = require('../services/deliveryPlan');
 
 const cliente = (campi = {}) => ({
@@ -122,13 +123,44 @@ test("l'indirizzo di fatturazione ha la precedenza sulla residenza", () => {
     assert.equal(indirizzo, 'Via Cadore 10 - 32100 Belluno');
 });
 
-test('la copia postale porta anche la localita, per ordinare le buste', () => {
+test('la copia postale porta anche la zona, per ordinare e scegliere le buste', () => {
     const piano = pianoConsegne({ cliente: cliente({ localita_fatturazione: 'Belluno', indirizzo_fatturazione: 'Via Cadore' }), fattura: fattura() });
     const postale = piano.consegne.find((consegna) => consegna.canale === 'postale');
 
-    assert.equal(postale.localita, 'Belluno');
-    assert.equal(pianoConsegne({ cliente: cliente({ indirizzo_residenza: '' }), fattura: fattura() })
-        .consegne.find((consegna) => consegna.canale === 'postale').localita, '');
+    assert.equal(postale.zona, 'BELLUNO');
+    assert.equal(postale.localita, 'BELLUNO');
+    const senzaIndirizzo = pianoConsegne({ cliente: cliente({ indirizzo_residenza: '' }), fattura: fattura() })
+        .consegne.find((consegna) => consegna.canale === 'postale');
+    assert.equal(senzaIndirizzo.zona, '');
+    assert.equal(senzaIndirizzo.localita, '');
+
+    // In paese la localita e il paese con il suo nome, la zona e la frazione.
+    const aZuel = pianoConsegne({ cliente: cliente({ localita_fatturazione: 'Cortina', indirizzo_fatturazione: 'Zuel di Sotto' }), fattura: fattura() })
+        .consegne.find((consegna) => consegna.canale === 'postale');
+    assert.equal(aZuel.localita, "CORTINA D'AMPEZZO");
+    assert.equal(aZuel.zona, 'ZUEL');
+});
+
+test('in paese la zona e la frazione scritta nella via, fuori e la citta', () => {
+    const zona = (indirizzo_residenza, localita_residenza = "Cortina d'Ampezzo") => zonaPostale({ indirizzo_residenza, localita_residenza });
+
+    assert.equal(zona('ZUEL DI SOTTO'), 'ZUEL');
+    assert.equal(zona('Casa S.Marco B Zuel di Sotto'), 'ZUEL');
+    assert.equal(zona("CA'ZUEL"), 'ZUEL');
+    assert.equal(zona('LOC.ACQUABONA 20'), 'ACQUABONA');
+    assert.equal(zona('Via Acquabona'), 'ACQUABONA');
+    assert.equal(zona('ACQUABOBNA DI SOTTO'), 'ACQUABONA');
+    assert.equal(zona('Località Pian da Lago, s.n.'), 'PIAN DA LAGO');
+    assert.equal(zona('PEZIè VILLA SORAPIS'), 'PEZIÈ');
+    assert.equal(zona("PEZIE'"), 'PEZIÈ');
+    // Le altre vie del paese stanno insieme, sotto il nome del paese, qualunque
+    // grafia abbia la localita.
+    assert.equal(zona('Corso Italia', "CORTINA D'AMPEZZO"), "CORTINA D'AMPEZZO");
+    assert.equal(zona('Corso Italia', 'Cortina d’Ampezzo (BL)'), "CORTINA D'AMPEZZO");
+    assert.equal(zona('Zuel di Sopra', 'Cortina'), 'ZUEL');
+    // Fuori paese conta la citta, anche con una via che somiglia a una frazione.
+    assert.equal(zona('Via Campo di Marte', 'Firenze'), 'FIRENZE');
+    assert.equal(zona('Via Roma', '  venezia   mestre '), 'VENEZIA MESTRE');
 });
 
 test('un indirizzo senza localita non e un indirizzo', () => {
@@ -583,7 +615,8 @@ const stampata = () => {
     return inCoda({
         cliente: 'cliente-1',
         destinatario: indirizzoPostale(cliente()),
-        localita: cliente().localita_residenza,
+        localita: cliente().localita_residenza.toUpperCase(),
+        zona: zonaPostale(cliente()),
         documento: piano.documento,
         intestatario: piano.intestatario,
         automatica: false,

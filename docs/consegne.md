@@ -197,10 +197,20 @@ una consegna: si stampa o si scarica, si controlla, e solo dopo la si segna evas
 
 4. **Stampa** (`POST /api/consegne/stampa`) restituisce un solo PDF con le
    fatture da consegnare a mano, una per pagina, a blocchi di duecento nell'ordine
-   delle buste: per nome, oppure (`ordine: 'localita'`) per localita e poi per
-   indirizzo, che comincia con la via - le buste di Cortina strada per strada,
-   quelle fuori paese raggruppate per citta. La localita la scrive *Prepara*
-   sulla consegna (`localita`). La stampa non sposta niente: finche non vengono segnate evase, la
+   delle buste: per nome, oppure (`ordine: 'zona'`) per localita, zona e
+   indirizzo, che comincia con la via. La localita e il paese - con il suo nome,
+   anche se l'indirizzo dice solo "Cortina" - o la citta; la zona e la frazione
+   per chi sta in paese - la si riconosce nella via, perche la localita e
+   Cortina per tutti: Zuel, Acquabona, Pian da Lago, Peziè e le altre elencate
+   in `services/deliveryPlan.js` - e la citta per gli altri; le vie del centro
+   stanno sotto il nome del paese. Cosi le buste del paese restano un blocco
+   solo, frazione per frazione. Le scrive *Prepara* sulla consegna (`localita`,
+   `zona`). Con `zona` la stampa prende solo le buste di quella zona, anche fra
+   quelle gia stampate: le fatture di Zuel da portare a mano, o quelle per la
+   citta di un amministratore. Il riepilogo della coda dice quante ce ne sono per
+   zona, e quante gia stampate (`zone`); *Evase le stampate* con una zona scelta
+   chiude solo quelle, perche le buste di un'altra zona rimaste da un blocco
+   andato storto non sono uscite. La stampa non sposta niente: finche non vengono segnate evase, la
    successiva ripete lo stesso blocco, cosi una stampa andata storta - la
    stampante inceppata, il PDF chiuso per sbaglio - si rifa premendo di nuovo.
    Nel blocco entrano prima quelle gia stampate e non ancora evase, poi le

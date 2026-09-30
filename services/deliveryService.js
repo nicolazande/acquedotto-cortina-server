@@ -29,7 +29,7 @@ const {
 } = require('../config/delivery');
 const { AZIENDA } = require('../config/azienda');
 const { FILTRO_EMESSE_DAL_GESTIONALE, isConfirmedInvoice } = require('../config/invoicing');
-const { allegatoPdf, allegatoXml, fatturaDellaConsegna } = require('./documentiConsegna');
+const { allegatoPdf, allegatoXml, fatturaDellaConsegna, zoneDaStampare } = require('./documentiConsegna');
 const { FATTURA_IN_BOZZA, aggiornamentoCoda, chiudibiliInBlocco, chiusura, pianoConsegne } = require('./deliveryPlan');
 const { inviaEmail, statoTrasporto } = require('./mailer');
 const { badRequest, notFound, unprocessable } = require('../utils/errors');
@@ -396,13 +396,17 @@ const segnaConsegnata = async (id, { note } = {}) => {
 // Quelle la cui fattura e cambiata dopo, o e tornata bozza, non si chiudono:
 // perdono il segno, perche il documento uscito non vale piu, e la stampa o
 // l'archivio successivo le rifanno. La bozza lo dice anche sulla riga.
-const segnaEvase = async ({ quali } = {}) => {
+//
+// Le stampate si chiudono anche una zona sola: dopo aver stampato le buste di
+// Zuel si chiudono quelle, e non le buste di un'altra zona rimaste da un blocco
+// andato storto, che non sono mai uscite dalla stampante.
+const segnaEvase = async ({ quali, zona } = {}) => {
     if (!Object.hasOwn(EVASE_IN_BLOCCO, quali)) {
         throw badRequest('Si segnano evase in blocco solo le consegne già stampate o già scaricate.');
     }
 
     const segno = EVASE_IN_BLOCCO[quali];
-    const filtro = IN_UFFICIO[quali];
+    const filtro = zona && quali === 'stampate' ? { ...IN_UFFICIO[quali], zona } : IN_UFFICIO[quali];
     const uscite = await Consegna.find(filtro, { fattura: 1, [segno]: 1 }).lean();
     const fatture = await Fattura.find(
         { _id: { $in: uscite.map((consegna) => consegna.fattura) } },
@@ -432,7 +436,7 @@ const segnaEvase = async ({ quali } = {}) => {
         campi: { evasa_a_mano: true },
     });
 
-    return { quali, evase, daRifare: inBozza.length + cambiate.length };
+    return { quali, zona: filtro.zona, evase, daRifare: inBozza.length + cambiate.length };
 };
 
 // L'annullamento di una persona e una decisione: Prepara non la rimette in coda
@@ -509,11 +513,12 @@ const contaInUfficio = async () => {
 };
 
 const riepilogo = async () => {
-    const [righe, inUfficio, clientiPerModalita, elettroniche] = await Promise.all([
+    const [righe, inUfficio, zone, clientiPerModalita, elettroniche] = await Promise.all([
         Consegna.aggregate([
             { $group: { _id: { stato: '$stato', tipo: '$tipo', canale: '$canale' }, quante: { $sum: 1 } } },
         ]),
         contaInUfficio(),
+        zoneDaStampare(),
         Cliente.aggregate([
             { $group: { _id: { $ifNull: ['$stampa_cortesia', 'non impostata'] }, quante: { $sum: 1 } } },
             { $sort: { quante: -1 } },
@@ -529,6 +534,8 @@ const riepilogo = async () => {
         perCanale: contaPer(inCoda, 'canale'),
         // Da stampare, gia stampate, da trasmettere, gia scaricate.
         ...inUfficio,
+        // Le buste da stampare zona per zona: la frazione in paese, la citta fuori.
+        zone,
         clienti: {
             perModalita: clientiPerModalita.map((riga) => ({ modalita: riga._id, quanti: riga.quante })),
             conFatturaElettronica: elettroniche,
