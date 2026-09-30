@@ -40,15 +40,19 @@ const numeroDocumento = (fattura) => {
     return invoiceCode(fattura) || [fattura.anno, fattura.numero].filter(Boolean).join('/');
 };
 
-// Una fattura confermata: la spunta o lo stato, che il modello tiene allineati.
-// Decide sia il blocco delle modifiche sia se la fattura si puo consegnare, o
-// mostrare al cliente nel suo portale. Il filtro e la stessa regola scritta per
-// il database.
+// Una fattura confermata: la spunta o lo stato. Il modello li tiene allineati,
+// ma chi scrive senza passare dal modello - l'import da Gesco, con pymongo -
+// ne scrive uno solo, e guardare solo `stato` faceva sparire le confermate
+// importate sia dalle bozze sia dalle confermate. Decide il blocco delle
+// modifiche, la consegna, il portale, la mora e gli elenchi; i filtri sono la
+// stessa regola scritta per il database, ed e l'unico modo di chiederlo.
 const isConfirmedInvoice = (fattura) => (
     fattura?.confermata === true
     || String(fattura?.stato || '').toLowerCase() === 'confermata'
 );
-const FILTRO_CONFERMATE = { $or: [{ confermata: true }, { stato: /^confermata$/i }] };
+const CONFERMATA = [{ confermata: true }, { stato: /^confermata$/i }];
+const FILTRO_CONFERMATE = { $or: CONFERMATA };
+const FILTRO_BOZZE = { $nor: CONFERMATA };
 
 // Tipo di documento nel tracciato. Il campo `tipo_documento` e testo libero
 // nell'anagrafica importata, ma assume solo due valori: "Fattura" su 3.467
@@ -103,14 +107,10 @@ const naturaPerIva = (testoIva) => {
 // banca addebitava. Il termine resta, e dice quando si paga.
 const pagaConAddebito = (cliente) => Boolean(String(cliente?.iban || '').trim());
 
-// Come il cliente paga, nel codice del tracciato: addebito SDD, contanti per chi
-// ha quel termine, bonifico per tutti gli altri.
-const modalitaPagamentoXml = (cliente) => {
-    if (pagaConAddebito(cliente)) {
-        return 'MP19';
-    }
-    return /contant/i.test(String(cliente?.pagamento || '')) ? 'MP01' : 'MP05';
-};
+// Come il cliente paga, nel codice del tracciato: addebito SDD o bonifico. Il
+// PDF dice lo stesso con le parole (`drawPayment`). C'era anche "contanti", che
+// il PDF non conosceva e che nessun cliente ha mai avuto.
+const modalitaPagamentoXml = (cliente) => (pagaConAddebito(cliente) ? 'MP19' : 'MP05');
 
 // Quanti giorni passano fra la fattura e la sua scadenza, secondo il termine di
 // pagamento scritto sul documento. Prima erano trenta per tutti: una fattura per
@@ -138,6 +138,7 @@ const giorniDelTermine = (tipoPagamento) => {
 };
 
 module.exports = {
+    FILTRO_BOZZE,
     FILTRO_CONFERMATE,
     FILTRO_EMESSE_DAL_GESTIONALE,
     emessaDalGestionale,

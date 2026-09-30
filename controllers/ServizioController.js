@@ -21,14 +21,30 @@ const {
 } = require('../services/invoiceAuditService');
 const { ricalcolaTotaliFattura } = require('../services/invoiceGenerator');
 const { liberaMora } = require('../services/mora');
+const { getTaxRate } = require('../services/billingCalculator');
+const { recordId } = require('../utils/mongo');
 
 const populate = 'lettura articolo fattura listino fascia';
+
+// L'aliquota di una riga e quella del suo articolo quando la riga nasce o
+// cambia articolo: il totale, il PDF e la fattura elettronica la leggono dalla
+// riga. Cambiando l'articolo restava l'aliquota del vecchio; correggere solo la
+// descrizione di una riga vecchia non deve invece cambiarle l'IVA, anche se nel
+// frattempo l'articolo e cambiato.
+const conAliquotaDellArticolo = async (dati, articoloDiPrima) => {
+    const articoloId = recordId(dati.articolo);
+    if (!articoloId || articoloId === recordId(articoloDiPrima)) {
+        return dati;
+    }
+    const articolo = await Articolo.findById(articoloId).select('iva').lean();
+    return articolo ? { ...dati, aliquota_iva: getTaxRate(articolo) } : dati;
+};
 
 const createServizio = async (req, res) => {
     try {
         await assertInvoiceEditableById(req.body.fattura, 'aggiungere righe servizio', unlockOptions(req));
         const { sbloccoConfermato, ...dati } = req.body;
-        const servizio = await Servizio.create(dati);
+        const servizio = await Servizio.create(await conAliquotaDellArticolo(dati));
         // I totali della fattura sono la somma delle righe: ogni volta che le
         // righe cambiano vanno rifatti, altrimenti il documento dice una cifra
         // e le sue righe un'altra.
@@ -45,7 +61,7 @@ const updateServizio = async (req, res) => {
         const before = await assertServiceInvoiceEditable(req.params.id, 'modificare righe servizio', unlockOptions(req));
         await assertInvoiceEditableById(req.body.fattura, 'spostare righe servizio', unlockOptions(req));
         const { sbloccoConfermato, ...dati } = req.body;
-        const after = await Servizio.findByIdAndUpdate(req.params.id, dati, { new: true }).lean();
+        const after = await Servizio.findByIdAndUpdate(req.params.id, await conAliquotaDellArticolo(dati, before?.articolo), { new: true }).lean();
 
         // Se la riga cambia importo, o passa a un'altra fattura, tornano i conti
         // di entrambe.
@@ -88,7 +104,14 @@ const associateLettura = associateRecords({
     targetParam: 'letturaId',
 });
 
+// Una riga che cambia articolo ne prende l'aliquota, e la sua fattura rifa i
+// totali: come quando la si modifica dal suo modulo. La stessa strada serve il
+// collegamento fatto dalla parte dell'articolo (ArticoloController).
 const associateArticolo = associateRecords({
+    dopo: async ({ salvato: servizio, collegato: articolo }) => {
+        await Servizio.updateOne({ _id: servizio._id }, { $set: { aliquota_iva: getTaxRate(articolo) } });
+        await ricalcolaTotaliFattura(servizio.fattura);
+    },
     field: 'articolo',
     responseKey: 'servizio',
     setOn: 'source',

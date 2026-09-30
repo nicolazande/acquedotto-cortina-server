@@ -13,7 +13,8 @@ const {
     sendServiceError,
     updateRecord,
 } = require('./utils/controllerActions');
-const { billingOptions, invoiceGenerationOptions, parseOptionalBoolean } = require('./utils/requestOptions');
+const { billingOptions, invoiceGenerationOptions } = require('./utils/requestOptions');
+const { parseOptionalBoolean } = require('../utils/values');
 const { createInvoiceFromReadings } = require('../services/invoiceGenerator');
 const { previewClienteBilling } = require('../services/anteprimaFatturazione');
 const { writeAuditLog } = require('../services/auditLogService');

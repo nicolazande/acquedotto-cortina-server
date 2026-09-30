@@ -16,8 +16,9 @@ const { withSession } = require('../utils/mongo');
 // numero decide l'ordine di creazione.
 const ORDINE = { riga: 1, _id: 1 };
 
-// Cosa si tira su insieme alle righe: l'articolo porta l'aliquota, il resto
-// serve solo a chi deve ricalcolarle o verificarle.
+// Cosa si tira su insieme alle righe: l'articolo, che dice la natura IVA di una
+// riga esente e l'aliquota delle righe che non l'hanno salvata; il resto serve
+// solo a chi deve ricalcolarle o verificarle.
 const CON_ARTICOLO = 'articolo';
 const CON_LETTURA = [{ path: 'articolo' }, { path: 'lettura', populate: { path: 'contatore' } }];
 const CON_ORIGINE = [
@@ -38,10 +39,10 @@ const righeDellaFattura = (fatturaId, session) => righe({ fattura: fatturaId }, 
 // Le righe con tutto cio da cui sono nate, per ricalcolarle o verificarle.
 const righeConOrigine = (fatturaId, session) => righe({ fattura: fatturaId }, CON_ORIGINE, session);
 
-// Le righe come le disegnano il PDF e la fattura elettronica: l'articolo per
-// l'aliquota e la lettura con il suo contatore, che sulla riga compare come
-// matricola. Listino e fascia il
-// disegno non li guarda, e tirarli su erano due letture in piu per ogni blocco.
+// Le righe come le disegnano il PDF e la fattura elettronica: l'articolo e la
+// lettura con il suo contatore, che sulla riga compare come matricola. Listino e
+// fascia il disegno non li guarda, e tirarli su erano due letture in piu per
+// ogni blocco.
 const righeDelDocumento = (fatturaId, session) => righe({ fattura: fatturaId }, CON_LETTURA, session);
 
 // Le righe di piu fatture in una lettura sola, raggruppate per fattura. La

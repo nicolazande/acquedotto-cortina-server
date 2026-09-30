@@ -10,7 +10,7 @@
 
 const {
     CAMPO_DATA_CONSEGNA,
-    CANALE_TRASMISSIONE_SDI,
+    TRASMISSIONE_SDI_AUTOMATICA,
     STATI_APERTI,
     canaleFatturaElettronica,
     destinatarioNonGestito,
@@ -18,7 +18,7 @@ const {
     richiedeFatturaElettronica,
 } = require('../config/delivery');
 const { AZIENDA } = require('../config/azienda');
-const { capItaliano, customerLabel } = require('../utils/customer');
+const { customerLabel, indirizzoDiRecapito } = require('../utils/customer');
 const { emessaDalGestionale, isConfirmedInvoice, numeroDocumento } = require('../config/invoicing');
 const { dataReale, formatItalianDate } = require('../utils/dates');
 const { setOrUnset, soloValorizzati } = require('../utils/mongo');
@@ -29,10 +29,6 @@ const { senzaAccenti } = require('../utils/values');
 const EMAIL_PLAUSIBILE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 const testo = (valore) => String(valore ?? '').trim();
-
-const primoValorizzato = (...valori) => valori.map(testo).find(Boolean) || '';
-
-const localitaPostale = (cliente) => primoValorizzato(cliente?.localita_fatturazione, cliente?.localita_residenza);
 
 const maiuscolo = (valore) => senzaAccenti(valore).toUpperCase().replace(/\s+/g, ' ').trim();
 
@@ -68,24 +64,20 @@ const inPaese = (localita) => {
 // localita, zona e via, o stampa una zona sola: le buste per Zuel, da portare a
 // mano, o quelle per la citta di un amministratore.
 const recapitoPostale = (cliente) => {
-    const localita = localitaPostale(cliente);
+    const { via, localita } = indirizzoDiRecapito(cliente);
     if (!inPaese(localita)) {
         return { localita: maiuscolo(localita), zona: maiuscolo(localita) };
     }
     const paese = maiuscolo(AZIENDA.sede.comune);
-    const via = maiuscolo(primoValorizzato(cliente?.indirizzo_fatturazione, cliente?.indirizzo_residenza));
-    return { localita: paese, zona: FRAZIONI.find(([, riconosce]) => riconosce.test(via))?.[0] || paese };
+    return { localita: paese, zona: FRAZIONI.find(([, riconosce]) => riconosce.test(maiuscolo(via)))?.[0] || paese };
 };
 
 const zonaPostale = (cliente) => recapitoPostale(cliente).zona;
 
-// L'indirizzo di spedizione: quello di fatturazione quando c'e, altrimenti la
-// residenza. E lo stesso criterio usato dal PDF della fattura.
+// L'indirizzo di spedizione, in una riga: `indirizzoDiRecapito`, lo stesso del
+// PDF della fattura.
 const indirizzoPostale = (cliente) => {
-    const via = primoValorizzato(cliente?.indirizzo_fatturazione, cliente?.indirizzo_residenza);
-    const numero = primoValorizzato(cliente?.numero_fatturazione, cliente?.numero_residenza);
-    const cap = capItaliano(primoValorizzato(cliente?.cap_fatturazione, cliente?.cap_residenza));
-    const localita = localitaPostale(cliente);
+    const { via, numero, cap, localita } = indirizzoDiRecapito(cliente);
 
     if (!via || !localita) {
         return '';
@@ -162,12 +154,12 @@ const consegnaElettronica = (cliente) => {
         // Finche la trasmissione passa da un intermediario il gestionale prepara
         // il file e lo mette in elenco, ma non lo inoltra: e una scelta di
         // configurazione, non un limite del codice.
-        automatico: CANALE_TRASMISSIONE_SDI !== 'intermediario',
+        automatico: TRASMISSIONE_SDI_AUTOMATICA,
         // Sulla riga della coda si legge subito perche quel file non uscira.
         problema: destinatarioNonGestito(cliente),
-        nota: CANALE_TRASMISSIONE_SDI === 'intermediario'
-            ? 'Trasmissione affidata a un intermediario: il file va scaricato e inoltrato.'
-            : null,
+        nota: TRASMISSIONE_SDI_AUTOMATICA
+            ? null
+            : 'Trasmissione affidata a un intermediario: il file va scaricato e inoltrato.',
     };
 };
 

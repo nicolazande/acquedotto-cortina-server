@@ -13,10 +13,9 @@ const {
     sendServiceError,
     updateRecord,
 } = require('./utils/controllerActions');
-const { parseOptionalBoolean } = require('./utils/requestOptions');
 const { nelFuturo, toDate } = require('../utils/dates');
 const { badRequest, conflict } = require('../utils/errors');
-const { escapeRegex, parseBoolean } = require('../utils/values');
+const { escapeRegex, parseBoolean, parseOptionalBoolean } = require('../utils/values');
 const { calculateReadingById } = require('../services/calcoloLettura');
 const { misuraCambiata } = require('../services/misuraLettura');
 const { letturaViews } = require('../config/listViews');

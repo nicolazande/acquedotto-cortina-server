@@ -210,6 +210,11 @@ const STATI_APERTI = ['in_coda', 'errore'];
 // allo sportello. Sono quelli che escono dalla stampa.
 const CANALI_DA_STAMPARE = ['postale', 'sportello'];
 
+// Tutte le strade di una consegna: le copie di cortesia (email, PEC, posta,
+// sportello) e la fattura elettronica (SdI, PEC, cassetto). Il modello le accetta
+// da qui, invece di un suo elenco da tenere allineato.
+const CANALI_CONSEGNA = ['email', 'pec', 'sdi', 'cassetto', 'postale', 'sportello'];
+
 // Il lavoro d'ufficio sulle consegne ancora aperte. Stampare e scaricare l'XML
 // non chiudono niente - si stampa, si controlla, e solo dopo una persona le
 // dichiara evase - ma lasciano un segno sulla consegna: cosi quelle gia stampate
@@ -234,11 +239,21 @@ const EVASE_IN_BLOCCO = { stampate: 'stampata_il', scaricate: 'scaricata_il' };
 
 // Chi trasmette allo SdI.
 //
-// `intermediario` significa che il gestionale prepara il file e lo mette in
-// elenco, ma l'inoltro lo fa il commercialista o il portale dell'Agenzia: e la
-// situazione di oggi. Quando il canale sara deciso, si aggiunge la funzione di
-// trasporto corrispondente in services/invioService.js e si cambia questa voce.
-const CANALE_TRASMISSIONE_SDI = (process.env.CANALE_TRASMISSIONE_SDI || 'intermediario').trim();
+// `intermediario`, la situazione di oggi: il gestionale prepara il file e lo
+// mette in elenco, l'ufficio lo carica nel box della contabilita. `pec`: il
+// gestionale lo manda da se alla casella PEC dello SdI
+// (`trasmettiFatturaElettronica` in services/deliveryService.js). Si legge qui
+// una volta sola: prima quattro punti confrontavano il testo a modo loro, e un
+// valore scritto "Intermediario" o con un refuso rendeva automatiche tutte le
+// fatture elettroniche, che sparivano dall'elenco da scaricare e finivano in
+// errore a ogni Invia. Un valore sconosciuto vale intermediario, e lo si dice.
+const CANALI_SDI = ['intermediario', 'pec'];
+const canaleSdiScritto = String(process.env.CANALE_TRASMISSIONE_SDI || 'intermediario').trim().toLowerCase();
+if (!CANALI_SDI.includes(canaleSdiScritto)) {
+    console.warn(`CANALE_TRASMISSIONE_SDI="${process.env.CANALE_TRASMISSIONE_SDI}" non e fra ${CANALI_SDI.join(', ')}: vale intermediario.`);
+}
+const CANALE_TRASMISSIONE_SDI = CANALI_SDI.includes(canaleSdiScritto) ? canaleSdiScritto : 'intermediario';
+const TRASMISSIONE_SDI_AUTOMATICA = CANALE_TRASMISSIONE_SDI === 'pec';
 
 // Testi dei messaggi. Stanno qui perche cambiarli e una decisione di chi scrive
 // ai clienti, non una modifica al codice che li spedisce.
@@ -263,6 +278,7 @@ const testoEmailCortesia = ({ cliente, documento, scadenza, mittente }) => ({
 module.exports = {
     ALIAS_MODALITA,
     CAMPO_DATA_CONSEGNA,
+    CANALI_CONSEGNA,
     CANALE_TRASMISSIONE_SDI,
     CODICE_DESTINATARIO_ASSENTE,
     EVASE_IN_BLOCCO,
@@ -270,6 +286,7 @@ module.exports = {
     MODALITA_CONSEGNA,
     MODALITA_PREDEFINITA,
     STATI_APERTI,
+    TRASMISSIONE_SDI_AUTOMATICA,
     canaleFatturaElettronica,
     codiceDestinatarioValido,
     destinatarioNonGestito,

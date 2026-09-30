@@ -4,6 +4,7 @@ const Contatore = require('../models/Contatore');
 const Fattura = require('../models/Fattura');
 const Lettura = require('../models/Lettura');
 const Scadenza = require('../models/Scadenza');
+const { FILTRO_BOZZE } = require('../config/invoicing');
 const AuditLog = require('../models/AuditLog');
 const { delayAggregation } = require('./deadlineService');
 const { saldataExpression } = require('../models/Scadenza');
@@ -114,7 +115,7 @@ const getDashboard = async () => {
         attivita,
     ] = await Promise.all([
         Lettura.countDocuments(LETTURE_DA_FATTURARE),
-        Fattura.countDocuments({ stato: 'bozza' }),
+        Fattura.countDocuments(FILTRO_BOZZE),
         Scadenza.aggregate([...scadenzeAperte(false), ...riepilogoImporti]),
         Scadenza.aggregate([...scadenzeAperte(true), ...riepilogoImporti]),
         Cliente.estimatedDocumentCount(),

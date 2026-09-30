@@ -5,7 +5,8 @@ const { parseOptionalBoolean } = require('../../utils/values');
 // uguali per l'anteprima (dalla querystring) e per la generazione (dal corpo),
 // dalla pagina di generazione come dalla scheda del cliente: leggerle in un
 // posto solo evita che una strada dimentichi un parametro quando se ne aggiunge
-// uno. Un valore assente lascia la scelta predefinita, cioe includere.
+// uno. Un valore assente lascia la scelta predefinita del servizio: la quota
+// fissa si include, la mora no.
 const billingOptions = (source = {}) => ({
     includeDelay: parseOptionalBoolean(source.includeDelay),
     includeFixedCharge: parseOptionalBoolean(source.includeFixedCharge),
@@ -21,5 +22,4 @@ const invoiceGenerationOptions = (body = {}) => ({
 module.exports = {
     billingOptions,
     invoiceGenerationOptions,
-    parseOptionalBoolean,
 };

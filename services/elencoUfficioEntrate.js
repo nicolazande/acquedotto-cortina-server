@@ -19,6 +19,8 @@ require('../models/Edificio');
 require('../models/Lettura');
 const anagrafe = require('../config/anagrafeTributaria');
 const { predecessorePerMatricola } = require('./counterHistoryService');
+const { eRigaDiQuotaFissa } = require('./billingCalculator');
+const { FILTRO_CONFERMATE } = require('../config/invoicing');
 const { dataCompatta, toDate } = require('../utils/dates');
 const { fromCents, toCents } = require('../utils/money');
 const { siglaProvincia } = require('../utils/province');
@@ -236,14 +238,12 @@ const componiFile = ({ ente, anno, utenze, codiceInvio }) => [
 ].join('\r\n') + '\r\n';
 
 // Le righe di fattura che dicono quanta acqua e passata da un contatore e quanto
-// e costata: le fasce a consumo. Restano fuori la quota fissa, la mora per il
-// ritardo e le righe scritte a mano senza una fascia.
-const TARIFFA_FISSA = /fiss/i;
-
+// e costata: le fasce a consumo. Restano fuori la quota fissa (la regola e una,
+// `eRigaDiQuotaFissa`), la mora per il ritardo e le righe scritte a mano senza
+// una fascia.
 const eRigaAConsumo = (riga) => (
     Boolean(riga?.tipo_tariffa)
-    && !TARIFFA_FISSA.test(String(riga.tipo_tariffa))
-    && !TARIFFA_FISSA.test(String(riga.tipo_quota || ''))
+    && !eRigaDiQuotaFissa(riga)
     && riga.calcolo_snapshot?.quota !== 'delay'
 );
 
@@ -272,9 +272,11 @@ const datiDellAnno = async (anno) => {
     const inizio = new Date(Date.UTC(anno, 0, 1));
     const dopo = new Date(Date.UTC(anno + 1, 0, 1));
 
-    const fatture = await Fattura.find({ anno }).distinct('_id');
+    // Solo le confermate: una bozza dimenticata non e una fattura, e non va
+    // dichiarata all'Agenzia.
+    const fatture = await Fattura.find({ anno, ...FILTRO_CONFERMATE }).distinct('_id');
     const righe = await Servizio.find({ fattura: { $in: fatture } })
-        .select('lettura tipo_tariffa tipo_quota metri_cubi valore_unitario calcolo_snapshot.quota')
+        .select('lettura descrizione tipo_tariffa tipo_quota metri_cubi valore_unitario calcolo_snapshot.quota')
         .populate({ path: 'lettura', select: 'contatore' })
         .lean();
 

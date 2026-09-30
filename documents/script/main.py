@@ -3,10 +3,7 @@ import sys
 import tempfile
 from pathlib import Path
 from time import sleep
-from urllib.parse import unquote, urlparse
 
-from dotenv import load_dotenv
-from pymongo import MongoClient
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
@@ -18,9 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from backup_mongodb import salva_backup
 
-SERVER_ROOT = Path(__file__).resolve().parents[2]
-load_dotenv(SERVER_ROOT / ".env")
-DEFAULT_DB_NAME = "acquedotto-zuel"
+from ambiente import SERVER_ROOT, database_del_server, env_flag, env_int, env_list, uri_del_server
 FASTTOOLS_BASE_URL = os.getenv("FASTTOOLS_BASE_URL", "https://zuel.fast.tools").rstrip("/")
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -63,60 +58,9 @@ COLLECTION_PER_STEP = {
     "fatture": "fatture",
 }
 
-def env_flag(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
-
-def env_int(name: str, default: int) -> int:
-    value = os.getenv(name)
-    if not value:
-        return default
-    try:
-        parsed = int(value)
-        return parsed if parsed > 0 else default
-    except ValueError:
-        return default
-
-def env_list(name: str, default: list[str]) -> list[str]:
-    value = os.getenv(name)
-    if not value:
-        return default
-    return [item.strip().lower() for item in value.split(",") if item.strip()]
-
 def log_verbose(message: str):
     if env_flag("IMPORT_VERBOSE"):
         print(message)
-
-def get_database_name(mongo_uri: str) -> str:
-    env_db = os.getenv("MONGODB_DB")
-    if env_db:
-        return env_db
-
-    parsed_uri = urlparse(mongo_uri)
-    db_name = unquote(parsed_uri.path.lstrip("/"))
-    return db_name or DEFAULT_DB_NAME
-
-def get_mongo_options() -> dict:
-    options = {
-        "serverSelectionTimeoutMS": env_int("MONGODB_SERVER_SELECTION_TIMEOUT_MS", 10000),
-        "socketTimeoutMS": env_int("MONGODB_SOCKET_TIMEOUT_MS", 45000),
-        "maxPoolSize": env_int("MONGODB_MAX_POOL_SIZE", 10),
-    }
-    if os.getenv("MONGODB_TLS", "").strip():
-        options["tls"] = env_flag("MONGODB_TLS")
-    if os.getenv("MONGODB_TLS_ALLOW_INVALID_CERTIFICATES", "").strip():
-        options["tlsAllowInvalidCertificates"] = env_flag("MONGODB_TLS_ALLOW_INVALID_CERTIFICATES")
-    if os.getenv("MONGODB_DIRECT_CONNECTION", "").strip():
-        options["directConnection"] = env_flag("MONGODB_DIRECT_CONNECTION")
-    return options
-
-def get_database():
-    mongo_uri = os.getenv("MONGODB_URI", f"mongodb://localhost:27017/{DEFAULT_DB_NAME}")
-    mongo_db = get_database_name(mongo_uri)
-    client = MongoClient(mongo_uri, **get_mongo_options())
-    return client, client[mongo_db]
 
 def backup_before_reset(db) -> Path | None:
     """Copia le collection su file prima di svuotarle.
@@ -989,6 +933,9 @@ def parse_fattura_details(html):
         "tipo_documento": details.get("Tipo Documento"),
         "ragione_sociale": details.get("Ragione Sociale"),
         "confermata": parse_bool(details.get("Confermata")),
+        # Anche lo stato: l'import scrive con pymongo, senza il modello che li
+        # allinea, e con la sola spunta le confermate sparivano dagli elenchi.
+        "stato": "confermata" if parse_bool(details.get("Confermata")) else "bozza",
         "anno": parse_number(testata.get("Anno")),
         "numero": parse_number(testata.get("Numero")),
         "data_fattura": parse_date(testata.get("Data Fattura")),
@@ -1173,7 +1120,7 @@ def fetch_all_scadenze(session_cookie, db):
     return scadenze
 
 def get_import_steps() -> list[str]:
-    requested_steps = env_list("IMPORT_STEPS", DEFAULT_IMPORT_ORDER)
+    requested_steps = [step.lower() for step in env_list("IMPORT_STEPS", DEFAULT_IMPORT_ORDER)]
     unknown_steps = [step for step in requested_steps if step not in IMPORT_STEPS]
     if unknown_steps:
         valid_steps = ", ".join(IMPORT_STEPS)
@@ -1229,8 +1176,8 @@ def main() -> int:
     email = os.getenv("FASTTOOLS_EMAIL")
     password = os.getenv("FASTTOOLS_PASSWORD")
     session_cookie = os.getenv("FASTTOOLS_SESSION_COOKIE") or cookie_salvato()
-    mongo_uri = os.getenv("MONGODB_URI", f"mongodb://localhost:27017/{DEFAULT_DB_NAME}")
-    mongo_client, db = get_database()
+    mongo_uri = uri_del_server()
+    mongo_client, db = database_del_server()
 
     try:
         print(f"Import target database: {db.name}")

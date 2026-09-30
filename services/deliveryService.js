@@ -22,13 +22,14 @@ const Fattura = require('../models/Fattura');
 const {
     CAMPO_DATA_CONSEGNA,
     CANALE_TRASMISSIONE_SDI,
+    TRASMISSIONE_SDI_AUTOMATICA,
     EVASE_IN_BLOCCO,
     IN_UFFICIO,
     STATI_APERTI,
     testoEmailCortesia,
 } = require('../config/delivery');
 const { AZIENDA } = require('../config/azienda');
-const { FILTRO_EMESSE_DAL_GESTIONALE, isConfirmedInvoice } = require('../config/invoicing');
+const { FILTRO_CONFERMATE, FILTRO_EMESSE_DAL_GESTIONALE, isConfirmedInvoice } = require('../config/invoicing');
 const { allegatoPdf, allegatoXml, fatturaDellaConsegna, zoneDaStampare } = require('./documentiConsegna');
 const { FATTURA_IN_BOZZA, aggiornamentoCoda, chiudibiliInBlocco, chiusura, pianoConsegne } = require('./deliveryPlan');
 const { inviaEmail, statoTrasporto } = require('./mailer');
@@ -89,7 +90,7 @@ const fattureDaGuardare = async (richieste) => {
 
     return Fattura.find({
         $or: [
-            { stato: 'confermata', ...FILTRO_EMESSE_DAL_GESTIONALE },
+            { $and: [FILTRO_CONFERMATE, FILTRO_EMESSE_DAL_GESTIONALE] },
             { _id: { $in: daRimettereInPari } },
         ],
     })
@@ -164,12 +165,12 @@ const consegnaCortesiaEmail = async ({ consegna, fattura }) => {
 //
 // Oggi l'inoltro passa da un intermediario e questa funzione non viene mai
 // chiamata: le consegne elettroniche restano in coda come promemoria. Quando
-// l'acquedotto avra un canale proprio bastera valorizzare
-// CANALE_TRASMISSIONE_SDI: il resto della catena e gia al suo posto.
+// l'acquedotto avra un canale proprio bastera CANALE_TRASMISSIONE_SDI=pec
+// (config/delivery.js): il resto della catena e gia al suo posto.
 const SDI_PEC = process.env.SDI_PEC_DESTINATARIO || 'sdi01@pec.fatturapa.it';
 
 const trasmettiFatturaElettronica = async ({ consegna, fattura }) => {
-    if (CANALE_TRASMISSIONE_SDI !== 'pec') {
+    if (!TRASMISSIONE_SDI_AUTOMATICA) {
         throw unprocessable(
             'La trasmissione allo SdI non è automatica: scarica il file XML e inoltralo, '
             + 'oppure configura CANALE_TRASMISSIONE_SDI.'

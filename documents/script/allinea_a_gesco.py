@@ -25,20 +25,16 @@ I record si riconoscono per la chiave che hanno in Gesco; i riferimenti vengono
 riscritti con gli identificativi del database di destinazione.
 """
 import argparse
-import os
 import sys
 from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from dotenv import load_dotenv  # noqa: E402
-from pymongo import MongoClient  # noqa: E402
+from ambiente import copia_gesco_e_destinazione  # noqa: E402
 
 from confronta_database import COLLEZIONI  # noqa: E402
 
-SERVER_ROOT = Path(__file__).resolve().parents[2]
-load_dotenv(SERVER_ROOT / ".env")
 
 # I legami fra le collezioni, nella forma (chi, campo, verso dove).
 RIFERIMENTI = [
@@ -376,20 +372,9 @@ def main() -> int:
     parser.add_argument("--scrivi", action="store_true", help="applica invece di mostrare soltanto")
     argomenti = parser.parse_args()
 
-    locale = MongoClient("mongodb://localhost:27017")
-    origine = locale[argomenti.origine]
-
+    clienti, origine, destinazione = copia_gesco_e_destinazione(argomenti)
     if argomenti.remoto:
-        uri = os.getenv("REMOTE_MONGODB_URI")
-        if not uri:
-            print("--remoto richiede REMOTE_MONGODB_URI nel file .env")
-            return 1
-        client = MongoClient(uri)
-        destinazione = client.get_default_database()
         print("== PRODUZIONE: si sta lavorando sul database remoto ==")
-    else:
-        client = locale
-        destinazione = locale[argomenti.destinazione or "acquedotto-zuel"]
 
     print(f"Copia da Gesco: {origine.name} -> database: {destinazione.name}")
     print("== SOLA LETTURA (usa --scrivi per applicare) ==" if not argomenti.scrivi else "== APPLICO ==")
@@ -402,8 +387,7 @@ def main() -> int:
         if not resoconto:
             print("  niente da fare: i due database dicono la stessa cosa")
     finally:
-        locale.close()
-        if client is not locale:
+        for client in clienti:
             client.close()
 
     return 0

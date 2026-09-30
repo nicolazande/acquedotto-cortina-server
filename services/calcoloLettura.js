@@ -18,24 +18,15 @@ const {
 const {
     CODICI_ARTICOLO_DEL_CALCOLO,
     calculateReadingInvoice,
+    eRigaDiQuotaFissa,
     isSplitCondominiumCounter,
 } = require('./billingCalculator');
 const { createError, notFound } = require('../utils/errors');
-const { hasValue, sumMoneyBy } = require('../utils/values');
+const { hasValue } = require('../utils/values');
 const { uniqueById, withSession } = require('../utils/mongo');
 
-const isBillablePreview = (preview) => !preview.error && preview.lines?.length;
-
-const summarizeBillablePreviews = (previews) => {
-    const billablePreviews = previews.filter(isBillablePreview);
-
-    return {
-        letture: billablePreviews.length,
-        imponibile: sumMoneyBy(billablePreviews, (preview) => preview.totals.imponibile),
-        iva: sumMoneyBy(billablePreviews, (preview) => preview.totals.iva),
-        totale_fattura: sumMoneyBy(billablePreviews, (preview) => preview.totals.totale_fattura),
-    };
-};
+// Il calcolo di una lettura che entrerebbe in fattura: senza errori e con righe.
+const isBillablePreview = (preview) => !preview.error && preview.lines?.length > 0;
 
 const getPreviousReading = (lettura, session) => {
     const contatoreId = lettura.contatore?._id || lettura.contatore;
@@ -152,7 +143,7 @@ const calcolaLettura = async (lettura, options = {}) => {
         lettura,
         previousValue,
     });
-    const shouldReserveFixedKey = calculation.lines.some((line) => line.tipo_quota)
+    const shouldReserveFixedKey = calculation.lines.some(eRigaDiQuotaFissa)
         || (
             fixedSkippedByRequest
             && calculation.fixedCharge.available
@@ -198,5 +189,5 @@ module.exports = {
     calculateReadingById,
     getArticlesByCode,
     loadReadings,
-    summarizeBillablePreviews,
+    isBillablePreview,
 };

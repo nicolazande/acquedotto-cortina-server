@@ -252,7 +252,17 @@ proprio quando quei due non tornano.
 
 Lo stesso calcolo vale in tre posti che il cliente puo confrontare: il totale
 salvato sulla fattura, il riquadro delle aliquote sul PDF e il riepilogo
-dell'XML. Passano tutti da `applyRateToLines`.
+dell'XML. Passano tutti da `riepilogoIva` (`services/billingCalculator.js`), e
+con loro l'anteprima della generazione e lo script `report:integrita`, che
+confronta al centesimo. L'aliquota e quella **salvata sulla riga**, non il testo
+di oggi dell'articolo: cambiare l'IVA di un articolo non riscrive le fatture gia
+fatte, e una riga prende l'aliquota del suo articolo quando nasce o quando cambia
+articolo (`ServizioController`). Prima file e PDF leggevano l'articolo e il totale
+la riga: cambiata l'IVA di un articolo, il file non tornava piu con il suo totale.
+
+L'anteprima somma le righe di un cliente tutte insieme - letture, parte del
+condominiale, mora se inclusa - con lo stesso calcolo della bozza: prima sommava i
+totali lettura per lettura e poteva scostarsi di un centesimo.
 
 L'imposta si calcola pero sugli importi di riga **arrotondati al centesimo**, non
 sul loro valore pieno: se la riga dice 4,73 la base imponibile e 4,73, non
@@ -624,6 +634,17 @@ POST /api/fatture/conferma               conferma in blocco delle bozze indicate
 `verifica-calcolo` e il punto di partenza quando un totale non torna: mostra
 `deltaLetture` (righe salvate contro ricalcolo), `deltaFattura` (testata contro
 somma righe) e le righe che il listino attuale genererebbe ma che non sono presenti.
+Il giudizio (`summary.esito`) e il primo dei problemi che `problemiDelCalcolo`
+trova, dal piu grave: totale diverso dalle righe (vale per tutte), quota fissa
+applicabile non presente, righe delle letture diverse dal listino (solo dove c'e
+una lettura: la mora e le righe a mano non vengono dal listino). E la stessa
+regola della pagina Controlli, che ne fa le sue segnalazioni: la scheda della
+fattura prima rifaceva il conto a modo suo.
+
+Una riga e di **quota fissa** se la tariffa o il tipo di quota contengono "fiss"
+o la descrizione "quota fissa" (`eRigaDiQuotaFissa`, e `FILTRO_RIGHE_QUOTA_FISSA`
+per il database): la usano verifica, statistiche, Anagrafe Tributaria e la
+ricerca delle quote gia pagate.
 
 ## Consegna al cliente
 

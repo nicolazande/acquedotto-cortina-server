@@ -3,11 +3,13 @@ const Contatore = require('../models/Contatore');
 const Fattura = require('../models/Fattura');
 const Lettura = require('../models/Lettura');
 const { generateInvoicePdf } = require('../services/invoicePdf');
+const { withDeadlineDelay } = require('../services/deadlineService');
 const { FILTRO_CONFERMATE } = require('../config/invoicing');
 const { customerLabel } = require('../utils/customer');
 const { createError, notFound } = require('../utils/errors');
 const { fromCents, sumCents } = require('../utils/money');
 const { sendServiceError } = require('./utils/controllerActions');
+const { inviaFile } = require('./utils/inviaFile');
 
 const getCustomerId = (req) => req.user?.cliente?._id || req.user?.cliente;
 
@@ -39,7 +41,7 @@ const getPortalData = async (req, res) => {
         const [fatture, letture] = await Promise.all([
             Fattura.find(sueFatture(clienteId))
                 .select('tipo_documento anno serie numero data_fattura codice imponibile iva totale_fattura stato confermata scadenza')
-                .populate('scadenza', 'scadenza saldo pagamento ritardo totale')
+                .populate('scadenza', 'scadenza saldo pagamento totale')
                 .sort({ data_fattura: -1, _id: -1 })
                 .limit(60)
                 .lean(),
@@ -50,7 +52,11 @@ const getPortalData = async (req, res) => {
                 .limit(80)
                 .lean(),
         ]);
-        const openInvoices = fatture.filter((fattura) => !fattura.scadenza?.saldo);
+        // Il ritardo non si salva - cambia ogni giorno -: si calcola qui, come in
+        // ogni altro elenco. Lo si chiedeva al database, e il cliente non vedeva
+        // mai i giorni di ritardo.
+        const conRitardo = fatture.map(withDeadlineDelay);
+        const openInvoices = conRitardo.filter((fattura) => !fattura.scadenza?.saldo);
 
         res.status(200).json({
             cliente: {
@@ -58,7 +64,7 @@ const getPortalData = async (req, res) => {
                 displayName: customerLabel(cliente),
             },
             contatori,
-            fatture,
+            fatture: conRitardo,
             letture,
             totals: {
                 contatori: contatori.length,
@@ -82,10 +88,7 @@ const downloadInvoicePdf = async (req, res) => {
             .lean();
 
         const { buffer, filename } = await generateInvoicePdf(req.params.id);
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
-        res.setHeader('Content-Length', buffer.length);
-        return res.status(200).send(buffer);
+        return inviaFile(res, { contenuto: buffer, nome: filename, tipo: 'application/pdf' });
     } catch (error) {
         return sendServiceError(res, error, 'PDF della fattura non disponibile.');
     }

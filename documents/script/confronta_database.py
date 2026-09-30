@@ -13,18 +13,14 @@ e le fatture per intestatario, data e importi, perche nei dati vecchi il loro
 numero non e affidabile.
 """
 import argparse
-import os
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from dotenv import load_dotenv  # noqa: E402
-from pymongo import MongoClient  # noqa: E402
+from ambiente import copia_gesco_e_destinazione  # noqa: E402
 
-SERVER_ROOT = Path(__file__).resolve().parents[2]
-load_dotenv(SERVER_ROOT / ".env")
 
 # Come si riconosce lo stesso record nei due database, e quali campi confrontare.
 # I riferimenti (ObjectId) sono esclusi: due import indipendenti li generano
@@ -154,19 +150,7 @@ def main() -> int:
     parser.add_argument("--remoto", action="store_true", help="confronta con il database di produzione")
     argomenti = parser.parse_args()
 
-    locale = MongoClient("mongodb://localhost:27017")
-    origine = locale[argomenti.origine]
-
-    if argomenti.remoto:
-        uri = os.getenv("REMOTE_MONGODB_URI")
-        if not uri:
-            print("--remoto richiede REMOTE_MONGODB_URI nel file .env")
-            return 1
-        client = MongoClient(uri)
-        destinazione = client.get_default_database()
-    else:
-        client = locale
-        destinazione = locale[argomenti.destinazione or "acquedotto-zuel"]
+    clienti, origine, destinazione = copia_gesco_e_destinazione(argomenti)
 
     print(f"Copia da Gesco: {origine.name} | Database in uso: {destinazione.name}")
 
@@ -178,8 +162,7 @@ def main() -> int:
         print("\n== servizi")
         print(f"   da Gesco: {origine.servizi.count_documents({})} | in uso: {destinazione.servizi.count_documents({})}")
     finally:
-        locale.close()
-        if client is not locale:
+        for client in clienti:
             client.close()
 
     return 0

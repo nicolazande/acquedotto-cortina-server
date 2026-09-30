@@ -3,6 +3,7 @@ const Lettura = require('../models/Lettura');
 const Servizio = require('../models/Servizio');
 const { getDate } = require('../utils/dates');
 const { recordId, toObjectId, withSession } = require('../utils/mongo');
+const { FILTRO_RIGHE_QUOTA_FISSA } = require('./billingCalculator');
 
 const annualFixedKey = (year, contatoreId) => `${year}:${recordId(contatoreId)}`;
 
@@ -20,10 +21,7 @@ const createAnnualFixedContext = ({ annualFixedLookupCache, invoiceDate, invoice
 const fixedServiceMatch = {
     fattura: { $ne: null },
     lettura: { $ne: null },
-    $or: [
-        { tipo_quota: { $nin: [null, ''] } },
-        { tipo_tariffa: /fisso/i },
-    ],
+    ...FILTRO_RIGHE_QUOTA_FISSA,
 };
 
 const fixedChargeProject = {

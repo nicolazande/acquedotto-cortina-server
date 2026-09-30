@@ -10,6 +10,7 @@ const {
     scadenzaViews,
 } = require('../config/listViews');
 const { combineFilters, getSort, getViewFilter } = require('../controllers/utils/paginatedQuery');
+const { FILTRO_BOZZE, FILTRO_CONFERMATE } = require('../config/invoicing');
 
 test('le viste sono funzioni che producono un filtro', () => {
     const tutte = {
@@ -38,15 +39,22 @@ test('scadenze: scadute unisce non saldata e data passata', () => {
 
     assert.ok(Array.isArray(filtro.$and), 'le due condizioni restano separate');
     assert.deepEqual(filtro.$and[0], scadenzaViews.aperte());
-    assert.ok(filtro.$and[1].scadenza.$lte instanceof Date);
+    assert.ok(filtro.$and[1].scadenza.$lt instanceof Date);
 });
 
-test('scadenze: la data di confronto e valutata a ogni chiamata', async () => {
-    const primo = scadenzaViews.scadute().$and[1].scadenza.$lte;
-    await new Promise((r) => setTimeout(r, 5));
-    const secondo = scadenzaViews.scadute().$and[1].scadenza.$lte;
+test('scadenze: si scade il giorno dopo la scadenza, come conta il ritardo', () => {
+    // Mezzanotte UTC di oggi: la scadenza di oggi e ancora in arrivo.
+    const oggi = new Date();
+    const mezzanotte = new Date(Date.UTC(oggi.getUTCFullYear(), oggi.getUTCMonth(), oggi.getUTCDate()));
 
-    assert.ok(secondo >= primo, 'una data fissata al caricamento del modulo invecchierebbe');
+    assert.equal(scadenzaViews.scadute().$and[1].scadenza.$lt.getTime(), mezzanotte.getTime());
+    assert.equal(scadenzaViews['in-arrivo']().$and[1].scadenza.$gte.getTime(), mezzanotte.getTime());
+});
+
+test('scadenze: la data di confronto e valutata a ogni chiamata', () => {
+    // Una data fissata al caricamento del modulo invecchierebbe: il filtro e una funzione.
+    assert.notEqual(scadenzaViews.scadute(), scadenzaViews.scadute());
+    assert.notEqual(scadenzaViews.scadute().$and[1], scadenzaViews.scadute().$and[1]);
 });
 
 test('letture: da fatturare comprende il flag assente', () => {
@@ -56,9 +64,16 @@ test('letture: da fatturare comprende il flag assente', () => {
     assert.deepEqual(letturaViews.fatturate(), { fatturata: true });
 });
 
-test('fatture: bozze e confermate usano lo stato, unica verita del documento', () => {
-    assert.deepEqual(fatturaViews.bozze(), { stato: 'bozza' });
-    assert.deepEqual(fatturaViews.confermate(), { stato: 'confermata' });
+test('fatture: bozze e confermate guardano spunta e stato, come il resto del gestionale', () => {
+    // Una fattura importata con la sola spunta non deve sparire da tutti e due.
+    assert.deepEqual(fatturaViews.confermate(), FILTRO_CONFERMATE);
+    assert.deepEqual(fatturaViews.bozze(), FILTRO_BOZZE);
+    const vale = (filtro, fattura) => (filtro.$or || filtro.$nor)
+        .some((condizione) => Object.entries(condizione).every(([campo, atteso]) => (atteso instanceof RegExp ? atteso.test(fattura[campo] || '') : fattura[campo] === atteso)));
+    const importata = { confermata: true };
+    assert.equal(vale(FILTRO_CONFERMATE, importata), true);
+    assert.equal(vale(FILTRO_BOZZE, importata), true, '$nor: la condizione che vale la esclude dalle bozze');
+    assert.equal(vale(FILTRO_BOZZE, { stato: 'bozza', confermata: false }), false, '$nor: nessuna condizione vale, e una bozza');
 });
 
 test('getViewFilter: una vista sconosciuta e un errore, non un elenco senza filtro', () => {

@@ -55,9 +55,41 @@ const capItaliano = (valore) => {
     return /^\d{1,4}$/.test(cap) ? cap.padStart(5, '0') : cap;
 };
 
+// Un cliente ha due indirizzi, residenza e fatturazione, e se ne prende sempre
+// uno intero: mescolare i campi - la via di uno, il CAP dell'altro - da un
+// indirizzo che non esiste. Prima busta, PDF e fattura elettronica avevano tre
+// regole diverse, e la busta prendeva ogni campo per conto suo.
+const testo = (valore) => String(valore ?? '').trim();
+
+const bloccoIndirizzo = (cliente, quale) => ({
+    via: testo(cliente?.[`indirizzo_${quale}`]),
+    numero: testo(cliente?.[`numero_${quale}`]),
+    cap: capItaliano(cliente?.[`cap_${quale}`]),
+    localita: testo(cliente?.[`localita_${quale}`]),
+    provincia: testo(cliente?.[`provincia_${quale}`]),
+});
+
+// Il primo dei due che ha almeno via e localita; se nessuno ce l'ha, il primo
+// che ha qualcosa scritto, perche un indirizzo a meta e meglio di uno vuoto.
+const primoCompleto = (cliente, ...quali) => {
+    const blocchi = quali.map((quale) => bloccoIndirizzo(cliente, quale));
+    return blocchi.find((blocco) => blocco.via && blocco.localita)
+        || blocchi.find((blocco) => Object.values(blocco).some(Boolean))
+        || blocchi[0];
+};
+
+// Dove si spedisce la carta: la fatturazione, altrimenti la residenza.
+const indirizzoDiRecapito = (cliente) => primoCompleto(cliente, 'fatturazione', 'residenza');
+
+// Il domicilio fiscale, per la fattura elettronica: la residenza, altrimenti la
+// fatturazione. Chi abita a Venezia e riceve la bolletta a Zuel ha Venezia.
+const sedeFiscale = (cliente) => primoCompleto(cliente, 'residenza', 'fatturazione');
+
 module.exports = {
     CAMPI_PER_LETTURISTA,
     capItaliano,
+    indirizzoDiRecapito,
+    sedeFiscale,
     soloCampiPerLetturista,
     customerLabel,
 };

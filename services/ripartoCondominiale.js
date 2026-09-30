@@ -19,10 +19,9 @@ const Servizio = require('../models/Servizio');
 const {
     calculateReadingInvoice,
     calculateTotals,
+    FILTRO_RIGHE_QUOTA_FISSA,
     isSplitCondominiumCounter,
-    numberOrZero,
     quotaDiRiparto,
-    roundMoney,
 } = require('./billingCalculator');
 const {
     CON_CONTATORE,
@@ -32,7 +31,7 @@ const {
 } = require('./calcoloLettura');
 const { getDate } = require('../utils/dates');
 const { recordId, withSession } = require('../utils/mongo');
-const { hasValue } = require('../utils/values');
+const { hasValue, numberOrZero, roundMoney } = require('../utils/values');
 
 // I metri cubi in quota restano con quattro decimali, come li scriveva Gesco.
 const quattroDecimali = (valore) => Math.round(valore * 10000) / 10000;
@@ -174,7 +173,7 @@ const quoteCondominiali = async ({
         const fissoPagato = await withSession(Servizio.exists({
             lettura: { $in: ids },
             fattura: { $in: dellAnno },
-            tipo_quota: { $nin: [null, ''] },
+            ...FILTRO_RIGHE_QUOTA_FISSA,
         }), session);
 
         for (const [indice, lettura] of daPagare.entries()) {

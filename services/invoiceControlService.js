@@ -9,11 +9,10 @@
 
 const Fattura = require('../models/Fattura');
 const { buildAnnualFixedLookupCache } = require('./annualFixedChargeService');
-const { verifyInvoiceCalculation } = require('./verificaFattura');
-const { FILTRO_CONFERMATE, isConfirmedInvoice, numeroDocumento } = require('../config/invoicing');
+const { problemiDelCalcolo, verifyInvoiceCalculation } = require('./verificaFattura');
+const { FILTRO_CONFERMATE, FILTRO_EMESSE_DAL_GESTIONALE, isConfirmedInvoice, numeroDocumento } = require('../config/invoicing');
 const { customerLabel } = require('../utils/customer');
 
-const { stessoImporto } = require('../utils/money');
 
 // Le fatture si controllano qualcuna alla volta. Una per volta, con il server e
 // il database in due posti diversi, settecento bozze richiedevano minuti: il
@@ -38,7 +37,9 @@ const perOgnuna = async (elementi, operazione) => {
 // Le bozze da confermare sono quelle nate qui. Una bozza importata dal vecchio
 // programma - se ce n'e - ha un numero che non e della serie, e confermarla in
 // blocco la numererebbe nel suo anno: si guarda e si conferma dalla sua scheda.
-const BOZZA_IMPORTATA = { serie: { $not: { $type: 'string' } }, numero: { $gt: 0 } };
+// "Importata" e il contrario di FILTRO_EMESSE_DAL_GESTIONALE, la regola di tutto
+// il gestionale: scritta a parte, su una serie vuota le due dicevano cose opposte.
+const BOZZA_IMPORTATA = { $nor: [FILTRO_EMESSE_DAL_GESTIONALE], numero: { $gt: 0 } };
 
 const getControlsQuery = ({ stato, year } = {}) => {
     if (stato === 'bozze') {
@@ -105,40 +106,11 @@ const inspectInvoice = async (fattura, memoria) => {
 
     try {
         const verification = await verifyInvoiceCalculation(fattura._id, { ...memoria, fattura });
-        const calculation = verification.summary;
-
-        // Che il totale corrisponda alle righe vale per qualunque fattura: e
-        // aritmetica, non tariffa. Era chiesto solo a quelle nate da letture, e
-        // cosi una fattura scritta a mano poteva portare un totale che le sue
-        // stesse righe non giustificano senza che nessuno lo dicesse - ed e
-        // esattamente il documento che lo SdI rifiuta.
-        if (!calculation.fatturaCoerente) {
-            counters.scostamentoFattura = 1;
-            issues.push(createIssue(fattura, 'totale', 'danger', 'Totale fattura diverso dalle righe servizio', {
-                delta: calculation.deltaFattura,
-            }));
-        }
-
-        // I due controlli che seguono confrontano le righe con il listino, e un
-        // listino c'e solo dove c'e una lettura: su una fattura scritta a mano -
-        // un rimborso, la vendita di un contatore - non avrebbero senso, e
-        // chiederli produrrebbe allarmi che non si possono risolvere.
-        if (calculation.letture > 0 && calculation.quotaFissaApplicabile) {
-            counters.quotaFissaApplicabile = 1;
-            issues.push(createIssue(fattura, 'quota-fissa', 'warning', 'Quota fissa applicabile non presente', {
-                delta: calculation.quotaFissaMancante,
-            }));
-        }
-
-        // Solo le righe delle letture: la mora o una riga aggiunta a mano non
-        // vengono dal listino, e contarle dava uno scostamento su ogni fattura
-        // con la mora.
-        if (calculation.letture > 0 && !stessoImporto(calculation.deltaLetture, 0)) {
-            counters.scostamentoListino = 1;
-            issues.push(createIssue(fattura, 'listino', 'info', 'Righe salvate diverse dalla stima listino', {
-                delta: calculation.deltaLetture,
-            }));
-        }
+        // Le regole stanno in `problemiDelCalcolo`, le stesse della scheda.
+        problemiDelCalcolo(verification.summary).forEach((problema) => {
+            counters[problema.contatore] = 1;
+            issues.push(createIssue(fattura, problema.tipo, problema.gravita, problema.messaggio, { delta: problema.delta }));
+        });
     } catch (error) {
         counters.erroriCalcolo = 1;
         issues.push(createIssue(fattura, 'calcolo', 'danger', error.message || 'Calcolo non verificabile'));
@@ -172,14 +144,23 @@ const getInvoiceControlDashboard = async (options = {}) => {
     summary.controllate = fatture.length;
     risultati.forEach((result) => addCounters(summary, result.counters));
 
+    const issues = risultati.flatMap((result) => result.issues);
+    // Quanti problemi per gravita: la pagina li mostra cosi, e prima li
+    // risommava a mano per nome, con il rischio di contare un problema nuovo
+    // sotto la gravita sbagliata.
+    summary.perGravita = { danger: 0, warning: 0, info: 0 };
+    issues.forEach((issue) => {
+        summary.perGravita[issue.severity] = (summary.perGravita[issue.severity] || 0) + 1;
+    });
+
     // Una bozza si conferma se nessun controllo ha trovato un errore: gli
     // avvisi sono da guardare, ma non fermano la conferma.
-    const conErrori = new Set(risultati.flatMap((result) => result.issues)
+    const conErrori = new Set(issues
         .filter((issue) => issue.severity === 'danger')
         .map((issue) => String(issue.fatturaId)));
 
     return {
-        issues: risultati.flatMap((result) => result.issues),
+        issues,
         confermabili: fatture
             .filter((fattura) => !isConfirmedInvoice(fattura) && !conErrori.has(String(fattura._id)))
             .map((fattura) => fattura._id),

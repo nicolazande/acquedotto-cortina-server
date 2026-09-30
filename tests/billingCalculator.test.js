@@ -8,6 +8,7 @@ const {
     getBandQuantity,
     getTaxRate,
     isFixedBand,
+    riepilogoIva,
 } = require('../services/billingCalculator');
 const { ARTICOLI, FASCE_STANDARD, contatore, fascia, lettura } = require('./helpers/fixtures');
 
@@ -361,4 +362,34 @@ test('il totale di una fattura e sempre imponibile piu imposta', () => {
 
         assert.equal(Math.round(totali.totale_fattura * 100), somma);
     });
+});
+
+// --- riepilogo IVA -----------------------------------------------------------
+
+const riga = (euro, aliquota, iva = `IVA ${aliquota}%`) => ({ valore_unitario: euro, aliquota_iva: aliquota, articolo: { iva } });
+
+test('riepilogo IVA: le righe della stessa aliquota si sommano prima di arrotondare', () => {
+    const [gruppo] = riepilogoIva([riga(52, 10), riga(38.95, 10)]);
+
+    assert.equal(gruppo.imponibileCents, 9095);
+    assert.equal(gruppo.impostaCents, 910, '9,095 arrotondato per eccesso una volta sola');
+});
+
+test('riepilogo IVA: arrotonda una volta per aliquota, come il riepilogo del XML', () => {
+    // 1,01 al 10% e 1,02 al 22%: sommando prima 0,33, per aliquota 0,10 + 0,22.
+    assert.equal(calculateTotals([riga(1.01, 10), riga(1.02, 22)]).iva, 0.32);
+});
+
+test('riepilogo IVA: vale l aliquota salvata sulla riga, non il testo di oggi dell articolo', () => {
+    // L'articolo e passato al 22% dopo che la riga e stata fatta al 10%.
+    const [gruppo] = riepilogoIva([{ valore_unitario: 100, aliquota_iva: 10, articolo: { iva: 'IVA 22%' } }]);
+
+    assert.equal(gruppo.aliquota, 10);
+    assert.equal(gruppo.impostaCents, 1000);
+});
+
+test('riepilogo IVA: le righe senza imposta portano la natura', () => {
+    const gruppi = riepilogoIva([riga(100, 10), riga(6, 0, 'Esente art.15')]);
+
+    assert.deepEqual(gruppi.map((g) => [g.aliquota, g.natura, g.imponibileCents, g.impostaCents]), [[10, null, 10000, 1000], [0, 'N1', 600, 0]]);
 });

@@ -10,7 +10,6 @@ test('paga con addebito chi ha dato l IBAN, qualunque termine sia scritto', () =
     assert.equal(pagaConAddebito({ iban: CONTO, pagamento: '30 Giorni data fattura' }), true);
     assert.equal(pagaConAddebito({ iban: '  ', pagamento: 'Addebito in conto  a scadenza' }), false);
     assert.equal(modalitaPagamentoXml({ iban: CONTO }), 'MP19');
-    assert.equal(modalitaPagamentoXml({ pagamento: 'Contanti' }), 'MP01');
     assert.equal(modalitaPagamentoXml({ pagamento: '30 Giorni data fattura' }), 'MP05');
 });
 

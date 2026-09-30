@@ -29,7 +29,7 @@ const {
     CON_CONTATORE,
     calcolaLettura,
     getArticlesByCode,
-    summarizeBillablePreviews,
+    isBillablePreview,
 } = require('./calcoloLettura');
 const { avvisiDellaLettura, fatturataDopo, motivoLetturaSuperata } = require('./avvisiLettura');
 const { descriviMora, fatturePrecedenti, rigaMoraPer } = require('./mora');
@@ -56,12 +56,10 @@ const storiaDeiContatori = async (contatoreIds) => {
     return storia;
 };
 
-const sommaTotali = (primi, ...altri) => ({
-    ...primi,
-    imponibile: sumMoneyBy([primi, ...altri], (totali) => totali.imponibile),
-    iva: sumMoneyBy([primi, ...altri], (totali) => totali.iva),
-    totale_fattura: sumMoneyBy([primi, ...altri], (totali) => totali.totale_fattura),
-});
+// Il totale che avra la bozza: tutte le sue righe insieme, con lo stesso calcolo
+// della generazione, che arrotonda l'IVA una volta per aliquota. Sommare i totali
+// lettura per lettura poteva scostarsi di un centesimo dalla bozza generata.
+const totaleDelGruppo = (letture, righe) => ({ letture, ...calculateTotals(righe) });
 
 // Un gruppo pronto: gli importi delle letture, la parte del condominiale se
 // l'utenza ne paga una, e la mora se la fattura la porterebbe. Mora e quote ci
@@ -69,24 +67,28 @@ const sommaTotali = (primi, ...altri) => ({
 // calcola anche quando la si lascia fuori, per dire quanto vale: entra nel
 // totale solo se inclusa.
 const chiudiGruppo = (gruppo, { articlesByCode, includeDelay, oggi, precedenti }) => {
-    let totals = summarizeBillablePreviews(gruppo.previews);
+    const fatturabili = gruppo.previews.filter(isBillablePreview);
+    const quote = fatturabili.length > 0 ? gruppo.quote : [];
+    const righe = [...fatturabili.flatMap((preview) => preview.lines), ...quote.flatMap((quota) => quota.lines)];
     let mora = null;
-    const quote = totals.letture > 0 ? gruppo.quote : [];
-    totals = sommaTotali(totals, ...quote.map((quota) => quota.totals));
 
-    if (totals.letture > 0) {
+    if (fatturabili.length > 0) {
         const precedente = precedenti.get(recordId(gruppo.cliente));
 
         try {
             const riga = rigaMoraPer({ articlesByCode, precedente, dataFattura: oggi });
             if (riga) {
                 mora = { ...descriviMora(precedente, oggi), inclusa: includeDelay, totals: calculateTotals([riga]) };
-                totals = includeDelay ? sommaTotali(totals, mora.totals) : totals;
+                if (includeDelay) {
+                    righe.push(riga);
+                }
             }
         } catch (error) {
             gruppo.anomalies.push({ message: error.message });
         }
     }
+
+    const totals = totaleDelGruppo(fatturabili.length, righe);
 
     return {
         ...gruppo,
@@ -218,7 +220,7 @@ const previewClienteBilling = async (clienteId, options = {}) => {
         anomalies: [...anomalies, ...gruppo.anomalies],
         mora: gruppo.mora,
         daVerificare: gruppo.daVerificare,
-        totals: gruppo.totals || summarizeBillablePreviews([]),
+        totals: gruppo.totals || totaleDelGruppo(0, []),
     };
 };
 

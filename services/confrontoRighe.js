@@ -12,12 +12,12 @@ const {
     createAnnualFixedContext,
     getDate,
 } = require('./annualFixedChargeService');
-const { recordId } = require('./billingCalculator');
+const { eRigaDiQuotaFissa } = require('./billingCalculator');
 const { calcolaLettura, loadReadings } = require('./calcoloLettura');
 const { verificaQuota } = require('./ripartoCondominiale');
 const { notFound } = require('../utils/errors');
 const { normalizeText, sumMoneyBy } = require('../utils/values');
-const { uniqueById } = require('../utils/mongo');
+const { recordId, uniqueById } = require('../utils/mongo');
 const { stessoImporto } = require('../utils/money');
 
 const cleanServiceLine = (line, fatturaId, riga) => ({
@@ -118,11 +118,9 @@ const getReadingServices = (servizi) => servizi.filter((servizio) => servizio.le
 
 const getExtraServices = (servizi) => servizi.filter((servizio) => !servizio.lettura);
 
-const isFixedChargeLine = (line) => Boolean(line.tipo_quota) || normalizeText(line.tipo_tariffa).includes('fisso');
+const getFixedServices = (servizi) => servizi.filter(eRigaDiQuotaFissa);
 
-const getFixedServices = (servizi) => servizi.filter(isFixedChargeLine);
-
-const getFixedLines = (lines) => lines.filter(isFixedChargeLine);
+const getFixedLines = (lines) => lines.filter(eRigaDiQuotaFissa);
 
 const getServicesTotal = (servizi) => sumMoneyBy(servizi, (servizio) => servizio.valore_unitario);
 

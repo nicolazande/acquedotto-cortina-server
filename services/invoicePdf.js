@@ -9,9 +9,9 @@ const Fattura = require('../models/Fattura');
 require('../models/Lettura');
 require('../models/Listino');
 require('../models/Scadenza');
-const { getLineTaxRate } = require('./billingCalculator');
+const { getLineTaxRate, riepilogoIva } = require('./billingCalculator');
 const { matricolaDellaRiga, righeDeiDocumenti, righeDelDocumento } = require('./righeFattura');
-const { applyRate, fromCents, toCents } = require('../utils/money');
+const { fromCents, importoItaliano } = require('../utils/money');
 const { AZIENDA } = require('../config/azienda');
 const { ibanLeggibile, ibanNascosto } = require('../utils/iban');
 
@@ -52,10 +52,10 @@ const invoiceAssets = {
     numeroVerdeEmergenza: path.join(__dirname, '..', 'assets', 'invoice', 'numero-verde-emergenza.ppm'),
 };
 
-const { isEmptyValue: isEmpty, numberOrZero, senzaAccenti } = require('../utils/values');
+const { isEmptyValue: isEmpty, senzaAccenti } = require('../utils/values');
 const { unprocessable } = require('../utils/errors');
 const { formatItalianDate } = require('../utils/dates');
-const { capItaliano, customerLabel } = require('../utils/customer');
+const { customerLabel, indirizzoDiRecapito } = require('../utils/customer');
 const { haNumero, isConfirmedInvoice, numeroDocumento, pagaConAddebito } = require('../config/invoicing');
 
 const asciiText = (value) => senzaAccenti(value)
@@ -63,24 +63,15 @@ const asciiText = (value) => senzaAccenti(value)
     .replace(/[^\x20-\x7E]/g, '')
     .replace(/[\\()]/g, '\\$&');
 
-const formatMoney = (value) => `Euro ${numberOrZero(value).toFixed(2).replace('.', ',')}`;
+const formatMoney = (value) => `Euro ${importoItaliano(value)}`;
 const formatNumber = (value) => Number.isFinite(Number(value)) ? String(Number(value)).replace('.', ',') : '';
 
 
 const joinAddress = (...parts) => parts.filter((part) => !isEmpty(part)).join(' ').trim();
 
 const billingAddress = (cliente) => {
-    const invoiceAddress = joinAddress(cliente?.indirizzo_fatturazione, cliente?.numero_fatturazione);
-    const residenceAddress = joinAddress(cliente?.indirizzo_residenza, cliente?.numero_residenza);
-
-    return {
-        address: invoiceAddress || residenceAddress,
-        city: joinAddress(
-            capItaliano(cliente?.cap_fatturazione || cliente?.cap_residenza),
-            cliente?.localita_fatturazione || cliente?.localita_residenza,
-            cliente?.provincia_fatturazione || cliente?.provincia_residenza
-        ),
-    };
+    const { via, numero, cap, localita, provincia } = indirizzoDiRecapito(cliente);
+    return { address: joinAddress(via, numero), city: joinAddress(cap, localita, provincia) };
 };
 
 const readPpmToken = (buffer, cursor) => {
@@ -508,13 +499,7 @@ const drawPhoneBoxes = (pdf) => {
 // e cio che dichiara il riepilogo della fattura elettronica: le tre cifre che il
 // cliente puo confrontare vengono dallo stesso calcolo.
 const drawTaxSummary = (pdf, fattura, servizi) => {
-    const groups = servizi.reduce((map, service) => {
-        const rate = getLineTaxRate(service);
-        const current = map.get(rate) || { centesimi: 0 };
-        current.centesimi += toCents(numberOrZero(service.valore_unitario));
-        map.set(rate, current);
-        return map;
-    }, new Map());
+    const groups = riepilogoIva(servizi);
 
     pdf.rect(20, 252, 263, 104, { stroke: BLACK });
     pdf.cellText('Totale bolletta', 20, 253, 183, 20, { align: 'center', size: 6 });
@@ -528,10 +513,10 @@ const drawTaxSummary = (pdf, fattura, servizi) => {
     pdf.line(20, 292, 283, 292, { color: GRAY });
 
     let y = 292;
-    [...groups.entries()].forEach(([rate, { centesimi }]) => {
-        pdf.cellText(`IVA ${formatNumber(rate)}%`, 20, y, 122, 15, { align: 'center', size: 6 });
-        pdf.cellText(formatMoney(fromCents(applyRate(centesimi, rate))), 142, y, 64, 15, { align: 'center', size: 6 });
-        pdf.cellText(formatMoney(fromCents(centesimi)), 206, y, 77, 15, { align: 'center', size: 6 });
+    groups.forEach(({ aliquota, imponibileCents, impostaCents }) => {
+        pdf.cellText(`IVA ${formatNumber(aliquota)}%`, 20, y, 122, 15, { align: 'center', size: 6 });
+        pdf.cellText(formatMoney(fromCents(impostaCents)), 142, y, 64, 15, { align: 'center', size: 6 });
+        pdf.cellText(formatMoney(fromCents(imponibileCents)), 206, y, 77, 15, { align: 'center', size: 6 });
         y += 12;
     });
 };
@@ -639,7 +624,7 @@ const drawDetailTable = (pdf, servizi) => {
             service.tipo_quota || service.tipo_tariffa || '',
             matricolaDellaRiga(service),
             getLineDescription(service),
-            service.articolo?.iva || `IVA ${formatNumber(getLineTaxRate(service))}%`,
+            getLineTaxRate(service) > 0 ? `IVA ${formatNumber(getLineTaxRate(service))}%` : (service.articolo?.iva || 'IVA 0%'),
             service.lettura_precedente || '',
             service.lettura_fatturazione || '',
             formatNumber(service.metri_cubi),

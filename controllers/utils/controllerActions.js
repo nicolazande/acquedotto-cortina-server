@@ -32,9 +32,16 @@ const describe = (audit, record) => (
 // 135 mc"). Un guasto imprevisto no: il suo testo e tecnico - del driver, di
 // Mongoose, di un modulo - e potrebbe portare con se nomi di campi o frammenti
 // di query. Resta nel log, e all'utente arriva il messaggio di ripiego.
+// Un identificativo che non ha la forma di un id del database e una richiesta
+// sbagliata, non un guasto: prima arrivava come errore 500 del server.
+const ID_NON_VALIDO = 'Identificativo non valido.';
+
 const sendServiceError = (res, error, fallbackMessage, fallbackStatus = 500) => {
+    if (error?.name === 'CastError') {
+        return res.status(400).json({ error: ID_NON_VALIDO });
+    }
     console.error(error);
-    res.status(error.status || fallbackStatus).json({
+    return res.status(error.status || fallbackStatus).json({
         error: error.status ? error.message : fallbackMessage,
     });
 };
@@ -129,7 +136,10 @@ const deleteRecord = (Model, { audit, cascata = false, name }) => (
     }
 );
 
+// `dopo`: cio che il collegamento si porta dietro, una volta scritto - una riga
+// che cambia articolo cambia aliquota e totali della sua fattura.
 const associateRecords = ({
+    dopo,
     field,
     responseKey,
     responseRecord,
@@ -154,8 +164,15 @@ const associateRecords = ({
 
             const savedRecord = setOn === 'source' ? source : target;
             const linkedRecord = setOn === 'source' ? target : source;
+            // Si scrive solo il campo del collegamento. Salvare il documento
+            // intero scriveva anche i valori predefiniti che mancavano: su una
+            // fattura importata con la sola spunta `confermata`, lo stato
+            // "bozza" predefinito la riportava a bozza.
+            await savedRecord.constructor.updateOne({ _id: savedRecord._id }, { $set: { [field]: linkedRecord._id } });
             savedRecord[field] = linkedRecord._id;
-            await savedRecord.save();
+            if (dopo) {
+                await dopo({ salvato: savedRecord, collegato: linkedRecord });
+            }
 
             const bodyRecord = responseRecord === 'source'
                 ? source

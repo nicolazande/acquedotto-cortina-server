@@ -45,9 +45,20 @@ const SALDATA = { saldo: true };
 const NON_SALDATA = { $or: [{ saldo: false }, { saldo: { $exists: false } }] };
 const saldataExpression = () => ({ $eq: [{ $ifNull: ['$saldo', false] }, true] });
 
+// Scaduta vuol dire che il giorno della scadenza e passato: da domani, non da
+// stamattina, come il ritardo (`delayAggregation`), che conta i giorni interi.
+// L'elenco delle scadenze e la panoramica ne avevano due versioni: il giorno
+// della scadenza una la contava fra le scadute e l'altra no, e i due numeri non
+// tornavano. Le date sono a mezzanotte UTC, come `startOfDay`.
+const oggiUtc = (adesso = new Date()) => new Date(Date.UTC(adesso.getUTCFullYear(), adesso.getUTCMonth(), adesso.getUTCDate()));
+const SCADUTA = (adesso) => ({ scadenza: { $lt: oggiUtc(adesso) } });
+const IN_ARRIVO = (adesso) => ({ scadenza: { $gte: oggiUtc(adesso) } });
+
 const Scadenza = mongoose.model('Scadenza', scadenzaSchema);
 
 module.exports = Scadenza;
 module.exports.SALDATA = SALDATA;
 module.exports.NON_SALDATA = NON_SALDATA;
 module.exports.saldataExpression = saldataExpression;
+module.exports.SCADUTA = SCADUTA;
+module.exports.IN_ARRIVO = IN_ARRIVO;

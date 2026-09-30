@@ -3,13 +3,13 @@ const Servizio = require('../models/Servizio');
 const { sendPaginated } = require('./utils/paginatedQuery');
 const { getTaxRate } = require('../services/billingCalculator');
 const {
-    associateRecords,
     createRecord,
     deleteRecord,
     getManyByField,
     getRecord,
     updateRecord,
 } = require('./utils/controllerActions');
+const ServizioController = require('./ServizioController');
 
 // Le tariffe determinano quanto pagano i clienti: ogni modifica lascia traccia.
 const audit = {
@@ -33,17 +33,9 @@ module.exports = {
     getArticolo: getRecord(Articolo, { name: 'Articolo' }),
     updateArticolo: updateRecord(Articolo, { audit, name: 'Articolo' }),
     deleteArticolo: deleteRecord(Articolo, { audit, name: 'Articolo' }),
-    associateServizio: associateRecords({
-        field: 'articolo',
-        responseKey: 'servizio',
-        setOn: 'target',
-        sourceModel: Articolo,
-        sourceName: 'Articolo',
-        sourceParam: 'articoloId',
-        targetModel: Servizio,
-        targetName: 'Servizio',
-        targetParam: 'servizioId',
-    }),
+    // Cambiare l'articolo di una riga e la stessa operazione dalle due parti: una
+    // sola strada, con il blocco delle fatture confermate e il ricalcolo.
+    associateServizio: ServizioController.associateArticolo,
     getServiziAssociati: getManyByField({
         Model: Servizio,
         field: 'articolo',

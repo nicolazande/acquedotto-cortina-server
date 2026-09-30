@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
+const { CANALI_CONSEGNA } = require('../config/delivery');
 
 // Una consegna e il recapito di una fattura su un canale.
 //
@@ -17,12 +18,8 @@ const consegnaSchema = new Schema(
         cliente: { type: Schema.Types.ObjectId, ref: 'Cliente' },
         // Cosa si consegna: la copia di cortesia o il documento fiscale.
         tipo: { type: String, enum: ['cortesia', 'elettronica'], required: true },
-        // Su quale strada. I valori sono quelli dichiarati in config/delivery.js.
-        canale: {
-            type: String,
-            enum: ['email', 'pec', 'sdi', 'cassetto', 'postale', 'sportello'],
-            required: true,
-        },
+        // Su quale strada: i valori li dichiara config/delivery.js.
+        canale: { type: String, enum: CANALI_CONSEGNA, required: true },
         destinatario: { type: String },
         // Dove va una copia postale: la localita (il paese o la citta) e la zona
         // (la frazione in paese, la citta fuori). La stampa mette le buste in

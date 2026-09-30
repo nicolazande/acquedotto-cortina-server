@@ -8,11 +8,12 @@
 
 const Fattura = require('../models/Fattura');
 const Scadenza = require('../models/Scadenza');
-const { DEFAULT_DELAY_ARTICLE_CODE, getTaxRate, recordId, roundMoney } = require('./billingCalculator');
+const { DEFAULT_DELAY_ARTICLE_CODE, getTaxRate } = require('./billingCalculator');
 const { calculateDelay } = require('./deadlineService');
 const { FILTRO_CONFERMATE, numeroDocumento } = require('../config/invoicing');
 const { createError } = require('../utils/errors');
-const { toObjectId, withSession } = require('../utils/mongo');
+const { recordId, toObjectId, withSession } = require('../utils/mongo');
+const { roundMoney } = require('../utils/values');
 
 const IMPORTO_MORA = (() => {
     const importo = Number.parseFloat(process.env.INVOICE_DELAY_FEE || '6');

@@ -16,7 +16,7 @@ require('../models/Servizio');
 
 const { buildAnnualFixedLookupCache } = require('../services/annualFixedChargeService');
 const { verifyInvoiceCalculation } = require('../services/verificaFattura');
-const { roundMoney } = require('../services/billingCalculator');
+const { roundMoney } = require('../utils/values');
 
 const parseArgs = () => ({
     limit: numero('limit'),

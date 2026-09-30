@@ -21,6 +21,7 @@ router.delete('/:id', FatturaController.deleteFattura);
 router.post('/:fatturaId/cliente/:clienteId', FatturaController.associateCliente);
 router.post('/:fatturaId/servizio/:servizioId', FatturaController.associateServizio);
 router.post('/:fatturaId/scadenza/:scadenzaId', FatturaController.associateScadenza);
+router.post('/:id/scadenza', FatturaController.creaScadenza);
 router.get('/:id/servizi', FatturaController.getServiziAssociati);
 router.get('/:id/cliente', FatturaController.getClienteAssociato);
 router.get('/:id/scadenza', FatturaController.getScadenzaAssociata);

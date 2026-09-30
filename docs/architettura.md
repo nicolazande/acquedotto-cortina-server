@@ -155,6 +155,7 @@ sanno niente della coda.
 | `controllerActions.js` | fabbriche `createRecord`, `getRecord`, `updateRecord`, `deleteRecord`, `associateRecords`, `getManyByField`, `getPopulatedRelation` |
 | `paginatedQuery.js`    | `sendPaginated`: paginazione, ricerca e ordinamento condivisi        |
 | `requestOptions.js`    | lettura dei booleani da querystring                                 |
+| `inviaFile.js`         | `inviaFile`: un file al browser (PDF, XML, zip, elenchi, allegati) con tipo, lunghezza in byte e nome sicuro nell'intestazione |
 
 Un controller tipico e quindi solo una mappa di risorse e relazioni
 (vedi `ContatoreController.js`): la logica sta nelle fabbriche.

@@ -13,18 +13,16 @@ import sys
 from pathlib import Path
 
 from bson import json_util
-from dotenv import load_dotenv
-from pymongo import MongoClient
 
-SERVER_ROOT = Path(__file__).resolve().parents[2]
-load_dotenv(SERVER_ROOT / ".env")
+from ambiente import apri_database, uri_del_server
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Ripristina un backup dell'import")
     parser.add_argument("cartella", help="cartella del backup (contiene manifest.json)")
     parser.add_argument("--conferma", action="store_true", help="esegue davvero il ripristino")
-    parser.add_argument("--uri", default=os.getenv("MONGODB_URI", "mongodb://localhost:27017/acquedotto-zuel"))
+    parser.add_argument("--uri", default=uri_del_server())
+    parser.add_argument("--db", default=os.getenv("MONGODB_DB"), help="nome del database, se non e nell'indirizzo")
     return parser.parse_args()
 
 
@@ -40,8 +38,7 @@ def main() -> int:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     print(f"Backup del {manifest['creato']} sul database {manifest['database']}")
 
-    client = MongoClient(args.uri)
-    db = client.get_default_database()
+    client, db = apri_database(args.uri, args.db, socket_ms=120000)
 
     try:
         for nome, attesi in manifest["documenti"].items():

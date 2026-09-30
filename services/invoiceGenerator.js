@@ -9,12 +9,7 @@ const {
     createAnnualFixedContext,
 } = require('./annualFixedChargeService');
 const { ensureInvoiceDeadline, syncInvoiceDeadlineTotal } = require('./deadlineService');
-const {
-    calculateTotals,
-    getTaxRate,
-    numberOrZero,
-    roundMoney,
-} = require('./billingCalculator');
+const { calculateTotals, getTaxRate } = require('./billingCalculator');
 const { confermaInSessione } = require('./confermaFatture');
 const { isConfirmedInvoice } = require('../config/invoicing');
 const { fatturePrecedenti, rigaMoraPer, segnaMoraFatturata } = require('./mora');
@@ -31,7 +26,7 @@ const {
 } = require('./confrontoRighe');
 const { createError, unprocessable } = require('../utils/errors');
 const { uniqueById, withSession } = require('../utils/mongo');
-const { parseBoolean } = require('../utils/values');
+const { numberOrZero, parseBoolean, roundMoney } = require('../utils/values');
 const { customerLabel } = require('../utils/customer');
 
 const releaseReadingsForBilling = async (letturaIds) => {
@@ -92,7 +87,6 @@ const getClienteFromReadings = (readings) => {
 
     return clientes[0];
 };
-
 
 // I totali della fattura sono la somma delle sue righe, e devono restare tali
 // per sempre: aggiungerne una dalla scheda lasciava imponibile, IVA e totale

@@ -2,7 +2,16 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 
-const VARIABILI = ['R2_ACCOUNT_ID', 'R2_BUCKET', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_ENDPOINT'];
+const VARIABILI = ['R2_ACCOUNT_ID', 'R2_BUCKET', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_ENDPOINT', 'R2_REGION'];
+
+// Le prove partono senza archivio, qualunque cosa ci sia nell'ambiente di chi
+// le lancia: una shell con le chiavi R2 vere non deve cambiarne l'esito, ne
+// mandare richieste all'archivio vero.
+const giaNellAmbiente = Object.fromEntries(VARIABILI.map((v) => [v, process.env[v]]));
+VARIABILI.forEach((v) => delete process.env[v]);
+test.after(() => VARIABILI.forEach((v) => {
+    if (giaNellAmbiente[v] !== undefined) process.env[v] = giaNellAmbiente[v];
+}));
 
 // `archivioFile` legge la configurazione a ogni chiamata, quindi si puo accendere
 // e spegnere fra un test e l'altro senza ricaricare il modulo.

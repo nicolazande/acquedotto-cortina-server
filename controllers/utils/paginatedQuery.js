@@ -143,7 +143,6 @@ const sendPaginated = async (Model, req, res, options = {}) => {
         defaultLimit = 50,
         defaultSort = '_id',
         errorMessage = 'Elenco non disponibile.',
-        maxLimit = MAX_PAGE_SIZE,
         populate,
         ricercaCollegata,
         transform,
@@ -152,7 +151,7 @@ const sendPaginated = async (Model, req, res, options = {}) => {
 
     try {
         const page = toPositiveInteger(req.query.page, 1);
-        const limit = Math.min(toPositiveInteger(req.query.limit, defaultLimit), maxLimit);
+        const limit = Math.min(toPositiveInteger(req.query.limit, defaultLimit), MAX_PAGE_SIZE);
         const search = (req.query.search || '').trim();
         const sortField = getSortField(req.query.sortField, defaultSort);
         const sortOrder = req.query.sortOrder === 'desc' ? -1 : 1;

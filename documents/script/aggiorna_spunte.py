@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import unicodedata  # noqa: E402
 
 import main  # noqa: E402  (il percorso va sistemato prima dell'import)
+from ambiente import database_del_server, env_int  # noqa: E402
 
 SPUNTE_CLIENTE = ["socio", "fattura_elettronica"]
 SPUNTE_CONTATORE = ["inattivo", "subentro", "sostituzione", "condominiale"]
@@ -146,7 +147,7 @@ def aggiorna_clienti(cookie, db, scrivi: bool) -> dict:
         if scrivi:
             db.clienti.update_one({"_id": id_cliente}, {"$set": cambi})
 
-    main.run_threaded(identificativi, lavora, main.env_int("IMPORT_CLIENTI_WORKERS", 12))
+    main.run_threaded(identificativi, lavora, env_int("IMPORT_CLIENTI_WORKERS", 12))
     return esito
 
 
@@ -174,7 +175,7 @@ def aggiorna_contatori(cookie, db, scrivi: bool) -> dict:
         if scrivi:
             db.contatori.update_one({"_id": contatore["_id"]}, {"$set": cambi})
 
-    main.run_threaded(contatori, lavora, main.env_int("IMPORT_CLIENTI_WORKERS", 12))
+    main.run_threaded(contatori, lavora, env_int("IMPORT_CLIENTI_WORKERS", 12))
     return esito
 
 
@@ -212,7 +213,7 @@ def main_script() -> int:
         print("Nessuna sessione Gesco: esegui prima `npm run gesco:login`.")
         return 1
 
-    client, db = main.get_database()
+    client, db = database_del_server()
     print(f"Database: {db.name} | Gesco: {main.FASTTOOLS_BASE_URL}")
     print("== SOLA LETTURA (usa --scrivi per applicare) ==" if not scrivi else "== APPLICO LE CORREZIONI ==")
 

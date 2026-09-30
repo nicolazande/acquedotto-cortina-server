@@ -342,7 +342,9 @@ spedire nulla.
 
 Oggi il gestionale **prepara** il file e lo mette in elenco, ma non lo trasmette:
 l'inoltro passa da un intermediario (commercialista o portale dell'Agenzia).
-Lo dichiara `CANALE_TRASMISSIONE_SDI=intermediario`.
+Lo dichiara `CANALE_TRASMISSIONE_SDI=intermediario`, letto una volta sola in
+`config/delivery.js` (`TRASMISSIONE_SDI_AUTOMATICA`): un valore diverso da
+`intermediario` e `pec` vale intermediario, con un avviso all'avvio.
 
 Il resto della catena e gia al suo posto. Con `CANALE_TRASMISSIONE_SDI=pec` il
 file XML viene inoltrato da solo alla casella dello SdI

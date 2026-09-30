@@ -11,7 +11,8 @@ const Listino = require('../models/Listino');
 const Scadenza = require('../models/Scadenza');
 const Servizio = require('../models/Servizio');
 require('../models/Cliente');
-const { getTaxRate } = require('../services/billingCalculator');
+const { calculateTotals } = require('../services/billingCalculator');
+const { fromCents, toCents } = require('../utils/money');
 const { MESI_DI_PREAVVISO, analizzaCopertura, tariffeInScadenza } = require('../services/tariffService');
 const { riferimentiRotti } = require('../services/referentialIntegrity');
 
@@ -38,65 +39,43 @@ const getCoverageProblems = async () => {
 };
 
 
-const money = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
-const TOLERANCE = 0.02;
 const strict = ['1', 'true', 'yes'].includes(String(process.env.INVOICE_VERIFY_STRICT).toLowerCase());
 
 const sample = (items, limit = 8) => items.slice(0, limit).map((item) => JSON.stringify(item));
 
+const differenza = (a, b) => fromCents(toCents(a) - toCents(b));
 
+// I totali salvati contro quelli delle righe, rifatti con lo stesso calcolo che
+// usano la generazione, il PDF e la fattura elettronica (`calculateTotals`), al
+// centesimo: e lo scarto che fa scartare il file dallo SdI. Prima qui si
+// sommava in virgola mobile con due centesimi di tolleranza, e proprio quei
+// casi passavano per buoni.
 const getInvoiceTotalMismatches = async () => {
     const rows = await Servizio.find({ fattura: { $ne: null } })
         .populate('fattura articolo')
         .lean();
-    const groups = new Map();
+    const perFattura = Map.groupBy(rows.filter((service) => service.fattura?._id), (service) => String(service.fattura._id));
 
-    rows.forEach((service) => {
-        const fattura = service.fattura;
-        if (!fattura?._id) {
-            return;
-        }
-
-        const key = String(fattura._id);
-        const current = groups.get(key) || {
-            _id: fattura._id,
-            anno: fattura.anno,
-            numero: fattura.numero,
-            fatturaImponibile: fattura.imponibile,
-            fatturaIva: fattura.iva,
-            fatturaTotale: fattura.totale_fattura,
-            serviziImponibile: 0,
-            serviziIva: 0,
-        };
-        const imponibile = money(service.valore_unitario);
-        const ivaPercent = service.aliquota_iva ?? getTaxRate(service.articolo);
-
-        current.serviziImponibile += imponibile;
-        current.serviziIva += imponibile * ivaPercent / 100;
-        groups.set(key, current);
-    });
-
-    return [...groups.values()]
-        .map((row) => {
-            const serviziImponibile = money(row.serviziImponibile);
-            const serviziIva = money(row.serviziIva);
-            const serviziTotale = money(serviziImponibile + serviziIva);
-
+    return [...perFattura.values()]
+        .map((righe) => {
+            const { fattura } = righe[0];
+            const calcolati = calculateTotals(righe);
             return {
-                ...row,
-                serviziImponibile,
-                serviziIva,
-                serviziTotale,
-                deltaImponibile: money(money(row.fatturaImponibile) - serviziImponibile),
-                deltaIva: money(money(row.fatturaIva) - serviziIva),
-                deltaTotale: money(money(row.fatturaTotale) - serviziTotale),
+                _id: fattura._id,
+                anno: fattura.anno,
+                numero: fattura.numero,
+                fatturaImponibile: fattura.imponibile,
+                fatturaIva: fattura.iva,
+                fatturaTotale: fattura.totale_fattura,
+                serviziImponibile: calcolati.imponibile,
+                serviziIva: calcolati.iva,
+                serviziTotale: calcolati.totale_fattura,
+                deltaImponibile: differenza(fattura.imponibile, calcolati.imponibile),
+                deltaIva: differenza(fattura.iva, calcolati.iva),
+                deltaTotale: differenza(fattura.totale_fattura, calcolati.totale_fattura),
             };
         })
-        .filter((row) => (
-            Math.abs(row.deltaImponibile) > TOLERANCE
-            || Math.abs(row.deltaIva) > TOLERANCE
-            || Math.abs(row.deltaTotale) > TOLERANCE
-        ));
+        .filter((row) => row.deltaImponibile !== 0 || row.deltaIva !== 0 || row.deltaTotale !== 0);
 };
 
 // Il ritardo di una scadenza e un valore derivato: dipende da che giorno e

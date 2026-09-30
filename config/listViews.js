@@ -3,9 +3,10 @@
 // Vivono sul server perche il client possa solo sceglierne una, non comporre
 // interrogazioni arbitrarie, e perche restino verificabili con i test.
 
-const { NON_SALDATA, SALDATA } = require('../models/Scadenza');
+const { IN_ARRIVO, NON_SALDATA, SALDATA, SCADUTA } = require('../models/Scadenza');
 const { DA_FATTURARE } = require('../models/Lettura');
 const { ALIAS_MODALITA, IN_UFFICIO, MODALITA_CONSEGNA, MODALITA_PREDEFINITA } = require('./delivery');
+const { FILTRO_BOZZE, FILTRO_CONFERMATE } = require('./invoicing');
 const { escapeRegex } = require('../utils/values');
 
 // Il flag puo mancare del tutto sui record importati dal gestionale precedente.
@@ -13,8 +14,8 @@ const nonImpostato = (campo) => ({ $or: [{ [campo]: false }, { [campo]: { $exist
 
 const scadenzaViews = {
     aperte: () => NON_SALDATA,
-    scadute: () => ({ $and: [NON_SALDATA, { scadenza: { $lte: new Date() } }] }),
-    'in-arrivo': () => ({ $and: [NON_SALDATA, { scadenza: { $gt: new Date() } }] }),
+    scadute: () => ({ $and: [NON_SALDATA, SCADUTA()] }),
+    'in-arrivo': () => ({ $and: [NON_SALDATA, IN_ARRIVO()] }),
     saldate: () => SALDATA,
 };
 
@@ -24,15 +25,18 @@ const letturaViews = {
 };
 
 const fatturaViews = {
-    bozze: () => ({ stato: 'bozza' }),
-    confermate: () => ({ stato: 'confermata' }),
+    bozze: () => FILTRO_BOZZE,
+    confermate: () => FILTRO_CONFERMATE,
     'senza-scadenza': () => ({ $or: [{ scadenza: null }, { scadenza: { $exists: false } }] }),
 };
 
 const contatoreViews = {
     attivi: () => nonImpostato('inattivo'),
     inattivi: () => ({ inattivo: true }),
-    condominiali: () => ({ tipo_contatore: /condominiale/i }),
+    // "condomin" e non "condominiale": nei dati il contatore comune e scritto
+    // "Condominali Ripartiti", e la vista mostrava le utenze private e perdeva
+    // proprio lui. Cosi sono i sei contatori dei riparti.
+    condominiali: () => ({ tipo_contatore: /condomin/i }),
 };
 
 // La modalita di consegna era un campo di testo libero: i dati importati dicono

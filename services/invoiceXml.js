@@ -13,11 +13,11 @@ const { modalitaPagamentoXml, naturaPerIva, numeroDocumento, tipoDocumentoXml } 
 const { AZIENDA } = require('../config/azienda');
 const { abiDellIban, cabDellIban, ibanCompatto, ibanValido } = require('../utils/iban');
 const { CODICE_DESTINATARIO_ASSENTE, canaleFatturaElettronica, destinatarioNonGestito } = require('../config/delivery');
-const { capItaliano, customerLabel } = require('../utils/customer');
+const { customerLabel, sedeFiscale } = require('../utils/customer');
 const { formatItalianDate } = require('../utils/dates');
 const { matricolaDellaRiga } = require('./righeFattura');
-const { getTaxRate } = require('./billingCalculator');
-const { applyRate, fromCents, toCents } = require('../utils/money');
+const { eRigaDiQuotaFissa, getLineTaxRate, riepilogoIva } = require('./billingCalculator');
+const { fromCents, toCents } = require('../utils/money');
 const { unprocessable } = require('../utils/errors');
 const { siglaProvincia } = require('../utils/province');
 const { senzaAccenti } = require('../utils/values');
@@ -81,21 +81,18 @@ const anagraficaCliente = (cliente, fattura) => {
     return { denominazione, partitaIva, codiceFiscale };
 };
 
-// La sede del cliente nel tracciato e il suo domicilio fiscale: la residenza,
-// non l'indirizzo a cui si spedisce la copia di carta. Gesco faceva cosi (chi
-// abita a Venezia e riceve la bolletta a Zuel ha Venezia nel file). Solo chi non
-// ha la residenza prende l'indirizzo di fatturazione, intero: mescolare i campi
-// dei due darebbe un indirizzo che non esiste.
+// La sede del cliente nel tracciato e il suo domicilio fiscale (`sedeFiscale`),
+// non l'indirizzo a cui si spedisce la copia di carta: Gesco faceva cosi.
 const indirizzoCliente = (cliente) => {
-    const campi = cliente?.indirizzo_residenza && cliente?.localita_residenza ? 'residenza' : 'fatturazione';
+    const { via, numero, cap, localita, provincia } = sedeFiscale(cliente);
     return {
-        indirizzo: cliente?.[`indirizzo_${campi}`],
-        numero: cliente?.[`numero_${campi}`],
-        cap: capItaliano(cliente?.[`cap_${campi}`]),
-        comune: cliente?.[`localita_${campi}`],
+        indirizzo: via,
+        numero,
+        cap,
+        comune: localita,
         // Il tracciato vuole la sigla di due lettere: l'anagrafica importata
         // contiene il nome esteso.
-        provincia: siglaProvincia(cliente?.[`provincia_${campi}`]),
+        provincia: siglaProvincia(provincia),
     };
 };
 
@@ -109,7 +106,7 @@ const descrizioneNelTracciato = (servizio) => {
     if (!servizio.lettura) {
         return descrizione;
     }
-    const tipo = servizio.tipo_quota ? 'Quota fissa' : servizio.tipo_tariffa;
+    const tipo = eRigaDiQuotaFissa(servizio) ? 'Quota fissa' : servizio.tipo_tariffa;
     const matricola = matricolaDellaRiga(servizio);
     const data = servizio.data_lettura || servizio.lettura?.data_lettura;
     return [
@@ -123,7 +120,7 @@ const descrizioneNelTracciato = (servizio) => {
 // Ogni riga porta la propria aliquota; le righe senza imposta devono dichiarare
 // una natura, altrimenti il file viene scartato dal Sistema di Interscambio.
 const rigaDettaglio = (servizio, indice) => {
-    const aliquota = getTaxRate(servizio.articolo);
+    const aliquota = getLineTaxRate(servizio);
     const natura = aliquota === 0 ? naturaPerIva(servizio.articolo?.iva) : null;
 
     if (aliquota === 0 && !natura) {
@@ -155,28 +152,12 @@ const rigaDettaglio = (servizio, indice) => {
 // totali del documento. Restituisce anche le somme, perche il totale dichiarato
 // deve coincidere con queste e non con un valore calcolato altrove.
 const riepilogoPerAliquota = (servizi) => {
-    const gruppi = new Map();
+    const gruppi = riepilogoIva(servizi);
+    const imponibileCents = gruppi.reduce((somma, gruppo) => somma + gruppo.imponibileCents, 0);
+    const impostaCents = gruppi.reduce((somma, gruppo) => somma + gruppo.impostaCents, 0);
 
-    servizi.forEach((servizio) => {
-        const aliquota = getTaxRate(servizio.articolo);
-        const natura = aliquota === 0 ? naturaPerIva(servizio.articolo?.iva) : null;
-        const chiave = `${aliquota}|${natura || ''}`;
-        const corrente = gruppi.get(chiave) || { aliquota, natura, centesimi: 0 };
-
-        corrente.centesimi += toCents(servizio.valore_unitario);
-        gruppi.set(chiave, corrente);
-    });
-
-    let imponibileCents = 0;
-    let impostaCents = 0;
-
-    const righe = [...gruppi.values()].map(({ aliquota, natura, centesimi }) => {
-        // L'imposta si arrotonda per gruppo, come vuole il tracciato.
-        const imposta = applyRate(centesimi, aliquota);
-        imponibileCents += centesimi;
-        impostaCents += imposta;
-
-        return [
+    const righe = gruppi.map(({ aliquota, natura, imponibileCents: centesimi, impostaCents: imposta }) => (
+        [
             '      <DatiRiepilogo>',
             `        <AliquotaIVA>${percentuale(aliquota)}</AliquotaIVA>`,
             natura ? `        <Natura>${natura}</Natura>` : '',
@@ -188,8 +169,8 @@ const riepilogoPerAliquota = (servizi) => {
             '        <EsigibilitaIVA>I</EsigibilitaIVA>',
             natura ? '        <RiferimentoNormativo>Operazione senza applicazione IVA</RiferimentoNormativo>' : '',
             '      </DatiRiepilogo>',
-        ].filter(Boolean).join('\n');
-    });
+        ].filter(Boolean).join('\n')
+    ));
 
     return { righe, imponibileCents, impostaCents };
 };

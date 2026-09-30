@@ -7,12 +7,12 @@ const {
 } = require('../utils/values');
 const {
     MONEY_TOLERANCE,
-    applyRateToLines,
+    applyRate,
     fromCents,
     multiplyCents,
-    sumCents,
     toCents,
 } = require('../utils/money');
+const { naturaPerIva } = require('../config/invoicing');
 const { toDate } = require('../utils/dates');
 const { rateoQuotaFissa } = require('./rateoQuotaFissa');
 const { recordId } = require('../utils/mongo');
@@ -38,6 +38,23 @@ const CODICI_ARTICOLO_DEL_CALCOLO = [
 ];
 
 const createCalculationError = (message) => unprocessable(message);
+
+// Una riga di quota fissa: "fiss" nella tariffa o nel tipo di quota ("Fisso",
+// "Q.Fissa"), o "quota fissa" nella descrizione, come le righe scritte a mano in
+// Gesco ("Quota fissa 2" con tariffa "Tariffa Base"). E la regola della
+// verifica, dell'Anagrafe Tributaria, delle statistiche e della ricerca delle
+// quote gia pagate, che ne avevano tre versioni diverse. Il filtro e la stessa
+// regola per il database.
+const QUOTA_FISSA = /fiss/i;
+const DESCRIZIONE_QUOTA_FISSA = /quota fissa/i;
+const eRigaDiQuotaFissa = (riga) => (
+    QUOTA_FISSA.test(String(riga?.tipo_tariffa || ''))
+    || QUOTA_FISSA.test(String(riga?.tipo_quota || ''))
+    || DESCRIZIONE_QUOTA_FISSA.test(String(riga?.descrizione || ''))
+);
+const FILTRO_RIGHE_QUOTA_FISSA = {
+    $or: [{ tipo_tariffa: QUOTA_FISSA }, { tipo_quota: QUOTA_FISSA }, { descrizione: DESCRIZIONE_QUOTA_FISSA }],
+};
 
 const pickSnapshotFields = (record, fields) => {
     if (!record) {
@@ -341,15 +358,39 @@ const createLine = ({
     };
 };
 
-// Imponibile e imposta si calcolano in centesimi interi. L'IVA mantiene il
-// criterio storico, cioe una sola approssimazione sul totale invece che una per
-// riga, ma la somma non porta piu con se l'errore della virgola mobile.
+// Le righe divise per aliquota, in centesimi interi, con l'imposta arrotondata
+// una volta per gruppo. E il riepilogo che dichiara la fattura elettronica, che
+// stampa il PDF e da cui viene l'IVA della fattura: le tre cifre che il cliente
+// puo confrontare vengono da qui. Prima erano quattro calcoli, e il file e il PDF
+// leggevano l'aliquota dal testo di oggi dell'articolo mentre il totale usava
+// quella salvata sulla riga: cambiata l'IVA di un articolo, il file non tornava
+// piu con il suo totale e lo SdI lo scartava.
+//
+// Un'aliquota si applica a un imponibile, non a un miscuglio: 1,01 al 10% piu
+// 1,02 al 22% fanno 0,33 sommando prima e 0,32 per aliquota. Le righe senza
+// imposta si dividono anche per natura, come vuole il tracciato.
+const riepilogoIva = (lines) => {
+    const gruppi = new Map();
+
+    lines.forEach((line) => {
+        const aliquota = getLineTaxRate(line);
+        const natura = aliquota === 0 ? naturaPerIva((line.articolo_dettaglio || line.articolo)?.iva) : null;
+        const chiave = `${aliquota}|${natura || ''}`;
+        const gruppo = gruppi.get(chiave) || { aliquota, natura, imponibileCents: 0 };
+        gruppo.imponibileCents += toCents(line.valore_unitario);
+        gruppi.set(chiave, gruppo);
+    });
+
+    return [...gruppi.values()].map((gruppo) => ({
+        ...gruppo,
+        impostaCents: applyRate(gruppo.imponibileCents, gruppo.aliquota),
+    }));
+};
+
 const calculateTotals = (lines) => {
-    const imponibileCents = sumCents(lines, (line) => line.valore_unitario);
-    const ivaCents = applyRateToLines(lines.map((line) => ({
-        cents: toCents(line.valore_unitario),
-        rate: getLineTaxRate(line),
-    })));
+    const gruppi = riepilogoIva(lines);
+    const imponibileCents = gruppi.reduce((somma, gruppo) => somma + gruppo.imponibileCents, 0);
+    const ivaCents = gruppi.reduce((somma, gruppo) => somma + gruppo.impostaCents, 0);
 
     return {
         imponibile: fromCents(imponibileCents),
@@ -477,6 +518,7 @@ const calculateReadingInvoice = ({
 
 module.exports = {
     CODICI_ARTICOLO_DEL_CALCOLO,
+    FILTRO_RIGHE_QUOTA_FISSA,
     DEFAULT_CONDOMINIUM_ARTICLE_CODE,
     DEFAULT_CONDOMINIUM_FIXED_ARTICLE_CODE,
     DEFAULT_DELAY_ARTICLE_CODE,
@@ -484,6 +526,7 @@ module.exports = {
     DEFAULT_WATER_ARTICLE_CODE,
     calculateReadingInvoice,
     calculateTotals,
+    eRigaDiQuotaFissa,
     getApplicableBands,
     getBandQuantity,
     getLineTaxRate,
@@ -492,8 +535,6 @@ module.exports = {
     isSplitCondominiumCounter,
     limiteInferiore,
     limiteSuperiore,
-    numberOrZero,
     quotaDiRiparto,
-    recordId,
-    roundMoney,
+    riepilogoIva,
 };

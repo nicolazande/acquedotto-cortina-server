@@ -4,6 +4,7 @@ const Servizio = require('../models/Servizio');
 const { righeDelDocumento } = require('../services/righeFattura');
 const Scadenza = require('../models/Scadenza');
 const { sendPaginated } = require('./utils/paginatedQuery');
+const { inviaFile } = require('./utils/inviaFile');
 const {
     associateRecords,
     getManyByField,
@@ -12,7 +13,8 @@ const {
     rifiutaFatturaConfermata,
     sendServiceError,
 } = require('./utils/controllerActions');
-const { billingOptions, invoiceGenerationOptions, parseOptionalBoolean } = require('./utils/requestOptions');
+const { billingOptions, invoiceGenerationOptions } = require('./utils/requestOptions');
+const { parseOptionalBoolean } = require('../utils/values');
 const { confermaFattura, confermaFatture } = require('../services/confermaFatture');
 const {
     createManualInvoice,
@@ -35,6 +37,7 @@ const {
     writeInvoiceUpdateAudit,
 } = require('../services/invoiceAuditService');
 const {
+    ensureInvoiceDeadline,
     spostaScadenzaConLaFattura,
     withComputedDelay,
     withDeadlineDelay,
@@ -47,7 +50,7 @@ const { buildInvoiceXml } = require('../services/invoiceXml');
 const { fatturaViews } = require('../config/listViews');
 const { haNumero, isConfirmedInvoice } = require('../config/invoicing');
 const { startOfDay } = require('../utils/dates');
-const { badRequest, notFound, unprocessable } = require('../utils/errors');
+const { badRequest, conflict, notFound, unprocessable } = require('../utils/errors');
 
 const invoiceStatus = (confermata) => (parseOptionalBoolean(confermata) ? 'confermata' : 'bozza');
 
@@ -218,21 +221,45 @@ const downloadXml = async (req, res) => {
         // da qui il numero conta come uscito, e non torna piu libero.
         await segnaNumeroUscito(fattura);
 
-        res.setHeader('Content-Type', 'application/xml; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        return res.status(200).send(xml);
+        return inviaFile(res, { contenuto: xml, nome: filename, tipo: 'application/xml; charset=utf-8', scarica: true });
     } catch (error) {
         return sendServiceError(res, error, 'File XML della fattura non generato.');
+    }
+};
+
+// La scadenza di una fattura che non ce l'ha: anno, serie, numero, nome e
+// totale della fattura, e la data del suo termine di pagamento se non la si
+// sceglie. Dal modulo contano la data, e se e gia pagata la spunta e il giorno
+// dell'incasso. E la regola della generazione (`ensureInvoiceDeadline`): dalla scheda
+// la si creava con il modulo generico, senza anno ne numero, e mora e incassi,
+// che cercano le scadenze per anno e numero, non la trovavano. Vale anche per
+// una fattura confermata: aggiungere la scadenza che manca non cambia il
+// documento.
+const creaScadenza = async (req, res) => {
+    try {
+        const fattura = await Fattura.findById(req.params.id).orFail(fatturaNonTrovata);
+        if (fattura.scadenza) {
+            throw conflict('La fattura ha già una scadenza.');
+        }
+        const cliente = fattura.cliente ? await Cliente.findById(fattura.cliente).lean() : null;
+        let scadenza = await ensureInvoiceDeadline({ cliente, dueDate: req.body.scadenza, fattura });
+        if (req.body.saldo !== undefined || req.body.pagamento) {
+            scadenza = await Scadenza.findByIdAndUpdate(scadenza._id, {
+                $set: withComputedDelay({ saldo: parseOptionalBoolean(req.body.saldo) === true, pagamento: req.body.pagamento || null }),
+            }, { new: true });
+        }
+
+        await writeInvoiceAudit(req, fattura, 'fattura.scadenza_creata', `Creata la scadenza della fattura ${invoiceLabel(fattura)}`);
+        res.status(201).json(withComputedDelay(scadenza));
+    } catch (error) {
+        sendServiceError(res, error, 'Scadenza della fattura non creata.', error.status || 400);
     }
 };
 
 const downloadPdf = async (req, res) => {
     try {
         const { buffer, filename } = await generateInvoicePdf(req.params.id);
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
-        res.setHeader('Content-Length', buffer.length);
-        res.status(200).send(buffer);
+        inviaFile(res, { contenuto: buffer, nome: filename, tipo: 'application/pdf' });
     } catch (error) {
         sendServiceError(res, error, 'PDF della fattura non generato.');
     }
@@ -387,6 +414,7 @@ module.exports = {
     associateCliente: withEditableInvoice(associateCliente, 'fatturaId', 'associare il cliente'),
     associateServizio: withEditableInvoice(associateServizio, 'fatturaId', 'associare il servizio'),
     associateScadenza: withEditableInvoice(associateScadenza, 'fatturaId', 'associare la scadenza'),
+    creaScadenza,
     getServiziAssociati: getManyByField({
         Model: Servizio,
         field: 'fattura',

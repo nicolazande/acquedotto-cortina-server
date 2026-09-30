@@ -1,6 +1,7 @@
 const Consegna = require('../models/Consegna');
 const { sendPaginated } = require('./utils/paginatedQuery');
 const { sendServiceError } = require('./utils/controllerActions');
+const { inviaFile } = require('./utils/inviaFile');
 const { writeAuditLog } = require('../services/auditLogService');
 const { verificaTrasporto } = require('../services/mailer');
 const {
@@ -137,15 +138,15 @@ const stampa = async (req, res) => {
             stampate, rimaste, bloccate, zona: zona || undefined,
         });
 
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
-        res.setHeader('Content-Length', buffer.length);
         // Le intestazioni dicono quante aspettano il loro turno e quante restano
         // fuori per un problema: il PDF da solo non potrebbe raccontarlo, e chi
         // stampa deve saperlo.
-        res.setHeader('X-Consegne-Rimaste', String(rimaste));
-        res.setHeader('X-Consegne-Bloccate', String(bloccate));
-        res.status(200).send(buffer);
+        inviaFile(res, {
+            contenuto: buffer,
+            nome: filename,
+            tipo: 'application/pdf',
+            intestazioni: { 'X-Consegne-Rimaste': rimaste, 'X-Consegne-Bloccate': bloccate },
+        });
     } catch (error) {
         sendServiceError(res, error, 'Stampa non riuscita.', error.status || 400);
     }
@@ -162,15 +163,16 @@ const scaricaXml = async (req, res) => {
             rimaste,
         });
 
-        res.setHeader('Content-Type', 'application/zip');
         // Quante sono rimaste fuori dall'archivio: senza dirlo, si crederebbe di
         // avere tutte le fatture in coda. Il motivo e scritto sulla loro riga; e
         // quelle oltre il tetto arrivano con il prossimo archivio.
-        res.setHeader('X-Consegne-Saltate', String(saltate.length));
-        res.setHeader('X-Consegne-Rimaste', String(rimaste));
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        res.setHeader('Content-Length', buffer.length);
-        res.status(200).send(buffer);
+        inviaFile(res, {
+            contenuto: buffer,
+            nome: filename,
+            tipo: 'application/zip',
+            scarica: true,
+            intestazioni: { 'X-Consegne-Saltate': saltate.length, 'X-Consegne-Rimaste': rimaste },
+        });
     } catch (error) {
         sendServiceError(res, error, 'Archivio degli XML non generato.', error.status || 400);
     }
@@ -184,10 +186,7 @@ const scaricaXmlSingolo = async (req, res) => {
 
         await registra(req, req.params.id, 'consegna.xml_scaricati', `Scaricato il file XML ${filename}`, { quante: 1 });
 
-        res.setHeader('Content-Type', 'application/xml; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        res.setHeader('Content-Length', contenuto.length);
-        res.status(200).send(contenuto);
+        inviaFile(res, { contenuto, nome: filename, tipo: 'application/xml; charset=utf-8', scarica: true });
     } catch (error) {
         sendServiceError(res, error, 'File XML non generato.', error.status || 400);
     }

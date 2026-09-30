@@ -6,6 +6,7 @@ const { dimentica, leggi, riponi } = require('../services/archivioFile');
 const { badRequest, createError, forbidden, notFound } = require('../utils/errors');
 const { parsePositiveInteger } = require('../utils/values');
 const { sendServiceError } = require('./utils/controllerActions');
+const { inviaFile } = require('./utils/inviaFile');
 
 // Un allegato vale quanto il documento a cui e attaccato: le note su un
 // contatore le puo leggere chi puo leggere quel contatore, quelle su una fattura
@@ -187,12 +188,12 @@ class NoteAttachmentController {
             // l'archivio resta privato, senza indirizzi pubblici indovinabili.
             const byte = await leggi(attachment);
 
-            res.set('Content-Type', attachment.contentType);
-            res.set('Content-Length', String(byte.length));
-            res.set('Cache-Control', 'private, max-age=3600');
-            res.set('Content-Disposition', `inline; filename="${attachment.filename}"`);
-            res.set('X-Content-Type-Options', 'nosniff');
-            return res.send(byte);
+            return inviaFile(res, {
+                contenuto: byte,
+                nome: attachment.filename,
+                tipo: attachment.contentType,
+                intestazioni: { 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' },
+            });
         } catch (error) {
             return sendServiceError(res, error, 'File dell’allegato non disponibile.');
         }

@@ -53,7 +53,7 @@ const rigaDellaCategoria = (categoria, righe, contatoreDi) => {
 const righeDellAnno = async (anno) => {
     const fatture = await Fattura.find({ anno, ...FILTRO_CONFERMATE }).select('_id').lean();
     const servizi = await Servizio.find({ fattura: { $in: fatture.map((fattura) => fattura._id) } })
-        .select('fattura lettura listino metri_cubi valore_unitario tipo_quota tipo_tariffa')
+        .select('fattura lettura listino metri_cubi valore_unitario tipo_quota tipo_tariffa descrizione')
         .lean();
     const letture = perId(await Lettura.find({ _id: { $in: servizi.map((riga) => riga.lettura).filter(Boolean) } })
         .select('contatore')

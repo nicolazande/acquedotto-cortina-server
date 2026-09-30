@@ -131,8 +131,12 @@ const ensureInvoiceDeadline = async ({ cliente, dueDate, fattura, session }) => 
     }
 
     const deadline = await createDeadlineForInvoice({ cliente, dueDate, fattura, session });
+    // Sulla fattura si scrive solo il collegamento: salvare il documento intero
+    // scriverebbe anche i valori predefiniti che mancano, e su una fattura
+    // importata con la sola spunta `confermata` lo stato "bozza" predefinito la
+    // riporterebbe a bozza.
+    await Fattura.updateOne({ _id: fattura._id }, { $set: { scadenza: deadline._id } }, { session });
     fattura.scadenza = deadline._id;
-    await fattura.save({ session });
 
     return deadline;
 };

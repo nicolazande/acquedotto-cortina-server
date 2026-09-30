@@ -7,6 +7,7 @@
 const { creaExcel, creaPdf, creaWord } = require('../services/tabellaStampabile');
 const { getElenco } = require('../services/registroElenchi');
 const { sendServiceError } = require('./utils/controllerActions');
+const { inviaFile } = require('./utils/inviaFile');
 const anagrafe = require('../config/anagrafeTributaria');
 
 const FORMATI = {
@@ -95,10 +96,7 @@ const scaricaElenco = async (req, res) => {
             : await creaTabella(elenco, formato, anno);
         const filename = `${elenco.nomeFile(anno)}.${formato.estensione}`;
 
-        res.setHeader('Content-Type', formato.tipo);
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        res.setHeader('Content-Length', buffer.length);
-        return res.status(200).send(buffer);
+        return inviaFile(res, { contenuto: buffer, nome: filename, tipo: formato.tipo, scarica: true });
     } catch (error) {
         return sendServiceError(res, error, 'Elenco non generato.');
     }

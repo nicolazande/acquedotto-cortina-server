@@ -667,6 +667,17 @@ Se le due non coincidono, controllare i log di deploy del servizio rimasto
 indietro: un deploy puo essere fallito senza che nulla lo segnali altrove, e il
 servizio continua a servire la versione precedente.
 
+## Gli script Python
+
+Gli script in `documents/script/` (import da Gesco, backup e ripristino,
+confronto e allineamento con Gesco, sincronizzazione) prendono da
+`ambiente.py` quello che hanno in comune: il `.env` del server, la lettura delle
+variabili (`env_flag`, `env_int`, `env_list`), il nome del database ricavato
+dall'indirizzo e l'apertura della connessione con le sue opzioni
+(`MONGODB_*`, per la sincronizzazione `SYNC_*`). Confronto e allineamento aprono
+la copia scaricata da Gesco e il database in uso con `copia_gesco_e_destinazione`
+(`--remoto` per la produzione). Un aiuto nuovo che serve a piu script va li.
+
 ## Sincronizzazione con il database remoto
 
 Lo script `documents/script/sync_databases.py` copia le collection fra remoto e

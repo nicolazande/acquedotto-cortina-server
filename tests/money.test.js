@@ -3,7 +3,6 @@ const assert = require('node:assert/strict');
 
 const {
     applyRate,
-    applyRateToLines,
     fromCents,
     multiplyCents,
     rateToBasisPoints,
@@ -88,35 +87,6 @@ test('applyRate: imposta di una singola riga', () => {
     assert.equal(applyRate(5000, 22), 1100);
     assert.equal(applyRate(600, 0), 0);
     assert.equal(applyRate(9095, 10), 910, 'il mezzo centesimo sale');
-});
-
-test('applyRateToLines: le righe della stessa aliquota si sommano prima di arrotondare', () => {
-    const iva = applyRateToLines([
-        { cents: 5200, rate: 10 },
-        { cents: 3895, rate: 10 },
-    ]);
-
-    assert.equal(iva, 910, '9,095 arrotondato per eccesso una volta sola');
-});
-
-test('applyRateToLines: gestisce piu aliquote insieme', () => {
-    const iva = applyRateToLines([
-        { cents: 10000, rate: 10 },
-        { cents: 5000, rate: 22 },
-        { cents: 600, rate: 0 },
-    ]);
-
-    assert.equal(iva, 2100);
-});
-
-test('applyRateToLines: arrotonda una volta per aliquota, come il riepilogo del XML', () => {
-    // 1,01 al 10% fa 0,101 e 1,02 al 22% fa 0,2244: sommando prima si
-    // otterrebbe 0,33, ma il riepilogo della fattura elettronica dichiara
-    // 0,10 + 0,22 = 0,32, e il totale deve dire la stessa cifra.
-    assert.equal(applyRateToLines([{ cents: 101, rate: 10 }, { cents: 102, rate: 22 }]), 32);
-
-    // L'esente non sposta nulla in nessuno dei due modi.
-    assert.equal(applyRateToLines([{ cents: 101, rate: 10 }, { cents: 5000, rate: 0 }]), 10);
 });
 
 test('fromCents: torna a un importo con due decimali', () => {

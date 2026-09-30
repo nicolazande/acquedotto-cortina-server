@@ -1,17 +1,12 @@
 import argparse
 import os
 import sys
-from pathlib import Path
-from urllib.parse import unquote, urlparse
 
-from dotenv import load_dotenv
-from pymongo import MongoClient, ReplaceOne
+from pymongo import ReplaceOne
 
-SERVER_ROOT = Path(__file__).resolve().parents[2]
-load_dotenv(SERVER_ROOT / ".env")
+from ambiente import DEFAULT_DB_NAME, URI_LOCALE, apri_database, env_flag, env_int, env_list
 
-DEFAULT_DB_NAME = "acquedotto-zuel"
-DEFAULT_LOCAL_URI = f"mongodb://localhost:27017/{DEFAULT_DB_NAME}"
+DEFAULT_LOCAL_URI = f"{URI_LOCALE}/{DEFAULT_DB_NAME}"
 DEFAULT_COLLECTIONS = [
     "articoli",
     "clienti",
@@ -30,56 +25,8 @@ DEFAULT_COLLECTIONS = [
 ]
 
 
-def env_bool(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
-
-
-def env_int(name: str, default: int) -> int:
-    value = os.getenv(name)
-    if not value:
-        return default
-    try:
-        parsed = int(value)
-        return parsed if parsed > 0 else default
-    except ValueError:
-        return default
-
-
-def env_list(name: str, default: list[str]) -> list[str]:
-    value = os.getenv(name)
-    if not value:
-        return default
-    return [item.strip() for item in value.split(",") if item.strip()]
-
-
-def database_name_from_uri(mongo_uri: str) -> str | None:
-    parsed_uri = urlparse(mongo_uri)
-    db_name = unquote(parsed_uri.path.lstrip("/"))
-    return db_name or None
-
-
-def mongo_options() -> dict:
-    options = {
-        "serverSelectionTimeoutMS": env_int("SYNC_SERVER_SELECTION_TIMEOUT_MS", 10000),
-        "socketTimeoutMS": env_int("SYNC_SOCKET_TIMEOUT_MS", 120000),
-    }
-
-    if os.getenv("SYNC_TLS", "").strip():
-        options["tls"] = env_bool("SYNC_TLS")
-    if os.getenv("SYNC_TLS_ALLOW_INVALID_CERTIFICATES", "").strip():
-        options["tlsAllowInvalidCertificates"] = env_bool("SYNC_TLS_ALLOW_INVALID_CERTIFICATES")
-    if os.getenv("SYNC_DIRECT_CONNECTION", "").strip():
-        options["directConnection"] = env_bool("SYNC_DIRECT_CONNECTION")
-
-    return options
-
-
 def get_database(uri: str, db_name: str | None):
-    client = MongoClient(uri, **mongo_options())
-    return client, client[db_name or database_name_from_uri(uri) or DEFAULT_DB_NAME]
+    return apri_database(uri, db_name, prefisso="SYNC", socket_ms=120000)
 
 
 def chunked(items, size: int):
@@ -175,9 +122,9 @@ def parse_args():
     parser.add_argument("--remote-db", default=os.getenv("REMOTE_MONGODB_DB"))
     parser.add_argument("--collections", default=",".join(env_list("SYNC_COLLECTIONS", DEFAULT_COLLECTIONS)))
     parser.add_argument("--batch-size", type=int, default=env_int("SYNC_BATCH_SIZE", 500))
-    parser.add_argument("--delete-missing", action="store_true", default=env_bool("SYNC_DELETE_MISSING"))
-    parser.add_argument("--include-users", action="store_true", default=env_bool("SYNC_INCLUDE_USERS"))
-    parser.add_argument("--dry-run", action="store_true", default=env_bool("SYNC_DRY_RUN"))
+    parser.add_argument("--delete-missing", action="store_true", default=env_flag("SYNC_DELETE_MISSING"))
+    parser.add_argument("--include-users", action="store_true", default=env_flag("SYNC_INCLUDE_USERS"))
+    parser.add_argument("--dry-run", action="store_true", default=env_flag("SYNC_DRY_RUN"))
     parser.add_argument(
         "--force",
         action="store_true",

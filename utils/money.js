@@ -79,51 +79,28 @@ const rateToBasisPoints = (rate) => roundHalfUp(Number(rate || 0) * BASIS_POINTS
 // Imposta di una singola riga, in centesimi.
 const applyRate = (cents, rate) => roundHalfUp((cents * rateToBasisPoints(rate)) / BASIS_POINTS_TOTAL);
 
-// Imposta di piu righe sommata prima dell'arrotondamento: mantiene il criterio
-// storico (una sola approssimazione, sul totale) ma senza errore di virgola mobile.
-// L'IVA si arrotonda una volta per aliquota, non una volta sola sul totale.
-//
-// E cio che dichiara la fattura elettronica, che raggruppa le righe per
-// aliquota e mette in ogni DatiRiepilogo l'imposta di quel gruppo; ed e come
-// l'imposta si calcola, perche un'aliquota si applica a un imponibile e non a
-// un miscuglio di imponibili diversi.
-//
-// Finche esiste una sola aliquota diversa da zero i due modi coincidono - sulle
-// 3.473 fatture in archivio danno lo stesso identico risultato - ma bastano due
-// aliquote insieme per divergere di un centesimo: 1,01 al 10% piu 1,02 al 22%
-// fanno 0,33 sommando prima e 0,32 arrotondando per aliquota. Il totale della
-// fattura si sarebbe scostato dal suo stesso riepilogo, e l'emissione si
-// rifiuta proprio quando quei due non tornano.
-const applyRateToLines = (lines) => {
-    const perAliquota = new Map();
-
-    lines.forEach(({ cents, rate }) => {
-        const punti = rateToBasisPoints(rate);
-        perAliquota.set(punti, (perAliquota.get(punti) || 0) + cents);
-    });
-
-    return [...perAliquota.entries()].reduce(
-        (totale, [punti, cents]) => totale + roundHalfUp((cents * punti) / BASIS_POINTS_TOTAL),
-        0
-    );
-};
-
 // Due importi sono lo stesso importo se differiscono al massimo della
 // tolleranza. Si confrontano i centesimi, non i numeri con la virgola.
 const stessoImporto = (a, b, tolleranza = MONEY_TOLERANCE) => (
     Math.abs(toCents(a) - toCents(b)) <= toCents(tolleranza)
 );
 
-// Un importo come si legge in Italia, per i documenti da stampare: 57.850,43.
-const IMPORTO_ITALIANO = new Intl.NumberFormat('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const importoItaliano = (euro) => IMPORTO_ITALIANO.format(Number(euro) || 0);
+// Un importo come si legge in Italia, per i documenti da stampare: 57.850,43,
+// e 9.197,91 - le regole italiane di Intl non separano le migliaia sotto le
+// cinque cifre, e lo stesso elenco avrebbe scritto "9197,91" e "13.339,29";
+// il client le separa sempre. Si arrotonda in centesimi, non in virgola mobile.
+const IMPORTO_ITALIANO = new Intl.NumberFormat('it-IT', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    useGrouping: 'always',
+});
+const importoItaliano = (euro) => IMPORTO_ITALIANO.format(fromCents(toCents(euro)));
 
 module.exports = {
     MONEY_TOLERANCE,
     importoItaliano,
     stessoImporto,
     applyRate,
-    applyRateToLines,
     fromCents,
     multiplyCents,
     rateToBasisPoints,

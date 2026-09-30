@@ -6,13 +6,9 @@ const { runScript } = require('./utils/runScript');
 const Servizio = require('../models/Servizio');
 require('../models/Articolo');
 
-const {
-    getTaxRate,
-    isFixedBand,
-    numberOrZero,
-    roundMoney,
-} = require('../services/billingCalculator');
+const { getTaxRate, isFixedBand } = require('../services/billingCalculator');
 const { stessoImporto } = require('../utils/money');
+const { numberOrZero, roundMoney } = require('../utils/values');
 
 const TOLERANCE = 0.02;
 

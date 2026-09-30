@@ -11,10 +11,7 @@ const Servizio = require('../models/Servizio');
 const {
     hasAnnualFixedCharge,
 } = require('./annualFixedChargeService');
-const {
-    numberOrZero,
-    roundMoney,
-} = require('./billingCalculator');
+
 const {
     calculateInvoiceReadingsFromServices,
     cleanServiceLine,
@@ -31,10 +28,11 @@ const {
 } = require('./confrontoRighe');
 const { assertInvoiceEditable } = require('./invoiceLockService');
 const { runWithOptionalTransaction } = require('./transaction');
+const { eRigaDiQuotaFissa } = require('./billingCalculator');
 const { righeConOrigine } = require('./righeFattura');
 const { stessoImporto } = require('../utils/money');
 const { createError, notFound } = require('../utils/errors');
-const { sumMoneyBy } = require('../utils/values');
+const { numberOrZero, roundMoney, sumMoneyBy } = require('../utils/values');
 const { withSession } = require('../utils/mongo');
 const { ricalcolaTotaliFattura } = require('./invoiceGenerator');
 
@@ -133,6 +131,49 @@ const applyFixedChargeToInvoice = (fatturaId, unlock) => runWithOptionalTransact
     applyFixedChargeToInvoiceInSession(fatturaId, session, unlock)
 ));
 
+// I problemi di calcolo di una fattura, dal piu grave. Il totale contro le righe
+// vale per qualunque fattura: e aritmetica, e un totale che le righe non
+// giustificano e il documento che lo SdI rifiuta. Quota fissa e listino solo
+// dove c'e una lettura, e contano solo le righe delle letture: la mora o una
+// riga scritta a mano non vengono dal listino. E una regola sola per la pagina
+// Controlli, che ne fa le sue segnalazioni, e per la scheda della fattura, che
+// mostra la prima: la scheda prima rifaceva il conto a modo suo, e ogni fattura
+// con la mora risultava "conguaglio" li e pulita nei controlli.
+const problemiDelCalcolo = (summary) => [
+    !summary.fatturaCoerente && {
+        tipo: 'totale',
+        gravita: 'danger',
+        contatore: 'scostamentoFattura',
+        messaggio: 'Totale fattura diverso dalle righe servizio',
+        spiegazione: 'Il totale salvato non coincide con le righe: va corretto prima di inviare o ristampare, lo SdI rifiuterebbe il file.',
+        delta: summary.deltaFattura,
+    },
+    summary.letture > 0 && summary.quotaFissaApplicabile && {
+        tipo: 'quota-fissa',
+        gravita: 'warning',
+        contatore: 'quotaFissaApplicabile',
+        messaggio: 'Quota fissa applicabile non presente',
+        spiegazione: 'La quota fissa annuale si può applicare ma la fattura non la contiene: si aggiunge dalla casella qui sotto.',
+        delta: summary.quotaFissaMancante,
+    },
+    summary.letture > 0 && !summary.serviziCoerenti && {
+        tipo: 'listino',
+        gravita: 'info',
+        contatore: 'scostamentoListino',
+        messaggio: 'Righe salvate diverse dalla stima listino',
+        spiegazione: 'Le righe delle letture non tornano con il listino: una tariffa storica, o una correzione fatta a mano.',
+        delta: summary.deltaLetture,
+    },
+].filter(Boolean);
+
+const ESITO_COERENTE = {
+    tipo: 'coerente',
+    gravita: 'ok',
+    messaggio: 'Coerente',
+    spiegazione: 'La fattura salvata coincide con il calcolo: le righe delle letture tornano con il listino.',
+    delta: 0,
+};
+
 // `options.fattura` e la fattura gia letta, con cliente e scadenza: i controlli
 // ne verificano centinaia e le hanno gia in mano. `annualFixedLookupCache` e
 // `fascePerListino` sono le memorie del giro (services/calcoloLettura.js).
@@ -162,7 +203,7 @@ const verifyInvoiceCalculation = async (fatturaId, options = {}) => {
     const deltaFattura = roundMoney(numberOrZero(fattura.imponibile) - storicoImponibile);
     const missingLines = getMissingCalculatedLines(servizi, calculations);
     const missingFixedTotal = sumMoneyBy(
-        missingLines.filter((line) => line.tipo_quota),
+        missingLines.filter(eRigaDiQuotaFissa),
         (line) => line.valore_unitario
     );
     const fixedChargeBlockReason = serviziFisso.length > 0
@@ -175,35 +216,40 @@ const verifyInvoiceCalculation = async (fatturaId, options = {}) => {
         });
     const fixedChargeMissing = missingFixedTotal > 0 && !stessoImporto(missingFixedTotal, 0);
 
+    const summary = {
+        letture: letturaIds.length,
+        righe: servizi.length,
+        righeCalcolate: calculations.reduce((total, calculation) => total + calculation.lines.length, 0),
+        righeCalcolateMancanti: missingLines.length,
+        quotaFissaPresente: serviziFisso.length > 0,
+        quotaFissaImponibile,
+        quotaFissaApplicabile: serviziFisso.length === 0 && fixedChargeMissing && !fixedChargeBlockReason,
+        quotaFissaBlocco: fixedChargeBlockReason || (fixedChargeMissing ? '' : 'Nessuna quota fissa applicabile con il listino corrente.'),
+        quotaFissaMancante: missingFixedTotal,
+        storicoImponibile,
+        lettureImponibile,
+        extraImponibile,
+        calcolatoImponibile,
+        fatturaImponibile: roundMoney(fattura.imponibile),
+        deltaLetture,
+        deltaFattura,
+        serviziCoerenti: stessoImporto(deltaLetture, 0),
+        fatturaCoerente: stessoImporto(deltaFattura, 0),
+    };
+
     return {
         fattura,
         servizi,
         calculations,
         missingLines,
-        summary: {
-            letture: letturaIds.length,
-            righe: servizi.length,
-            righeCalcolate: calculations.reduce((total, calculation) => total + calculation.lines.length, 0),
-            righeCalcolateMancanti: missingLines.length,
-            quotaFissaPresente: serviziFisso.length > 0,
-            quotaFissaImponibile,
-            quotaFissaApplicabile: serviziFisso.length === 0 && fixedChargeMissing && !fixedChargeBlockReason,
-            quotaFissaBlocco: fixedChargeBlockReason || (fixedChargeMissing ? '' : 'Nessuna quota fissa applicabile con il listino corrente.'),
-            quotaFissaMancante: missingFixedTotal,
-            storicoImponibile,
-            lettureImponibile,
-            extraImponibile,
-            calcolatoImponibile,
-            fatturaImponibile: roundMoney(fattura.imponibile),
-            deltaLetture,
-            deltaFattura,
-            serviziCoerenti: stessoImporto(deltaLetture, 0),
-            fatturaCoerente: stessoImporto(deltaFattura, 0),
-        },
+        // L'esito e il problema piu grave, o "coerente".
+        summary: { ...summary, esito: problemiDelCalcolo(summary)[0] || ESITO_COERENTE },
     };
 };
 
 module.exports = {
+    ESITO_COERENTE,
     applyFixedChargeToInvoice,
+    problemiDelCalcolo,
     verifyInvoiceCalculation,
 };

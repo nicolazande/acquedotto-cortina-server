@@ -11,14 +11,10 @@ const Servizio = require('../models/Servizio');
 require('../models/Contatore');
 require('../models/Listino');
 
-const {
-    calculateReadingInvoice,
-    isFixedBand,
-    numberOrZero,
-    roundMoney,
-} = require('../services/billingCalculator');
+const { calculateReadingInvoice, isFixedBand } = require('../services/billingCalculator');
 const { getArticlesByCode } = require('../services/calcoloLettura');
 const { stessoImporto: closeMoney } = require('../utils/money');
+const { numberOrZero, roundMoney } = require('../utils/values');
 
 const parseArgs = () => ({
     limit: numero('limit'),

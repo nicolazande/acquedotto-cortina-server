@@ -13,7 +13,7 @@ const {
     sumMoneyBy,
 } = require('../utils/values');
 const { addDays, dataCompatta, daysBetween, formatItalianDate, getDate, nelFuturo, startOfDay, toDate } = require('../utils/dates');
-const { capItaliano, customerLabel } = require('../utils/customer');
+const { capItaliano, customerLabel, indirizzoDiRecapito, sedeFiscale } = require('../utils/customer');
 const { conflict, createError, forbidden, notFound, unprocessable } = require('../utils/errors');
 const { recordId, setOrUnset, soloValorizzati, uniqueById } = require('../utils/mongo');
 
@@ -215,4 +215,18 @@ test('il CAP italiano torna a cinque cifre, un testo diverso resta com e', () =>
     assert.equal(capItaliano('32043'), '32043');
     assert.equal(capItaliano(''), '');
     assert.equal(capItaliano('SW1A 1AA'), 'SW1A 1AA');
+});
+
+test('l indirizzo e un blocco intero, e uno a meta vale piu di uno vuoto', () => {
+    const cliente = {
+        indirizzo_residenza: 'Cannaregio', numero_residenza: '1368', cap_residenza: '30121', localita_residenza: 'Venezia',
+        indirizzo_fatturazione: 'Zuel di Sotto', numero_fatturazione: '101/A', cap_fatturazione: '32043', localita_fatturazione: 'Cortina',
+    };
+
+    assert.equal(indirizzoDiRecapito(cliente).localita, 'Cortina');
+    assert.equal(sedeFiscale(cliente).localita, 'Venezia');
+    // La via di uno e il CAP dell'altro non si mescolano mai.
+    assert.deepEqual(indirizzoDiRecapito({ ...cliente, localita_fatturazione: '' }).cap, '30121');
+    // Nessuno completo: il primo che ha qualcosa, non uno vuoto.
+    assert.equal(indirizzoDiRecapito({ indirizzo_residenza: 'Zuel' }).via, 'Zuel');
 });

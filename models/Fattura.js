@@ -33,9 +33,10 @@ const fatturaSchema = new Schema(
         consegne_decise_il: { type: Date },
         tipo_pagamento: { type: String, required: false },
         nome_cliente: { type: String, required: false },
-        // Unica verita sullo stato del documento. Il campo booleano `confermata`
-        // resta per compatibilita con i dati storici e con il client, ma viene
-        // tenuto allineato automaticamente: prima i due potevano divergere.
+        // Lo stato del documento, insieme alla spunta `confermata` che resta per
+        // i dati storici e per il client. Il modello li allinea (sotto); per
+        // chiedere se una fattura e confermata si usano `isConfirmedInvoice` e
+        // FILTRO_CONFERMATE / FILTRO_BOZZE, che guardano tutti e due.
         stato: { type: String, required: false, enum: ['bozza', 'confermata'], default: 'bozza' },
         origine: { type: String, required: false, default: 'manuale' },
         cliente: { type: Schema.Types.ObjectId, ref: 'Cliente' },
@@ -107,7 +108,9 @@ fatturaSchema.pre(['findOneAndUpdate', 'updateOne', 'updateMany'], function norm
 fatturaSchema.index({ anno: 1, numero: 1 });
 // Garanzia di unicita sui soli documenti emessi da questo gestionale: sullo
 // storico non e applicabile, perche 2.745 fatture condividono la coppia
-// (anno, numero) ereditata dall'import.
+// (anno, numero) ereditata dall'import. E FILTRO_EMESSE_DAL_GESTIONALE senza il
+// "$ne: ''", che un indice parziale non accetta: una serie vuota non la scrive
+// nessuno, la numerazione usa sempre una lettera.
 fatturaSchema.index(
     { anno: 1, serie: 1, numero: 1 },
     { unique: true, partialFilterExpression: { serie: { $type: 'string' } } }

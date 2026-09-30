@@ -30,7 +30,7 @@ fatture, 3 contatori"). I legami e le loro politiche sono dichiarati in
 
 | Codice | Quando                                                                 |
 |--------|------------------------------------------------------------------------|
-| 400    | dati della richiesta non validi                                        |
+| 400    | dati della richiesta non validi, compreso un identificativo che non ha la forma di un id (`Identificativo non valido.`) |
 | 401    | autenticazione fallita: token assente, scaduto o non valido. La risposta contiene `reason` (`missing_token`, `token_expired`, `invalid_token`, `user_not_found`) |
 | 403    | identita valida ma permessi insufficienti, oppure account disabilitato  |
 | 404    | risorsa inesistente                                                    |
@@ -191,6 +191,7 @@ DELETE /api/fatture/:id                                     deleteFattura
 POST   /api/fatture/:fatturaId/cliente/:clienteId           associateCliente
 POST   /api/fatture/:fatturaId/servizio/:servizioId         associateServizio
 POST   /api/fatture/:fatturaId/scadenza/:scadenzaId         associateScadenza
+POST   /api/fatture/:id/scadenza                            creaScadenza
 GET    /api/fatture/:id/servizi                             getServiziAssociati
 GET    /api/fatture/:id/cliente                             getClienteAssociato
 GET    /api/fatture/:id/scadenza                            getScadenzaAssociata
@@ -301,7 +302,13 @@ password solo come testo.
 - `PUT /:id` — con `confermata: true` su una bozza la conferma e le da il numero.
   `anno`, `numero`, `serie` e `codice` non si scrivono: li decide la conferma.
 - `GET /:id/xml` — rifiutato con 422 su una bozza senza numero.
-- `GET /:id/verifica-calcolo` — confronta le righe salvate con il ricalcolo attuale.
+- `GET /:id/verifica-calcolo` — confronta le righe salvate con il ricalcolo attuale;
+  `summary.esito` e il giudizio (`gravita`, `messaggio`, `spiegazione`, `delta`),
+  con le regole della pagina Controlli.
+- `POST /:id/scadenza` — crea la scadenza che manca, con anno, serie, numero,
+  intestatario e totale della fattura; `{ scadenza }` sceglie la data, altrimenti
+  vale il termine di pagamento, e `{ saldo, pagamento }` la segnano gia pagata.
+  Sulla fattura scrive solo il collegamento. 409 se la fattura ne ha gia una.
 - `POST /:id/quota-fissa` — aggiunge la quota fissa se applicabile.
 - `DELETE /:id` — cancella la fattura **con le sue righe servizio e la scadenza**,
   e rimette le letture collegate fra quelle fatturabili. Bloccato sulle fatture confermate.
