@@ -52,6 +52,21 @@ const AZIENDA = {
         istituto: process.env.INVOICE_BANK_NAME || 'CORTINA BANCA Credito cooperativo Italiano',
         iban: (process.env.INVOICE_IBAN || 'IT11M0851161070000000006953').replace(/\s+/g, ''),
     },
+
+    // Chi porta i file allo SdI. L'ufficio mette gli XML nel "box" della
+    // contabilita, che li trasmette ed emette per conto della cooperativa: i
+    // 71 file che Gesco ci ha messo a dicembre 2025 dichiaravano tutti questo
+    // trasmittente e BLUENEXT come terzo emittente (SoggettoEmittente TZ), e il
+    // box li ha accettati. Una variabile vuota toglie il dato dal file: senza
+    // trasmittente vale la partita IVA della cooperativa, senza terzo emittente
+    // la fattura e emessa da lei.
+    trasmissione: {
+        idTrasmittente: process.env.INVOICE_TRANSMITTER_ID ?? '04383420405',
+        terzoEmittente: {
+            partitaIva: process.env.INVOICE_ISSUER_VAT_NUMBER ?? '04228480408',
+            denominazione: process.env.INVOICE_ISSUER_NAME ?? 'BLUENEXT SRL',
+        },
+    },
 };
 
 module.exports = { AZIENDA };

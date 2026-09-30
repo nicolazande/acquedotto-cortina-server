@@ -10,10 +10,11 @@
 // ne accorge uno script invece di una persona.
 const mongoose = require('mongoose');
 const { runScript } = require('./utils/runScript');
-const { codiceDestinatarioValido, CAMPO_DATA_CONSEGNA } = require('../config/delivery');
+const { codiceDestinatarioValido, CAMPO_DATA_CONSEGNA, pecPlausibile } = require('../config/delivery');
 const { haNumero, isConfirmedInvoice, numeroDocumento } = require('../config/invoicing');
 const { codiceFiscaleValido, partitaIvaValida } = require('../utils/codiciFiscali');
 const { dataReale } = require('../utils/dates');
+const { ibanValido } = require('../utils/iban');
 const { toCents } = require('../utils/money');
 
 const ESEMPI = 5;
@@ -48,6 +49,14 @@ const controllaClienti = async (clienti) => {
         clienti.filter((c) => c.email && !EMAIL.test(String(c.email).trim())), (c) => `${nomeCliente(c)}: "${c.email}"`);
     regola('clienti', 'PEC che non sembra un indirizzo',
         clienti.filter((c) => c.email_pec && !EMAIL.test(String(c.email_pec).trim())), (c) => `${nomeCliente(c)}: "${c.email_pec}"`);
+    // Un indirizzo normale nel campo PEC: la fattura elettronica non ci va, finisce
+    // nel cassetto fiscale del cliente.
+    regola('clienti', 'indirizzo nel campo PEC che non e una casella PEC',
+        clienti.filter((c) => c.email_pec && EMAIL.test(String(c.email_pec).trim()) && !pecPlausibile(c.email_pec)),
+        (c) => `${nomeCliente(c)}: "${c.email_pec}"`);
+    // Chi ha l'IBAN paga con addebito: un IBAN sbagliato la banca lo rifiuta.
+    regola('clienti', 'IBAN non valido',
+        clienti.filter((c) => String(c.iban || '').trim() && !ibanValido(c.iban)), (c) => `${nomeCliente(c)}: "${c.iban}"`);
 
     const perCodice = new Map();
     clienti.filter((c) => c.codice_fiscale).forEach((c) => {

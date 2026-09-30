@@ -15,8 +15,15 @@ const { buildInvoiceXml } = require('../services/invoiceXml');
 // Serve `xmllint` (pacchetto libxml2-utils): dove non c'e, la prova si salta
 // invece di fallire - non tutti gli ambienti lo hanno, e un test rosso per un
 // programma mancante non dice niente sul codice.
-const SCHEMA = path.join(__dirname, 'fatturapa-v1.2.xsd');
 const xmllintDisponibile = spawnSync('xmllint', ['--version']).error === undefined;
+
+// Lo schema ufficiale importa quello della firma digitale da w3.org: con la rete
+// assente o lenta xmllint non lo carica e la prova fallisce senza che il file
+// c'entri. La firma nei nostri file non c'e: la copia usata qui la toglie.
+const SCHEMA = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'schema-fatturapa-')), 'fatturapa-v1.2.xsd');
+fs.writeFileSync(SCHEMA, fs.readFileSync(path.join(__dirname, 'fatturapa-v1.2.xsd'), 'utf8')
+    .replace(/<xs:import[^>]*xmldsig[^>]*\/>/, '')
+    .replace(/<xs:element ref="ds:Signature"[^>]*\/>/, ''));
 
 const cliente = {
     ragione_sociale: 'Termoidraulica Rossi',
@@ -52,7 +59,7 @@ const validaConLoSchema = (xml) => {
     fs.writeFileSync(percorso, xml);
 
     try {
-        const esito = spawnSync('xmllint', ['--noout', '--schema', SCHEMA, percorso], { encoding: 'utf8' });
+        const esito = spawnSync('xmllint', ['--noout', '--nonet', '--schema', SCHEMA, percorso], { encoding: 'utf8' });
         return { valido: esito.status === 0, motivo: esito.stderr };
     } finally {
         fs.rmSync(path.dirname(percorso), { recursive: true, force: true });

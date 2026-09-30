@@ -12,8 +12,10 @@
 const { modalitaPagamentoXml, naturaPerIva, numeroDocumento, tipoDocumentoXml } = require('../config/invoicing');
 const { AZIENDA } = require('../config/azienda');
 const { abiDellIban, cabDellIban, ibanCompatto, ibanValido } = require('../utils/iban');
-const { CODICE_DESTINATARIO_ASSENTE, codiceDestinatarioValido, destinatarioNonGestito } = require('../config/delivery');
-const { customerLabel } = require('../utils/customer');
+const { CODICE_DESTINATARIO_ASSENTE, canaleFatturaElettronica, destinatarioNonGestito } = require('../config/delivery');
+const { capItaliano, customerLabel } = require('../utils/customer');
+const { formatItalianDate } = require('../utils/dates');
+const { matricolaDellaRiga } = require('./righeFattura');
 const { getTaxRate } = require('./billingCalculator');
 const { applyRate, fromCents, toCents } = require('../utils/money');
 const { unprocessable } = require('../utils/errors');
@@ -79,15 +81,44 @@ const anagraficaCliente = (cliente, fattura) => {
     return { denominazione, partitaIva, codiceFiscale };
 };
 
-const indirizzoCliente = (cliente) => ({
-    indirizzo: cliente?.indirizzo_fatturazione || cliente?.indirizzo_residenza,
-    numero: cliente?.numero_fatturazione || cliente?.numero_residenza,
-    cap: cliente?.cap_fatturazione || cliente?.cap_residenza,
-    comune: cliente?.localita_fatturazione || cliente?.localita_residenza,
-    // Il tracciato vuole la sigla di due lettere: l'anagrafica importata
-    // contiene il nome esteso.
-    provincia: siglaProvincia(cliente?.provincia_fatturazione || cliente?.provincia_residenza),
-});
+// La sede del cliente nel tracciato e il suo domicilio fiscale: la residenza,
+// non l'indirizzo a cui si spedisce la copia di carta. Gesco faceva cosi (chi
+// abita a Venezia e riceve la bolletta a Zuel ha Venezia nel file). Solo chi non
+// ha la residenza prende l'indirizzo di fatturazione, intero: mescolare i campi
+// dei due darebbe un indirizzo che non esiste.
+const indirizzoCliente = (cliente) => {
+    const campi = cliente?.indirizzo_residenza && cliente?.localita_residenza ? 'residenza' : 'fatturazione';
+    return {
+        indirizzo: cliente?.[`indirizzo_${campi}`],
+        numero: cliente?.[`numero_${campi}`],
+        cap: capItaliano(cliente?.[`cap_${campi}`]),
+        comune: cliente?.[`localita_${campi}`],
+        // Il tracciato vuole la sigla di due lettere: l'anagrafica importata
+        // contiene il nome esteso.
+        provincia: siglaProvincia(cliente?.[`provincia_${campi}`]),
+    };
+};
+
+// Nel file la riga ha solo la descrizione: chi riceve soltanto la fattura
+// elettronica deve leggerci anche quello che il PDF mostra in colonna - il
+// tipo, il contatore, fin quando valgono i consumi -, come faceva Gesco
+// ("Seriale: ... Consumi fino al : ..."). La mora e le righe a mano non vengono
+// da una lettura e restano come sono.
+const descrizioneNelTracciato = (servizio) => {
+    const descrizione = servizio.descrizione || servizio.articolo?.descrizione || 'Servizio';
+    if (!servizio.lettura) {
+        return descrizione;
+    }
+    const tipo = servizio.tipo_quota ? 'Quota fissa' : servizio.tipo_tariffa;
+    const matricola = matricolaDellaRiga(servizio);
+    const data = servizio.data_lettura || servizio.lettura?.data_lettura;
+    return [
+        descrizione,
+        tipo && !descrizione.toLowerCase().includes(tipo.toLowerCase()) ? tipo : '',
+        matricola ? `contatore ${matricola}` : '',
+        data ? `consumi fino al ${formatItalianDate(data)}` : '',
+    ].filter(Boolean).join(' - ');
+};
 
 // Ogni riga porta la propria aliquota; le righe senza imposta devono dichiarare
 // una natura, altrimenti il file viene scartato dal Sistema di Interscambio.
@@ -110,7 +141,7 @@ const rigaDettaglio = (servizio, indice) => {
     return [
         '      <DettaglioLinee>',
         `        <NumeroLinea>${indice + 1}</NumeroLinea>`,
-        `        ${tag('Descrizione', servizio.descrizione || servizio.articolo?.descrizione || 'Servizio')}`,
+        `        ${tag('Descrizione', descrizioneNelTracciato(servizio))}`,
         Number.isFinite(quantita) && quantita > 0 ? `        <Quantita>${quantita.toFixed(2)}</Quantita>` : '',
         Number.isFinite(prezzo) ? `        <PrezzoUnitario>${importo(prezzo)}</PrezzoUnitario>` : '',
         `        <PrezzoTotale>${importo(servizio.valore_unitario)}</PrezzoTotale>`,
@@ -215,9 +246,13 @@ const buildInvoiceXml = ({ cliente, fattura, scadenza, servizi }) => {
     }
     const sede = indirizzoCliente(cliente);
     // Lo stesso criterio con cui si sceglie il canale della consegna: un codice
-    // malformato non va scritto nel tracciato, vale come codice assente.
-    const destinatario = codiceDestinatarioValido(cliente?.codice_destinatario)
-        || CODICE_DESTINATARIO_ASSENTE;
+    // malformato vale come codice assente, e la PEC si scrive solo senza codice
+    // e se e davvero una PEC. Codice e PEC insieme fanno scartare il file.
+    const canale = canaleFatturaElettronica(cliente);
+    const destinatario = canale.canale === 'sdi' ? canale.destinatario : CODICE_DESTINATARIO_ASSENTE;
+    const pec = canale.canale === 'pec' ? canale.destinatario : '';
+    const { trasmissione } = AZIENDA;
+    const terzo = trasmissione.terzoEmittente;
     const numero = numeroDocumento(fattura);
 
     // Le righe si costruiscono qui: un problema su una riga (una natura IVA che
@@ -257,12 +292,12 @@ const buildInvoiceXml = ({ cliente, fattura, scadenza, servizi }) => {
     <DatiTrasmissione>
       <IdTrasmittente>
         <IdPaese>IT</IdPaese>
-        <IdCodice>${testoXml(AZIENDA.partitaIva)}</IdCodice>
+        <IdCodice>${testoXml(trasmissione.idTrasmittente || AZIENDA.partitaIva)}</IdCodice>
       </IdTrasmittente>
       <ProgressivoInvio>${progressivoInvio(fattura)}</ProgressivoInvio>
       <FormatoTrasmissione>${FORMATO_PRIVATI}</FormatoTrasmissione>
       <CodiceDestinatario>${testoXml(destinatario)}</CodiceDestinatario>
-      ${cliente?.email_pec ? tag('PECDestinatario', cliente.email_pec) : ''}
+      ${tag('PECDestinatario', pec)}
     </DatiTrasmissione>
     <CedentePrestatore>
       <DatiAnagrafici>
@@ -312,6 +347,15 @@ const buildInvoiceXml = ({ cliente, fattura, scadenza, servizi }) => {
         <Nazione>IT</Nazione>
       </Sede>
     </CessionarioCommittente>
+    ${terzo.partitaIva ? `<TerzoIntermediarioOSoggettoEmittente>
+      <DatiAnagrafici>
+        <IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>${testoXml(terzo.partitaIva)}</IdCodice></IdFiscaleIVA>
+        <Anagrafica>
+          ${tag('Denominazione', terzo.denominazione)}
+        </Anagrafica>
+      </DatiAnagrafici>
+    </TerzoIntermediarioOSoggettoEmittente>
+    <SoggettoEmittente>TZ</SoggettoEmittente>` : ''}
   </FatturaElettronicaHeader>
   <FatturaElettronicaBody>
     <DatiGenerali>

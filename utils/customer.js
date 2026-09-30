@@ -46,8 +46,18 @@ const soloCampiPerLetturista = (cliente) => {
         .map((campo) => [campo, grezzo[campo]]));
 };
 
+// Il CAP italiano ha cinque cifre, e gli zeri davanti contano: l'archivio ne ha
+// 33 salvati come numero (Roma "135" per 00135), e il tracciato della fattura
+// elettronica un CAP di tre cifre lo scarta. Un valore che non e fatto di sole
+// cifre resta com'e.
+const capItaliano = (valore) => {
+    const cap = String(valore ?? '').trim();
+    return /^\d{1,4}$/.test(cap) ? cap.padStart(5, '0') : cap;
+};
+
 module.exports = {
     CAMPI_PER_LETTURISTA,
+    capItaliano,
     soloCampiPerLetturista,
     customerLabel,
 };

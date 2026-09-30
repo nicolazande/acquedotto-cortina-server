@@ -305,6 +305,67 @@ test('con un IBAN estero il file non inventa ABI e CAB', () => {
     assert.doesNotMatch(xml, /<CAB>/);
 });
 
+test('come i file che il box accettava da Gesco: trasmittente e terzo emittente', () => {
+    const { xml } = genera();
+
+    assert.match(xml, /<IdTrasmittente>\s*<IdPaese>IT<\/IdPaese>\s*<IdCodice>04383420405<\/IdCodice>/);
+    assert.match(xml, /<TerzoIntermediarioOSoggettoEmittente>[\s\S]*<IdCodice>04228480408<\/IdCodice>[\s\S]*BLUENEXT SRL[\s\S]*<\/TerzoIntermediarioOSoggettoEmittente>\s*<SoggettoEmittente>TZ<\/SoggettoEmittente>\s*<\/FatturaElettronicaHeader>/);
+});
+
+test('la PEC si scrive solo senza codice destinatario, e solo se e una PEC', () => {
+    // Codice e PEC insieme: lo SdI scarta il file.
+    const conCodice = genera({ cliente: { ...cliente, email_pec: 'ada@pec.it' } }).xml;
+    assert.match(conCodice, /<CodiceDestinatario>TULURSB<\/CodiceDestinatario>/);
+    assert.doesNotMatch(conCodice, /<PECDestinatario>/);
+
+    const soloPec = genera({ cliente: { ...cliente, codice_destinatario: '0000000', email_pec: 'ada@pec.it' } }).xml;
+    assert.match(soloPec, /<CodiceDestinatario>0000000<\/CodiceDestinatario>\s*<PECDestinatario>ada@pec\.it<\/PECDestinatario>/);
+
+    const gmail = genera({ cliente: { ...cliente, codice_destinatario: '', email_pec: 'fran2758@gmail.com' } }).xml;
+    assert.match(gmail, /<CodiceDestinatario>0000000<\/CodiceDestinatario>/);
+    assert.doesNotMatch(gmail, /<PECDestinatario>/);
+});
+
+test('la sede del cliente e la residenza, non l indirizzo a cui si spedisce', () => {
+    const { xml } = genera({
+        cliente: {
+            ...cliente,
+            indirizzo_residenza: 'Cannaregio', numero_residenza: '1368', cap_residenza: '30121', localita_residenza: 'VENEZIA', provincia_residenza: 'Venezia',
+            indirizzo_fatturazione: 'Zuel di Sotto', numero_fatturazione: '101/A', cap_fatturazione: '32043', localita_fatturazione: "CORTINA D'AMPEZZO", provincia_fatturazione: 'Belluno',
+        },
+    });
+    const sede = xml.match(/<CessionarioCommittente>[\s\S]*<\/CessionarioCommittente>/)[0];
+
+    assert.match(sede, /<Indirizzo>Cannaregio<\/Indirizzo>[\s\S]*<CAP>30121<\/CAP>[\s\S]*<Comune>VENEZIA<\/Comune>[\s\S]*<Provincia>VE<\/Provincia>/);
+});
+
+test('senza residenza vale l indirizzo di fatturazione intero, e il CAP ha cinque cifre', () => {
+    const { xml } = genera({
+        cliente: {
+            ...cliente,
+            indirizzo_residenza: '', localita_residenza: '', cap_residenza: '',
+            indirizzo_fatturazione: 'Via Val Gardena', numero_fatturazione: '35', cap_fatturazione: '135', localita_fatturazione: 'Roma', provincia_fatturazione: 'Roma',
+        },
+    });
+
+    assert.match(xml, /<Indirizzo>Via Val Gardena<\/Indirizzo>\s*<NumeroCivico>35<\/NumeroCivico>\s*<CAP>00135<\/CAP>\s*<Comune>Roma<\/Comune>/);
+});
+
+test('la riga di una lettura dice tipo, contatore e fin quando valgono i consumi', () => {
+    const lettura = { _id: 'l1', data_lettura: new Date('2025-10-31T00:00:00Z'), contatore: { seriale: '10059756' } };
+    const { xml } = genera({
+        servizi: [
+            { ...servizi[0], descrizione: 'Spesa Acqua DOMESTICO RESIDENTE', tipo_tariffa: 'Tariffa Base', lettura, data_lettura: lettura.data_lettura },
+            { ...servizi[1], descrizione: 'Spesa Acqua DOMESTICO RESIDENTE', tipo_tariffa: 'Fisso', tipo_quota: 'Q.Fissa', lettura, data_lettura: lettura.data_lettura },
+        ],
+    });
+
+    assert.match(xml, /<Descrizione>Spesa Acqua DOMESTICO RESIDENTE - Tariffa Base - contatore 10059756 - consumi fino al 31\/10\/2025<\/Descrizione>/);
+    assert.match(xml, /<Descrizione>Spesa Acqua DOMESTICO RESIDENTE - Quota fissa - contatore 10059756 - consumi fino al 31\/10\/2025<\/Descrizione>/);
+    // Una riga senza lettura - la mora, una riga a mano - resta com'e.
+    assert.match(genera().xml, /<Descrizione>Consumo acqua<\/Descrizione>/);
+});
+
 // Chi il tracciato non sa ancora servire: meglio un rifiuto con il motivo che un
 // file da privato italiano intestato a un cliente di Malta.
 

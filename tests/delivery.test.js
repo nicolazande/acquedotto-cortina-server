@@ -104,6 +104,14 @@ test('senza codice SdI si usa la PEC', () => {
     assert.equal(canale.destinatario, 'ada@pec.it');
 });
 
+test('una "PEC" che non e una casella PEC non e un canale: resta il cassetto fiscale', () => {
+    // Nell'archivio ci sono gmail e libero nel campo PEC.
+    assert.equal(canaleFatturaElettronica({ codice_destinatario: '0000000', email_pec: 'fran2758@gmail.com' }).canale, 'cassetto');
+    assert.equal(canaleFatturaElettronica({ email_pec: 'sctasrl@legalmail.it' }).canale, 'pec');
+    assert.equal(canaleFatturaElettronica({ email_pec: 'tizangiacomi@cert.cna.it' }).canale, 'pec');
+    assert.equal(canaleFatturaElettronica({ email_pec: 'eurofinsrl@postacerta.net' }).canale, 'pec');
+});
+
 test('senza codice e senza PEC resta il cassetto fiscale', () => {
     const canale = canaleFatturaElettronica({});
     assert.equal(canale.canale, 'cassetto');

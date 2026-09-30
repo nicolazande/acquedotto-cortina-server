@@ -10,7 +10,7 @@ require('../models/Lettura');
 require('../models/Listino');
 require('../models/Scadenza');
 const { getLineTaxRate } = require('./billingCalculator');
-const { righeDeiDocumenti, righeDelDocumento } = require('./righeFattura');
+const { matricolaDellaRiga, righeDeiDocumenti, righeDelDocumento } = require('./righeFattura');
 const { applyRate, fromCents, toCents } = require('../utils/money');
 const { AZIENDA } = require('../config/azienda');
 const { ibanLeggibile, ibanNascosto } = require('../utils/iban');
@@ -55,7 +55,7 @@ const invoiceAssets = {
 const { isEmptyValue: isEmpty, numberOrZero, senzaAccenti } = require('../utils/values');
 const { unprocessable } = require('../utils/errors');
 const { formatItalianDate } = require('../utils/dates');
-const { customerLabel } = require('../utils/customer');
+const { capItaliano, customerLabel } = require('../utils/customer');
 const { haNumero, isConfirmedInvoice, numeroDocumento, pagaConAddebito } = require('../config/invoicing');
 
 const asciiText = (value) => senzaAccenti(value)
@@ -76,7 +76,7 @@ const billingAddress = (cliente) => {
     return {
         address: invoiceAddress || residenceAddress,
         city: joinAddress(
-            cliente?.cap_fatturazione || cliente?.cap_residenza,
+            capItaliano(cliente?.cap_fatturazione || cliente?.cap_residenza),
             cliente?.localita_fatturazione || cliente?.localita_residenza,
             cliente?.provincia_fatturazione || cliente?.provincia_residenza
         ),
@@ -576,14 +576,6 @@ const drawPayment = (pdf, fattura, scadenza) => {
     pdf.text(`${companyConfig.bankName}    IBAN:   ${companyConfig.iban}`, 21, 424, { font: 'bold', size: 8 });
 };
 
-const getCounterLabel = (service) => (
-    service.lettura?.contatore?.seriale
-    || service.lettura?.contatore?.seriale_interno
-    || service.calcolo_snapshot?.contatore?.seriale
-    || service.seriale_condominio
-    || ''
-);
-
 const getLineDescription = (service) => (
     service.descrizione
     || service.calcolo_snapshot?.articolo?.descrizione
@@ -645,7 +637,7 @@ const drawDetailTable = (pdf, servizi) => {
         const rowHeight = 24;
         const values = [
             service.tipo_quota || service.tipo_tariffa || '',
-            getCounterLabel(service),
+            matricolaDellaRiga(service),
             getLineDescription(service),
             service.articolo?.iva || `IVA ${formatNumber(getLineTaxRate(service))}%`,
             service.lettura_precedente || '',

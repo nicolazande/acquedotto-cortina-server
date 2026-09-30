@@ -1,7 +1,7 @@
 const Fattura = require('../models/Fattura');
 const Cliente = require('../models/Cliente');
 const Servizio = require('../models/Servizio');
-const { righeDellaFattura } = require('../services/righeFattura');
+const { righeDelDocumento } = require('../services/righeFattura');
 const Scadenza = require('../models/Scadenza');
 const { sendPaginated } = require('./utils/paginatedQuery');
 const {
@@ -206,7 +206,7 @@ const downloadXml = async (req, res) => {
             throw unprocessable('La fattura è una bozza: il file XML si prepara dopo la conferma.');
         }
 
-        const servizi = await righeDellaFattura(fattura._id);
+        const servizi = await righeDelDocumento(fattura._id);
 
         const { filename, xml } = buildInvoiceXml({
             cliente: fattura.cliente,

@@ -13,8 +13,9 @@ PEC, ritiro allo sportello, oppure niente. Vive nel campo `stampa_cortesia` del
 cliente ed e modificabile dall'anagrafica.
 
 **La fattura elettronica** non e una scelta: il canale lo impone il destinatario.
-Se ha un codice SdI il file va li; se ha solo la PEC va alla PEC; altrimenti resta
-nel cassetto fiscale con `0000000`. Il gestionale lo deduce dai dati del cliente.
+Se ha un codice SdI il file va li; se ha solo la PEC - una casella PEC vera,
+riconosciuta dal dominio (`pecPlausibile`): un gmail nel campo PEC non conta - va
+alla PEC; altrimenti resta nel cassetto fiscale con `0000000`. Il gestionale lo deduce dai dati del cliente.
 Metterlo a tendina significherebbe permettere di scegliere un canale che lo SdI
 poi rifiuta.
 

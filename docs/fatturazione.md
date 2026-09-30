@@ -426,6 +426,34 @@ della fattura. Per trasmettere si scarica invece da *Consegne*, dove ogni riga h
 il suo **XML** e il file prende un progressivo nuovo (vedi
 [Come esce una fattura](consegne.md)).
 
+**Com'era il file che andava nel box.** A settembre 2026 l'ufficio ci ha dato i
+71 XML che Gesco aveva messo nel box della contabilita a dicembre 2025 (fatture
+A30-A100 del 2025). Confrontati campo per campo con i nostri per le stesse
+fatture (`buildInvoiceXml` sui dati importati), hanno portato a quattro regole:
+
+- **chi trasmette**: il trasmittente `04383420405` e BLUENEXT SRL come terzo
+  emittente (`TerzoIntermediarioOSoggettoEmittente`, `SoggettoEmittente` TZ),
+  come in tutti i file di Gesco; stanno in `AZIENDA.trasmissione`
+  (`INVOICE_TRANSMITTER_ID`, `INVOICE_ISSUER_VAT_NUMBER`, `INVOICE_ISSUER_NAME`;
+  vuote tolgono il dato);
+- la **sede del cliente** e la residenza, cioe il domicilio fiscale; l'indirizzo
+  di fatturazione, a cui si spedisce la carta, vale solo per chi non ha la
+  residenza, e intero;
+- il **CAP** ha sempre cinque cifre (`capItaliano`): 33 clienti lo avevano
+  salvato senza gli zeri davanti (Roma "135"), e lo schema lo scarta;
+- la **PEC** (`PECDestinatario`) si scrive solo senza codice destinatario e se e
+  davvero una PEC (`pecPlausibile`: nel dominio "pec", "legalmail" o "cert"):
+  codice e PEC insieme fanno scartare il file, e nel campo PEC dell'archivio ci
+  sono anche indirizzi gmail e libero.
+
+La riga di una lettura porta nella descrizione anche il tipo, il contatore e fin
+quando valgono i consumi ("Spesa Acqua DOMESTICO RESIDENTE - Tariffa Base -
+contatore 10059756 - consumi fino al 31/10/2025"): chi riceve solo il file non
+vede le colonne del PDF, e Gesco lo scriveva. Restano diversi di proposito il
+numero della riga (Gesco ripeteva "2"), il nome della banca (oggi Cortina Banca)
+e, da decidere con la contabilita, il **numero del documento**: Gesco scriveva
+solo il numero ("36"), il gestionale "2026/A/1".
+
 Il file dichiara, oltre al documento: l'**iscrizione al REA** e i recapiti di chi
 emette, il **civico** separato dalla via per entrambe le parti, l'**esigibilita
 IVA** su ogni riepilogo e i **dati di pagamento** - condizioni, modalita,

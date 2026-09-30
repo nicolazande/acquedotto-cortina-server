@@ -18,7 +18,7 @@ const {
     richiedeFatturaElettronica,
 } = require('../config/delivery');
 const { AZIENDA } = require('../config/azienda');
-const { customerLabel } = require('../utils/customer');
+const { capItaliano, customerLabel } = require('../utils/customer');
 const { emessaDalGestionale, isConfirmedInvoice, numeroDocumento } = require('../config/invoicing');
 const { dataReale, formatItalianDate } = require('../utils/dates');
 const { setOrUnset, soloValorizzati } = require('../utils/mongo');
@@ -84,7 +84,7 @@ const zonaPostale = (cliente) => recapitoPostale(cliente).zona;
 const indirizzoPostale = (cliente) => {
     const via = primoValorizzato(cliente?.indirizzo_fatturazione, cliente?.indirizzo_residenza);
     const numero = primoValorizzato(cliente?.numero_fatturazione, cliente?.numero_residenza);
-    const cap = primoValorizzato(cliente?.cap_fatturazione, cliente?.cap_residenza);
+    const cap = capItaliano(primoValorizzato(cliente?.cap_fatturazione, cliente?.cap_residenza));
     const localita = localitaPostale(cliente);
 
     if (!via || !localita) {

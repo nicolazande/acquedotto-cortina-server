@@ -38,8 +38,9 @@ const righeDellaFattura = (fatturaId, session) => righe({ fattura: fatturaId }, 
 // Le righe con tutto cio da cui sono nate, per ricalcolarle o verificarle.
 const righeConOrigine = (fatturaId, session) => righe({ fattura: fatturaId }, CON_ORIGINE, session);
 
-// Le righe come le disegna il PDF: l'articolo per l'aliquota e la lettura con il
-// suo contatore, che sulla riga compare come matricola. Listino e fascia il
+// Le righe come le disegnano il PDF e la fattura elettronica: l'articolo per
+// l'aliquota e la lettura con il suo contatore, che sulla riga compare come
+// matricola. Listino e fascia il
 // disegno non li guarda, e tirarli su erano due letture in piu per ogni blocco.
 const righeDelDocumento = (fatturaId, session) => righe({ fattura: fatturaId }, CON_LETTURA, session);
 
@@ -49,14 +50,24 @@ const righeDelDocumento = (fatturaId, session) => righe({ fattura: fatturaId }, 
 // distanza fra Render e il database si sente tutta.
 const raggruppate = (trovate) => Map.groupBy(trovate, (riga) => String(riga.fattura));
 
-const righeDelleFatture = async (fatturaIds) => raggruppate(await righe({ fattura: { $in: fatturaIds } }, CON_ARTICOLO));
-
 const righeDeiDocumenti = async (fatturaIds) => raggruppate(await righe({ fattura: { $in: fatturaIds } }, CON_LETTURA));
 
+// La matricola del contatore da cui viene una riga: quella della lettura, se e
+// caricata, altrimenti quella fotografata dal calcolo o, per la parte di un
+// condominiale, quella del condominiale. La mostrano il PDF, in colonna, e la
+// fattura elettronica, nella descrizione.
+const matricolaDellaRiga = (riga) => (
+    riga.lettura?.contatore?.seriale
+    || riga.lettura?.contatore?.seriale_interno
+    || riga.calcolo_snapshot?.contatore?.seriale
+    || riga.seriale_condominio
+    || ''
+);
+
 module.exports = {
+    matricolaDellaRiga,
     righeConOrigine,
     righeDeiDocumenti,
     righeDelDocumento,
-    righeDelleFatture,
     righeDellaFattura,
 };

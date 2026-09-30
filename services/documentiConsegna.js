@@ -11,7 +11,7 @@
 
 const Consegna = require('../models/Consegna');
 const Fattura = require('../models/Fattura');
-const { righeDelleFatture, righeDellaFattura } = require('./righeFattura');
+const { righeDeiDocumenti, righeDelDocumento } = require('./righeFattura');
 const { FATTURA_IN_BOZZA } = require('./deliveryPlan');
 const { isConfirmedInvoice } = require('../config/invoicing');
 const { IN_UFFICIO, STATI_APERTI } = require('../config/delivery');
@@ -126,7 +126,7 @@ const fileXml = async (voci, { scaricataIl } = {}) => {
 // Il file di una consegna sola: quello da scaricare dalla sua riga, o da
 // allegare alla PEC per lo SdI quando la trasmissione sara automatica.
 const allegatoXml = async (consegna, fattura, opzioni) => {
-    const righe = await righeDellaFattura(fattura._id);
+    const righe = await righeDelDocumento(fattura._id);
     const { file: [fatto], saltate: [rifiutato] } = await fileXml([{ consegna, fattura, righe }], opzioni);
 
     if (rifiutato) {
@@ -296,7 +296,7 @@ const xmlDaTrasmettere = async ({ limite } = {}) => {
 
     // Le fatture e le loro righe in due letture, non due per consegna.
     const fatture = await fattureDelleConsegne(daInviare);
-    const righe = await righeDelleFatture([...fatture.keys()]);
+    const righe = await righeDeiDocumenti([...fatture.keys()]);
 
     const senzaFattura = daInviare.filter((consegna) => !fatture.has(String(consegna.fattura)));
     const { file, saltate } = await fileXml(

@@ -13,7 +13,7 @@ const {
     sumMoneyBy,
 } = require('../utils/values');
 const { addDays, dataCompatta, daysBetween, formatItalianDate, getDate, nelFuturo, startOfDay, toDate } = require('../utils/dates');
-const { customerLabel } = require('../utils/customer');
+const { capItaliano, customerLabel } = require('../utils/customer');
 const { conflict, createError, forbidden, notFound, unprocessable } = require('../utils/errors');
 const { recordId, setOrUnset, soloValorizzati, uniqueById } = require('../utils/mongo');
 
@@ -207,4 +207,12 @@ test('nelFuturo: il giorno di oggi in Italia non e futuro, il giorno dopo si', (
     assert.equal(nelFuturo(domani), true);
     // Un anno scritto con una cifra in piu, come arriva da un campo data.
     assert.equal(nelFuturo(toDate('20266-09-21')), true);
+});
+
+test('il CAP italiano torna a cinque cifre, un testo diverso resta com e', () => {
+    assert.equal(capItaliano('135'), '00135');
+    assert.equal(capItaliano(58), '00058');
+    assert.equal(capItaliano('32043'), '32043');
+    assert.equal(capItaliano(''), '');
+    assert.equal(capItaliano('SW1A 1AA'), 'SW1A 1AA');
 });

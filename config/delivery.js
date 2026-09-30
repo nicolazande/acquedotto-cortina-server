@@ -144,6 +144,12 @@ const destinatarioNonGestito = (cliente) => {
     return null;
 };
 
+// Una casella PEC si riconosce dal dominio: "pec", "legalmail", "cert"
+// ("postacert", "cert.cna.it"). Nel campo PEC dell'archivio ci sono anche
+// indirizzi normali (gmail, libero): lo SdI non li puo usare, e la fattura va
+// allora nel cassetto fiscale del cliente come per chi non ha niente.
+const pecPlausibile = (valore) => /@[^@\s]*(pec|legalmail|cert)[^@\s]*\.[a-z]{2,}$/i.test(String(valore || '').trim());
+
 // Il canale della fattura elettronica, dedotto dai dati del cliente nell'ordine
 // che il tracciato impone.
 const canaleFatturaElettronica = (cliente) => {
@@ -159,7 +165,7 @@ const canaleFatturaElettronica = (cliente) => {
 
     const pec = String(cliente?.email_pec || '').trim();
 
-    if (pec) {
+    if (pecPlausibile(pec)) {
         return {
             canale: 'pec',
             destinatario: pec,
@@ -269,6 +275,7 @@ module.exports = {
     destinatarioNonGestito,
     modalitaConsegna,
     normalizzaModalita,
+    pecPlausibile,
     richiedeFatturaElettronica,
     testoEmailCortesia,
 };
